@@ -11,7 +11,7 @@ HyperPod-InstantStart provides a unified interface for managing large-scale ML i
 
 ## Architecture
 
-![alt text](arhitecture.png)
+![alt text](architecture.png)
 
 ## Key Components
 
