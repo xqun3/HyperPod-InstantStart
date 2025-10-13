@@ -36,4 +36,10 @@ HyperPod-InstantStart provides a unified interface for managing large-scale ML i
 - **Kubernetes-native**: Container-based model serving with auto-scaling
 
 
+## Feature Roadmap
+- (Cluster Building) Flexible Cluster dependency configuration
+- (Training) TorchTitan/Whisper Training Recipe Integration
+- (Inference) Cross node EP and PD Disaggregated Integration
+
+
 For detailed setup instructions, please refer to Feishu doc: https://amzn-chn.feishu.cn/docx/VZfAdXTJKor7TCxPrZdcbGYXnaf?from=from_copylink
