@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs-extra');
 const path = require('path');
+const { getCurrentRegion, getCurrentS3Bucket, getDevAdminRoleArn, getCurrentAccountId } = require('./awsHelpers');
 
 class MLflowTrackingServerManager {
   constructor() {
@@ -24,7 +25,7 @@ class MLflowTrackingServerManager {
     return activeCluster;
   }
 
-  // 获取环境变量
+  // 获取环境变量 (保留用于其他特定用途)
   async getEnvVar(varName, activeCluster = null) {
     if (!activeCluster) {
       activeCluster = this.getActiveCluster();
@@ -42,55 +43,15 @@ class MLflowTrackingServerManager {
     }
   }
 
-  // 获取S3 bucket名称
-  async getS3BucketFromMetadata() {
-    try {
-      const files = await fs.readdir('/s3-workspace-metadata');
-      if (files.length === 0) {
-        throw new Error('No S3 bucket metadata found');
-      }
-      
-      // 文件名格式: CURRENT_BUCKET_{actual-bucket-name}
-      const bucketFile = files[0];
-      if (!bucketFile.startsWith('CURRENT_BUCKET_')) {
-        throw new Error('Invalid S3 bucket metadata format');
-      }
-      
-      // 移除前缀获取实际bucket名称
-      const actualBucketName = bucketFile.replace('CURRENT_BUCKET_', '');
-      return actualBucketName;
-    } catch (error) {
-      throw new Error(`Failed to get S3 bucket from metadata: ${error.message}`);
-    }
-  }
-
-  // 获取当前IAM role ARN
-  async getCurrentIAMRole() {
-    try {
-      // 获取assumed role ARN
-      const assumedRoleResult = execSync('aws sts get-caller-identity --query "Arn" --output text', { encoding: 'utf8' });
-      const assumedRole = assumedRoleResult.trim();
-      
-      // 从assumed-role中提取role名称
-      const roleName = assumedRole.replace(/.*assumed-role\//, '').replace(/\/.*/, '');
-      
-      // 获取原始role ARN
-      const roleResult = execSync(`aws iam get-role --role-name ${roleName} --query "Role.Arn" --output text`, { encoding: 'utf8' });
-      return roleResult.trim();
-    } catch (error) {
-      throw new Error(`Failed to get IAM role: ${error.message}`);
-    }
-  }
-
   // 创建MLflow tracking server
   async createTrackingServer(serverName, serverSize = 'Small') {
     try {
       console.log(`Creating MLflow tracking server: ${serverName}`);
       
-      // 获取所有必需参数
-      const region = await this.getEnvVar('AWS_REGION') || 'us-west-2';
-      const s3Bucket = await this.getS3BucketFromMetadata();
-      const iamRoleArn = await this.getCurrentIAMRole();
+      // 获取所有必需参数 - 使用统一的awsHelpers
+      const region = await getCurrentRegion();
+      const s3Bucket = getCurrentS3Bucket();
+      const iamRoleArn = await getDevAdminRoleArn();
       
       console.log(`Parameters: Region=${region}, S3Bucket=${s3Bucket}, IAMRole=${iamRoleArn}`);
       
@@ -167,7 +128,7 @@ class MLflowTrackingServerManager {
   async getTrackingServerStatus(serverName, region = null) {
     try {
       if (!region) {
-        region = await this.getEnvVar('AWS_REGION') || 'us-west-2';
+        region = await getCurrentRegion();
       }
       
       const cmd = `aws sagemaker describe-mlflow-tracking-server --tracking-server-name ${serverName} --region ${region}`;
@@ -187,7 +148,7 @@ class MLflowTrackingServerManager {
   async listTrackingServers(region = null) {
     try {
       if (!region) {
-        region = await this.getEnvVar('AWS_REGION') || 'us-west-2';
+        region = await getCurrentRegion();
       }
       
       const cmd = `aws sagemaker list-mlflow-tracking-servers --region ${region}`;
@@ -204,7 +165,7 @@ class MLflowTrackingServerManager {
   async deleteTrackingServer(serverName, region = null) {
     try {
       if (!region) {
-        region = await this.getEnvVar('AWS_REGION') || 'us-west-2';
+        region = await getCurrentRegion();
       }
       
       const cmd = `aws sagemaker delete-mlflow-tracking-server --tracking-server-name ${serverName} --region ${region}`;
@@ -238,6 +199,197 @@ class MLflowTrackingServerManager {
       console.error('Error removing local tracking server info:', error);
       // 不抛出错误
     }
+  }
+
+  // 配置MLflow认证
+  async configureAuthentication() {
+    try {
+      console.log('Configuring MLflow authentication...');
+      
+      const activeCluster = this.getActiveCluster();
+      const region = await getCurrentRegion();
+      const accountId = await getCurrentAccountId();
+      const eksClusterName = await this.getEnvVar('EKS_CLUSTER_NAME', activeCluster);
+      const clusterTag = await this.getEnvVar('CLUSTER_TAG', activeCluster);
+      
+      if (!accountId || !eksClusterName || !clusterTag) {
+        throw new Error('Missing required parameters');
+      }
+      
+      console.log(`Parameters: Region=${region}, AccountId=${accountId}, EksCluster=${eksClusterName}, ClusterTag=${clusterTag}`);
+      
+      // 1. 创建service account
+      await this.createServiceAccount();
+      
+      // 2. 获取OIDC信息
+      const oidcInfo = await this.getOIDCInfo(eksClusterName, region);
+      
+      // 3. 创建IAM角色和策略
+      await this.createIAMRoleAndPolicy(accountId, region, oidcInfo.oidcId, clusterTag);
+      
+      // 4. 绑定角色到service account
+      await this.bindRoleToServiceAccount(accountId, clusterTag);
+      
+      console.log('MLflow authentication configured successfully');
+      
+      return {
+        success: true,
+        message: 'MLflow authentication configured successfully'
+      };
+      
+    } catch (error) {
+      console.error('Error configuring MLflow authentication:', error);
+      throw new Error(`Failed to configure MLflow authentication: ${error.message}`);
+    }
+  }
+
+  // 创建service account
+  async createServiceAccount() {
+    try {
+      console.log('Creating service account...');
+      execSync('kubectl create serviceaccount mlflow-service-account -n default', { encoding: 'utf8' });
+      console.log('Service account created successfully');
+    } catch (error) {
+      if (error.message.includes('already exists')) {
+        console.log('Service account already exists, skipping creation');
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  // 获取OIDC信息
+  async getOIDCInfo(eksClusterName, region) {
+    console.log('Getting OIDC information...');
+    
+    const oidcIssuerCmd = `aws eks describe-cluster --name ${eksClusterName} --region ${region} --query 'cluster.identity.oidc.issuer' --output text`;
+    const oidcIssuer = execSync(oidcIssuerCmd, { encoding: 'utf8' }).trim();
+    const oidcId = oidcIssuer.split('/')[4];
+    
+    console.log(`OIDC Issuer: ${oidcIssuer}`);
+    console.log(`OIDC ID: ${oidcId}`);
+    
+    return { oidcIssuer, oidcId };
+  }
+
+  // 创建IAM角色和策略
+  async createIAMRoleAndPolicy(accountId, region, oidcId, clusterTag) {
+    const roleName = `EKS-MLflow-ServiceAccount-Role-${clusterTag}`;
+    const policyName = `EKS-MLflow-Policy-${clusterTag}`;
+    
+    // 创建信任策略
+    const trustPolicy = {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Federated": `arn:aws:iam::${accountId}:oidc-provider/oidc.eks.${region}.amazonaws.com/id/${oidcId}`
+          },
+          "Action": "sts:AssumeRoleWithWebIdentity",
+          "Condition": {
+            "StringEquals": {
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:sub`]: "system:serviceaccount:default:mlflow-service-account",
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:aud`]: "sts.amazonaws.com"
+            }
+          }
+        }
+      ]
+    };
+
+    // 创建权限策略
+    const permissionsPolicy = {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "sagemaker:CreateExperiment",
+            "sagemaker:CreateTrial",
+            "sagemaker:CreateTrialComponent",
+            "sagemaker:UpdateExperiment",
+            "sagemaker:UpdateTrial",
+            "sagemaker:UpdateTrialComponent",
+            "sagemaker:DescribeExperiment",
+            "sagemaker:DescribeTrial",
+            "sagemaker:DescribeTrialComponent",
+            "sagemaker:ListExperiments",
+            "sagemaker:ListTrials",
+            "sagemaker:ListTrialComponents",
+            "sagemaker:AddTags",
+            "sagemaker:ListTags",
+            "sagemaker-mlflow:*"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:ListBucket"
+          ],
+          "Resource": ["*"]
+        }
+      ]
+    };
+
+    // 写入临时文件
+    const trustPolicyPath = '/tmp/mlflow-trust-policy.json';
+    const permissionsPolicyPath = '/tmp/mlflow-permissions-policy.json';
+    
+    await fs.writeJson(trustPolicyPath, trustPolicy);
+    await fs.writeJson(permissionsPolicyPath, permissionsPolicy);
+
+    try {
+      // 创建IAM角色
+      console.log(`Creating IAM role: ${roleName}`);
+      try {
+        execSync(`aws iam get-role --role-name ${roleName} --region ${region}`, { encoding: 'utf8' });
+        console.log('Role already exists, skipping creation');
+      } catch (error) {
+        execSync(`aws iam create-role --role-name ${roleName} --assume-role-policy-document file://${trustPolicyPath} --region ${region}`, { encoding: 'utf8' });
+        console.log('IAM role created');
+      }
+
+      // 创建IAM策略
+      console.log(`Creating IAM policy: ${policyName}`);
+      const policyArn = `arn:aws:iam::${accountId}:policy/${policyName}`;
+      try {
+        execSync(`aws iam get-policy --policy-arn ${policyArn} --region ${region}`, { encoding: 'utf8' });
+        console.log('Policy already exists, skipping creation');
+      } catch (error) {
+        execSync(`aws iam create-policy --policy-name ${policyName} --policy-document file://${permissionsPolicyPath} --region ${region}`, { encoding: 'utf8' });
+        console.log('IAM policy created');
+      }
+
+      // 绑定策略到角色
+      execSync(`aws iam attach-role-policy --role-name ${roleName} --policy-arn ${policyArn} --region ${region}`, { encoding: 'utf8' });
+      console.log('Policy attached to role');
+
+    } finally {
+      // 清理临时文件
+      await fs.remove(trustPolicyPath);
+      await fs.remove(permissionsPolicyPath);
+    }
+  }
+
+  // 绑定角色到service account
+  async bindRoleToServiceAccount(accountId, clusterTag) {
+    const roleName = `EKS-MLflow-ServiceAccount-Role-${clusterTag}`;
+    const roleArn = `arn:aws:iam::${accountId}:role/${roleName}`;
+    
+    console.log('Binding role to service account...');
+    
+    const cmd = `kubectl annotate serviceaccount mlflow-service-account -n default eks.amazonaws.com/role-arn=${roleArn} --overwrite`;
+    execSync(cmd, { encoding: 'utf8' });
+    
+    console.log('Role bound to service account successfully');
+    
+    // 验证配置
+    const verifyCmd = 'kubectl get serviceaccount mlflow-service-account -n default -o yaml';
+    const result = execSync(verifyCmd, { encoding: 'utf8' });
+    console.log('Service account configuration verified');
   }
 
   // 验证服务器名称

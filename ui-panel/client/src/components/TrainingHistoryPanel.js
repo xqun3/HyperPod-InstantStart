@@ -50,6 +50,7 @@ const TrainingHistoryPanel = () => {
   const [createTrackingServerModalVisible, setCreateTrackingServerModalVisible] = useState(false);
   const [createTrackingServerForm] = Form.useForm();
   const [createTrackingServerLoading, setCreateTrackingServerLoading] = useState(false);
+  const [configAuthLoading, setConfigAuthLoading] = useState(false);
 
   const fetchTrainingHistory = async () => {
     setLoading(true);
@@ -190,6 +191,34 @@ const TrainingHistoryPanel = () => {
   const showCreateTrackingServerModal = () => {
     createTrackingServerForm.resetFields();
     setCreateTrackingServerModalVisible(true);
+  };
+
+  // 配置MLflow认证
+  const configureMLflowAuth = async () => {
+    try {
+      setConfigAuthLoading(true);
+      
+      const response = await fetch('/api/configure-mlflow-auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        message.success('MLflow authentication configured successfully');
+        setConfigModalVisible(false);
+      } else {
+        message.error(`Failed to configure MLflow authentication: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error configuring MLflow authentication:', error);
+      message.error('Failed to configure MLflow authentication');
+    } finally {
+      setConfigAuthLoading(false);
+    }
   };
 
   // 创建MLflow Tracking Server
@@ -1049,6 +1078,41 @@ const TrainingHistoryPanel = () => {
                 Save
               </Button>
             </Space>
+          </div>
+
+          {/* MLflow认证配置区域 */}
+          <div style={{ 
+            marginTop: '24px',
+            padding: '16px',
+            backgroundColor: '#fff7e6',
+            border: '1px solid #ffd591',
+            borderRadius: '8px'
+          }}>
+            <Typography.Title level={5} style={{ color: '#d48806', marginBottom: '16px' }}>
+              <Space>
+                <SettingOutlined style={{ color: '#d48806' }} />
+                Config MLFlow Authentications for Cluster
+              </Space>
+            </Typography.Title>
+            
+            <Typography.Text style={{ color: '#8c5700', marginBottom: '16px', display: 'block' }}>
+              Configure Kubernetes service account and IAM roles for MLflow access in training jobs.
+            </Typography.Text>
+            
+            <Button 
+              type="primary" 
+              loading={configAuthLoading}
+              onClick={configureMLflowAuth}
+              style={{ 
+                backgroundColor: '#d48806',
+                borderColor: '#d48806'
+              }}
+            >
+              <Space>
+                <SettingOutlined />
+                Configure Authentication
+              </Space>
+            </Button>
           </div>
 
           {/* 跨账户同步功能区域 */}

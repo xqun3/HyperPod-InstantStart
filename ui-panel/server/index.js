@@ -2688,6 +2688,44 @@ app.post('/api/mlflow-sync', async (req, res) => {
   }
 });
 
+// 配置MLflow认证 API
+app.post('/api/configure-mlflow-auth', async (req, res) => {
+  try {
+    const MLflowTrackingServerManager = require('./utils/mlflowTrackingServerManager');
+    const mlflowManager = new MLflowTrackingServerManager();
+    
+    // 配置MLflow认证
+    const result = await mlflowManager.configureAuthentication();
+    
+    // 广播配置成功消息
+    broadcast({
+      type: 'mlflow_auth_configured',
+      status: 'success',
+      message: result.message
+    });
+    
+    res.json({
+      success: true,
+      message: result.message
+    });
+    
+  } catch (error) {
+    console.error('Error configuring MLflow authentication:', error);
+    
+    // 广播配置失败消息
+    broadcast({
+      type: 'mlflow_auth_configured',
+      status: 'error',
+      message: `Failed to configure MLflow authentication: ${error.message}`
+    });
+    
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // 创建MLflow Tracking Server API
 app.post('/api/create-mlflow-tracking-server', async (req, res) => {
   try {

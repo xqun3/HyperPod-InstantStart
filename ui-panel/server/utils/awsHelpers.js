@@ -74,8 +74,28 @@ async function getDevAdminRoleArn() {
   });
 }
 
+/**
+ * 获取当前AWS账户ID
+ * @returns {Promise<string>} AWS account ID
+ */
+async function getCurrentAccountId() {
+  return new Promise((resolve, reject) => {
+    exec('aws sts get-caller-identity --query "Account" --output text', (error, stdout, stderr) => {
+      if (error) {
+        console.error('Failed to get AWS account ID:', error);
+        reject(new Error(`Failed to get AWS account ID: ${error.message}`));
+        return;
+      }
+      
+      const accountId = stdout.trim();
+      resolve(accountId);
+    });
+  });
+}
+
 module.exports = {
   getCurrentRegion,
   getCurrentS3Bucket,
-  getDevAdminRoleArn
+  getDevAdminRoleArn,
+  getCurrentAccountId
 };

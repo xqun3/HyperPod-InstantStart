@@ -37,6 +37,7 @@ HyperPod-InstantStart provides a unified interface for managing large-scale ML i
 
 
 ## Feature Roadmap
+- (Cluster Building) Multi-type Instance Groups
 - (Cluster Building) Flexible Cluster dependency configuration
 - (Training) TorchTitan/Whisper Training Recipe Integration
 - (Inference) Cross node EP and PD Disaggregated Integration
