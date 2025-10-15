@@ -199,6 +199,21 @@ function App() {
             // 🚀 触发操作刷新
             operationRefreshManager.triggerOperationRefresh('hyperpod-create', data);
             break;
+
+          case 'hyperpod_deletion_started':
+            message.info(data.message);
+            operationRefreshManager.triggerOperationRefresh('hyperpod-delete', data);
+            break;
+
+          case 'hyperpod_deletion_completed':
+            message.success('HyperPod cluster deleted successfully');
+            operationRefreshManager.triggerOperationRefresh('hyperpod-delete', data);
+            break;
+
+          case 'hyperpod_deletion_failed':
+            message.error('HyperPod deletion failed');
+            operationRefreshManager.triggerOperationRefresh('hyperpod-delete', data);
+            break;
             
           case 'undeployment':
             if (data.status === 'success') {

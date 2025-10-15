@@ -13,6 +13,7 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
   const [eksNodeGroups, setEksNodeGroups] = useState([]);
   const [hyperPodGroups, setHyperPodGroups] = useState([]);
   const [hyperPodCreationStatus, setHyperPodCreationStatus] = useState(null);
+  const [hyperPodDeletionStatus, setHyperPodDeletionStatus] = useState(null);
   const [clusterInfo, setClusterInfo] = useState({ eksClusterName: '', region: '' });
   const [availabilityZones, setAvailabilityZones] = useState([]);
   const [scaleModalVisible, setScaleModalVisible] = useState(false);
@@ -85,6 +86,34 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
     } catch (error) {
       console.error('Error checking HyperPod creation status:', error);
     }
+  };
+
+  const handleDeleteHyperPod = async () => {
+    Modal.confirm({
+      title: 'Delete HyperPod Cluster',
+      content: 'Are you sure you want to delete the HyperPod cluster? This action cannot be undone.',
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setHyperPodDeletionStatus('deleting');
+          
+          const response = await fetch(`/api/cluster/${activeCluster}/hyperpod`, {
+            method: 'DELETE'
+          });
+          
+          const result = await response.json();
+          if (!response.ok) {
+            message.error(`Failed to delete HyperPod: ${result.error}`);
+            setHyperPodDeletionStatus(null);
+          }
+        } catch (error) {
+          message.error('Error deleting HyperPod cluster');
+          setHyperPodDeletionStatus(null);
+        }
+      }
+    });
   };
 
   const handleCreateHyperPod = async () => {
@@ -165,9 +194,23 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
       await checkHyperPodCreationStatus();
     });
 
+    // 监听HyperPod删除相关的WebSocket消息
+    operationRefreshManager.subscribe('hyperpod-delete', async (data) => {
+      if (data.type === 'hyperpod_deletion_started') {
+        setHyperPodDeletionStatus('deleting');
+      } else if (data.type === 'hyperpod_deletion_completed') {
+        setHyperPodDeletionStatus(null);
+        setHyperPodGroups([]);
+        await fetchNodeGroups();
+      } else if (data.type === 'hyperpod_deletion_failed') {
+        setHyperPodDeletionStatus(null);
+      }
+    });
+
     return () => {
       globalRefreshManager.unsubscribe('nodegroup-manager');
       operationRefreshManager.unsubscribe('nodegroup-manager');
+      operationRefreshManager.unsubscribe('hyperpod-delete');
     };
   }, []);
 
@@ -369,31 +412,50 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
         style={{ marginBottom: '16px' }}
         size="small"
         extra={
-          <Button 
-            type="primary" 
-            icon={<PlusOutlined />} 
-            size="small"
-            onClick={() => {
-              setCreateHyperPodModalVisible(true);
-              fetchClusterInfo(); // 确保获取最新信息
-            }}
-            disabled={
-              !dependenciesConfigured ||   // 依赖未配置时禁用
-              !!hyperPodCreationStatus ||  // 创建中时禁用
-              hyperPodGroups.length > 0    // 已存在HyperPod时禁用
-            }
-            title={
-              !dependenciesConfigured 
-                ? "Dependencies must be configured first"
-                : hyperPodCreationStatus 
-                  ? "HyperPod creation in progress" 
-                  : hyperPodGroups.length > 0 
-                    ? "HyperPod cluster already exists in this EKS cluster"
-                    : "Create HyperPod cluster"
-            }
-          >
-            Create HyperPod
-          </Button>
+          <Space>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />} 
+              size="small"
+              onClick={() => {
+                setCreateHyperPodModalVisible(true);
+                fetchClusterInfo(); // 确保获取最新信息
+              }}
+              disabled={
+                !dependenciesConfigured ||   // 依赖未配置时禁用
+                !!hyperPodCreationStatus ||  // 创建中时禁用
+                !!hyperPodDeletionStatus ||  // 删除中时禁用
+                hyperPodGroups.length > 0    // 已存在HyperPod时禁用
+              }
+              loading={hyperPodCreationStatus === 'creating'}
+              title={
+                !dependenciesConfigured 
+                  ? "Dependencies must be configured first"
+                  : hyperPodCreationStatus 
+                    ? "HyperPod creation in progress" 
+                    : hyperPodDeletionStatus
+                      ? "HyperPod deletion in progress"
+                      : hyperPodGroups.length > 0 
+                        ? "HyperPod cluster already exists in this EKS cluster"
+                        : "Create HyperPod cluster"
+              }
+            >
+              Create HyperPod
+            </Button>
+            {hyperPodGroups.length > 0 && (
+              <Button 
+                type="default"
+                danger
+                size="small"
+                loading={hyperPodDeletionStatus === 'deleting'}
+                onClick={handleDeleteHyperPod}
+                disabled={!!hyperPodCreationStatus || !!hyperPodDeletionStatus}
+                title="Delete HyperPod cluster and all instance groups"
+              >
+                Delete HyperPod
+              </Button>
+            )}
+          </Space>
         }
       >
         {hyperPodCreationStatus && (

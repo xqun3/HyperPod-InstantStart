@@ -31,19 +31,27 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
   // 获取可用的模型池
   const fetchModelPools = async () => {
     try {
+      console.log('🔍 Fetching model pools...');
       const response = await fetch('/api/deployments');
       const data = await response.json();
+      
+      console.log('📦 All deployments received:', data);
       
       // 过滤出模型池类型的部署
       const pools = data.filter(deployment => 
         deployment.deploymentType === 'model-pool' ||
-        deployment.deploymentName.includes('-pool') ||
         (deployment.labels && deployment.labels['deployment-type'] === 'model-pool')
       );
       
+      console.log('🎯 Filtered model pools:', pools.length, pools.map(p => ({
+        name: p.deploymentName,
+        type: p.deploymentType,
+        labels: p.labels
+      })));
+      
       setModelPools(pools);
     } catch (error) {
-      console.error('Error fetching model pools:', error);
+      console.error('❌ Error fetching model pools:', error);
     }
   };
 
@@ -152,12 +160,18 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
           ]}
         >
           <Select 
-            placeholder="Select model pool"
+            placeholder={modelPools.length === 0 ? "No model pools found" : "Select model pool"}
             loading={modelPools.length === 0}
+            notFoundContent={modelPools.length === 0 ? "No model pools available" : "No matching pools"}
+            onDropdownVisibleChange={(open) => {
+              if (open) {
+                console.log('🔽 Dropdown opened, available pools:', modelPools);
+              }
+            }}
           >
             {modelPools.map(pool => (
               <Option key={pool.deploymentName} value={pool.deploymentName}>
-                {pool.deploymentName} ({pool.deploymentType})
+                {pool.deploymentName} ({pool.deploymentType}) - {pool.status}
               </Option>
             ))}
           </Select>

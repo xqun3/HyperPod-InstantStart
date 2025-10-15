@@ -1,6 +1,6 @@
 {
   "jobName": "verl-training-a0917",
-  "instanceType": "ml.g6e.12xlarge",
+  "instanceType": "ml.g6.12xlarge",
   "entryPointPath": "verl-project/src/qwen-3-grpo-kuberay.sh",
   "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest",
   "workerReplicas": 1,

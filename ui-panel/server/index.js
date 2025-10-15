@@ -2123,6 +2123,7 @@ app.post('/api/launch-verl-training', async (req, res) => {
     // 替换模板中的占位符
     const newYamlContent = templateContent
       .replace(/JOB_NAME/g, jobName)
+      .replace(/INSTANCE_TYPE/g, instanceType)
       .replace(/ENTRY_POINT_PATH/g, entryPointPath)
       .replace(/DOCKER_IMAGE/g, dockerImage)
       .replace(/WORKER_REPLICAS/g, workerReplicas.toString())
@@ -3574,7 +3575,7 @@ app.get('/api/deployments', async (req, res) => {
       
       // 使用deployment名称作为modelTag，从标签获取类型
       const modelTag = deploymentName;
-      const deploymentType = labels['model-type'] || 'Others';
+      const deploymentType = labels['deployment-type'] || labels['model-type'] || 'Others';
       
       // 检查是否为external访问
       const isExternal = matchingService?.metadata?.annotations?.['service.beta.kubernetes.io/aws-load-balancer-scheme'] === 'internet-facing';
@@ -6057,6 +6058,52 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
   }
 });
 
+// HyperPod集群删除API
+app.delete('/api/cluster/:clusterTag/hyperpod', async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+    const { clusterTag } = req.params;
+    
+    // 读取HyperPod配置获取stackId
+    const hyperPodConfigPath = path.join(__dirname, '../managed_clusters_info', clusterTag, 'metadata/hyperpod-config.json');
+    
+    if (!fs.existsSync(hyperPodConfigPath)) {
+      return res.status(404).json({ success: false, error: 'HyperPod configuration not found' });
+    }
+    
+    const hyperPodConfig = JSON.parse(fs.readFileSync(hyperPodConfigPath, 'utf8'));
+    const stackName = hyperPodConfig.hyperPodCluster.stackName;
+    const region = hyperPodConfig.hyperPodCluster.region;
+    
+    // 记录删除状态
+    updateCreatingHyperPodStatus(clusterTag, {
+      type: 'hyperpod',
+      status: 'DELETING',
+      phase: 'DELETING_STACK',
+      stackName: stackName,
+      region: region,
+      deletedAt: new Date().toISOString()
+    });
+    
+    // 使用AWS CLI删除CloudFormation Stack
+    const deleteCommand = `aws cloudformation delete-stack --stack-name ${stackName} --region ${region}`;
+    execSync(deleteCommand, { encoding: 'utf8', timeout: 30000 });
+    
+    // WebSocket广播删除开始
+    broadcast({
+      type: 'hyperpod_deletion_started',
+      clusterTag,
+      stackName,
+      message: 'HyperPod cluster deletion started'
+    });
+    
+    res.json({ success: true, message: 'HyperPod deletion started' });
+  } catch (error) {
+    console.error('Error deleting HyperPod cluster:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 获取EKS节点组创建所需的子网信息
 app.get('/api/cluster/subnets', async (req, res) => {
   try {
@@ -6405,15 +6452,64 @@ app.get('/api/cluster/creating-hyperpod-clusters', async (req, res) => {
           if (stackStatus === 'CREATE_COMPLETE') {
             updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
             await registerCompletedHyperPod(clusterTag);
-          } else if (stackStatus.includes('FAILED') || stackStatus.includes('ROLLBACK') || stackStatus.includes('DELETE')) {
+          } else if (stackStatus === 'DELETE_COMPLETE') {
+            // 删除完成，清理metadata文件和状态
+            console.log(`HyperPod deletion completed: ${clusterTag}`);
+            
+            // 删除metadata文件
+            const hyperPodConfigPath = path.join(__dirname, '../managed_clusters_info', clusterTag, 'metadata/hyperpod-config.json');
+            if (fs.existsSync(hyperPodConfigPath)) {
+              fs.unlinkSync(hyperPodConfigPath);
+            }
+            
+            // 清理状态
+            updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+            
+            // 广播删除完成
+            broadcast({
+              type: 'hyperpod_deletion_completed',
+              clusterTag,
+              message: 'HyperPod cluster deleted successfully'
+            });
+          } else if (stackStatus.includes('FAILED') || stackStatus.includes('ROLLBACK')) {
             // 自动清理失败的记录
-            console.log(`Auto-cleaning failed HyperPod creation: ${clusterTag}, status: ${stackStatus}`);
+            console.log(`Auto-cleaning failed HyperPod operation: ${clusterTag}, status: ${stackStatus}`);
             updateCreatingHyperPodStatus(clusterTag, 'COMPLETED'); // 移除记录
+            
+            // 如果是删除失败，广播失败消息
+            if (clusterInfo.status === 'DELETING') {
+              broadcast({
+                type: 'hyperpod_deletion_failed',
+                clusterTag,
+                message: `HyperPod deletion failed: ${stackStatus}`
+              });
+            }
           }
         } catch (error) {
           // Stack不存在或其他错误，清理记录
           if (error.message.includes('does not exist')) {
-            console.log(`Auto-cleaning non-existent HyperPod stack: ${clusterTag}`);
+            console.log(`Stack does not exist for ${clusterTag}, checking if it was being deleted...`);
+            
+            // 如果是删除状态且stack不存在，说明删除成功
+            if (clusterInfo.status === 'DELETING') {
+              console.log(`HyperPod deletion completed (stack removed): ${clusterTag}`);
+              
+              // 删除metadata文件
+              const hyperPodConfigPath = path.join(__dirname, '../managed_clusters_info', clusterTag, 'metadata/hyperpod-config.json');
+              if (fs.existsSync(hyperPodConfigPath)) {
+                fs.unlinkSync(hyperPodConfigPath);
+              }
+              
+              // 广播删除完成
+              broadcast({
+                type: 'hyperpod_deletion_completed',
+                clusterTag,
+                message: 'HyperPod cluster deleted successfully'
+              });
+            } else {
+              console.log(`Auto-cleaning non-existent HyperPod stack: ${clusterTag}`);
+            }
+            
             updateCreatingHyperPodStatus(clusterTag, 'COMPLETED'); // 移除记录
           } else {
             console.error(`Error checking status for ${clusterTag}:`, error.message);

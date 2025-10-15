@@ -77,6 +77,8 @@ spec:
       rayStartParams: {}
       template:
         spec:
+          nodeSelector:
+            beta.kubernetes.io/instance-type: INSTANCE_TYPE
           containers:
           - name: ray-worker
             image: DOCKER_IMAGE
