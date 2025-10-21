@@ -1,0 +1,82 @@
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: verl-training-cluster
+  namespace: default
+spec:
+  rayVersion: '2.9.0'
+  enableInTreeAutoscaling: false
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+      dashboard-port: '8265'
+      redis-password: 'redis_password'
+      port: '6379'
+    template:
+      spec:
+        containers:
+        - name: ray-head
+          image: rayproject/ray:2.9.0-py310-gpu
+          resources:
+            limits:
+              cpu: 4
+              memory: 16Gi
+              nvidia.com/gpu: 1
+            requests:
+              cpu: 2
+              memory: 8Gi
+              nvidia.com/gpu: 1
+          ports:
+          - containerPort: 6379
+            name: gcs-server
+          - containerPort: 8265
+            name: dashboard
+          - containerPort: 10001
+            name: client
+          env:
+          - name: RAY_DISABLE_IMPORT_WARNING
+            value: "1"
+          - name: PYTHONPATH
+            value: "/opt/ml/code:/opt/ml/code/verl"
+          volumeMounts:
+          - name: code-volume
+            mountPath: /opt/ml/code
+        volumes:
+        - name: code-volume
+          hostPath:
+            path: /home/ubuntu/workspace/HyperPod-InstantStart-BASE/train-recipes/verl-project/src
+            type: Directory
+  workerGroupSpecs:
+  - replicas: 0  # 单节点测试，设为0
+    minReplicas: 0
+    maxReplicas: 3
+    groupName: worker-group
+    rayStartParams:
+      redis-password: 'redis_password'
+    template:
+      spec:
+        containers:
+        - name: ray-worker
+          image: rayproject/ray:2.9.0-py310-gpu
+          resources:
+            limits:
+              cpu: 8
+              memory: 32Gi
+              nvidia.com/gpu: 3
+            requests:
+              cpu: 4
+              memory: 16Gi
+              nvidia.com/gpu: 3
+          env:
+          - name: RAY_DISABLE_IMPORT_WARNING
+            value: "1"
+          - name: PYTHONPATH
+            value: "/opt/ml/code:/opt/ml/code/verl"
+          volumeMounts:
+          - name: code-volume
+            mountPath: /opt/ml/code
+        volumes:
+        - name: code-volume
+          hostPath:
+            path: /home/ubuntu/workspace/HyperPod-InstantStart-BASE/train-recipes/verl-project/src
+            type: Directory

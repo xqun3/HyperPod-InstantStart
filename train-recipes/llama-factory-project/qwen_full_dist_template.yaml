@@ -1,0 +1,51 @@
+### model
+model_name_or_path: /s3/Qwen-Qwen3-0.6B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: deepspeed_conf/ds_z3_offload_config.json
+
+### dataset
+# dataset_dir: $LMA_RECIPE_LLAMA_FACTORY_DIR/data
+# dataset: identity # ,alpaca_en_demo
+
+dataset_dir: customized_dataset
+dataset: longconv2k
+
+template: qwen
+cutoff_len: 4096
+max_samples: 1000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: /ckpt-path/qwen3-06b/full/sft2
+logging_steps: 10
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: mlflow  # choices: [none, wandb, tensorboard, swanlab, mlflow]
+run_name: qwen3-06b-bs
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-5
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+# eval_dataset: alpaca_en_demo
+# val_size: 0.1
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 500
