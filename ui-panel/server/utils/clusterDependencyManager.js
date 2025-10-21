@@ -178,6 +178,7 @@ helm upgrade --install hyperpod-dependencies ./sagemaker-hyperpod-cli/helm_chart
   --set neuron-device-plugin.devicePlugin.enabled=false \\
   --set nvidia-device-plugin.devicePlugin.enabled=true \\
   --set aws-efa-k8s-device-plugin.devicePlugin.enabled=true \\
+  --set aws-efa-k8s-device-plugin.image.tag="v0.5.12" \\
   --set health-monitoring-agent.enabled=true \\
   --set hyperpod-patching.enabled=true \\
   --set mpi-operator.enabled=true \\
