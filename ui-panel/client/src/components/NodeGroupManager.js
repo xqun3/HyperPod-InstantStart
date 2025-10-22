@@ -232,6 +232,7 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
 
     // 注册到全局刷新系统
     globalRefreshManager.subscribe('nodegroup-manager', async () => {
+      // 同步顺序执行，确保数据一致性
       await fetchNodeGroups();
       await checkHyperPodCreationStatus();
     }, {
@@ -240,6 +241,7 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
 
     // 注册到操作刷新系统
     operationRefreshManager.subscribe('nodegroup-manager', async () => {
+      // 同步顺序执行，确保数据一致性
       await fetchNodeGroups();
       await checkHyperPodCreationStatus();
     });
@@ -529,9 +531,10 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
       <div style={{ marginBottom: '16px', textAlign: 'right' }}>
         <Button 
           icon={<ReloadOutlined />} 
-          onClick={() => {
-            fetchNodeGroups();
-            checkHyperPodCreationStatus();
+          onClick={async () => {
+            // 同步顺序执行，确保数据一致性
+            await fetchNodeGroups();
+            await checkHyperPodCreationStatus();
             if (onRefreshClusterDetails) {
               onRefreshClusterDetails();
             }

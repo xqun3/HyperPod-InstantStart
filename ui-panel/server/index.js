@@ -3763,6 +3763,78 @@ function broadcastStatusUpdate() {
   broadcast(message);
 }
 
+// 🔄 定时检查创建中的集群状态 - 每60秒检查一次
+const clusterStatusCheckInterval = setInterval(async () => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const creatingClustersPath = path.join(__dirname, '../managed_clusters_info/creating-clusters.json');
+    
+    if (!fs.existsSync(creatingClustersPath)) return;
+    
+    const creatingClusters = JSON.parse(fs.readFileSync(creatingClustersPath, 'utf8'));
+    
+    for (const [clusterTag, clusterInfo] of Object.entries(creatingClusters)) {
+      if (clusterInfo.type === 'eks' && clusterInfo.stackName && clusterInfo.currentStackStatus !== 'COMPLETED') {
+        try {
+          const stackStatus = await CloudFormationManager.getStackStatus(clusterInfo.stackName, clusterInfo.region);
+          
+          if (stackStatus.stackStatus === 'CREATE_COMPLETE') {
+            console.log(`[Auto-Check] EKS cluster ${clusterTag} creation completed, registering...`);
+            await registerCompletedCluster(clusterTag, 'active');
+            updateCreatingClustersStatus(clusterTag, 'COMPLETED');
+            
+            broadcast({
+              type: 'cluster_creation_completed',
+              status: 'success',
+              message: `EKS cluster ${clusterTag} created successfully. Configure dependencies in Cluster Information.`,
+              clusterTag: clusterTag
+            });
+          }
+        } catch (error) {
+          console.error(`[Auto-Check] Error checking cluster ${clusterTag}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Auto-Check] Error in cluster status check:', error);
+  }
+}, 60000);
+
+// 🔄 定时检查创建中的HyperPod集群状态 - 每60秒检查一次
+const hyperPodStatusCheckInterval = setInterval(async () => {
+  try {
+    const { execSync } = require('child_process');
+    const creatingClusters = getCreatingHyperPodClusters();
+    
+    for (const [clusterTag, clusterInfo] of Object.entries(creatingClusters)) {
+      if (clusterInfo.stackName && clusterInfo.region) {
+        try {
+          const checkCmd = `aws cloudformation describe-stacks --stack-name ${clusterInfo.stackName} --region ${clusterInfo.region} --query 'Stacks[0].StackStatus' --output text`;
+          const stackStatus = execSync(checkCmd, { encoding: 'utf8', timeout: 10000 }).trim();
+          
+          if (stackStatus === 'CREATE_COMPLETE') {
+            console.log(`[Auto-Check] HyperPod cluster ${clusterTag} creation completed, registering...`);
+            await registerCompletedHyperPod(clusterTag);
+            updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+            
+            broadcast({
+              type: 'hyperpod_creation_completed',
+              status: 'success',
+              message: `HyperPod cluster created successfully: ${clusterInfo.stackName}`,
+              clusterTag: clusterTag
+            });
+          }
+        } catch (error) {
+          console.error(`[Auto-Check] Error checking HyperPod ${clusterTag}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Auto-Check] Error in HyperPod status check:', error);
+  }
+}, 60000);
+
 // ❤️ WebSocket心跳检测 - 每30秒检查一次连接状态
 const heartbeatInterval = setInterval(() => {
   const now = Date.now();
@@ -4791,9 +4863,24 @@ app.put('/api/cluster/hyperpod/instances/:name/scale', async (req, res) => {
       return result.stdout.trim();
     };
     
-    const clusterName = await getEnvVar('EKS_CLUSTER_NAME') || activeClusterName;
     const region = await getEnvVar('AWS_REGION') || 'us-west-2';
-    const hpClusterName = clusterName.replace('eks-cluster-', 'hp-cluster-');
+    
+    // 从 cluster_info.json 中获取实际的 HyperPod 集群名称
+    const clusterInfo = await clusterManager.getClusterInfo(activeClusterName);
+    if (!clusterInfo) {
+      return res.status(400).json({ error: 'Cluster info not found' });
+    }
+    
+    const hyperPodClusters = [
+      ...(clusterInfo.hyperPodClusters?.userCreated || []),
+      ...(clusterInfo.hyperPodClusters?.detected || [])
+    ];
+    
+    if (hyperPodClusters.length === 0) {
+      return res.status(400).json({ error: 'No HyperPod clusters found for this EKS cluster' });
+    }
+    
+    const hpClusterName = hyperPodClusters[0].name;
     
     // HyperPod需要完整的实例组配置，不能只更新InstanceCount
     // 我们需要先获取当前配置，然后更新InstanceCount

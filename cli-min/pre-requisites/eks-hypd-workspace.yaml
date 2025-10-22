@@ -169,7 +169,8 @@ Resources:
           echo "Starting dependency installation at $(date)"
           
           apt-get update -y
-          apt-get install -y zip unzip curl wget python3-pip docker.io jq s3fs
+          apt-get install -y zip unzip curl wget python3-pip docker.io s3fs
+          apt-get install -y jq
           
           systemctl start docker
           systemctl enable docker
