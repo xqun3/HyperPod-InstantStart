@@ -300,7 +300,7 @@ class CloudFormationManager {
           subnetId: subnet.SubnetId,
           availabilityZone: subnet.AvailabilityZone,
           cidrBlock: subnet.CidrBlock,
-          name: subnet.Tags?.find(tag => tag.Key === 'Name')?.Value || subnet.SubnetId
+          name: (subnet.Tags && subnet.Tags.find(tag => tag.Key === 'Name') && subnet.Tags.find(tag => tag.Key === 'Name').Value) || subnet.SubnetId
         };
         
         if (isPublic) {
@@ -352,6 +352,9 @@ class CloudFormationManager {
       const fs = require('fs');
       const { spawn } = require('child_process');
       
+      // 使用CloudFormation输出的Security Group（与HyperPod相同）
+      console.log(`Using security group: ${securityGroupId}`);
+
       // 生成eksctl配置
       const spotConfig = nodeGroupConfig.useSpotInstances ? `
     instanceType: ${nodeGroupConfig.instanceType}
@@ -408,6 +411,9 @@ managedNodeGroups:
     availabilityZones: ["${targetAZ}"]
     efaEnabled: ${efaSupported}
     privateNetworking: true
+    securityGroups:
+      attachIDs: ["${securityGroupId}"]
+      withShared: false
     iam:
       attachPolicyARNs:
         - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
@@ -442,6 +448,39 @@ managedNodeGroups:
     } catch (error) {
       console.error('Error creating EKS node group config:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 删除EKS节点组
+   * @param {string} nodeGroupName - 节点组名称
+   * @param {string} clusterName - EKS集群名称
+   * @returns {Promise<Object>} 删除结果
+   */
+  static async deleteEksNodeGroup(nodeGroupName, clusterName) {
+    try {
+      const { execSync } = require('child_process');
+      
+      // 使用AWS CLI异步删除nodegroup
+      const deleteCommand = `aws eks delete-nodegroup --cluster-name ${clusterName} --nodegroup-name ${nodeGroupName}`;
+      console.log(`Starting nodegroup deletion: ${deleteCommand}`);
+      
+      const result = execSync(deleteCommand, { 
+        encoding: 'utf8',
+        timeout: 30000 // 30秒超时，AWS CLI应该很快返回
+      });
+      
+      console.log(`AWS CLI delete-nodegroup result: ${result}`);
+      
+      return {
+        success: true,
+        message: `NodeGroup ${nodeGroupName} deletion started`,
+        output: result
+      };
+      
+    } catch (error) {
+      console.error('Error starting EKS nodegroup deletion:', error);
+      throw new Error(`Failed to start nodegroup deletion ${nodeGroupName}: ${error.message}`);
     }
   }
 
@@ -513,6 +552,29 @@ managedNodeGroups:
     } catch (error) {
       console.error('Error creating HyperPod stack:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 获取HyperPod集群的Security Group IDs
+   * @param {string} clusterName - EKS集群名称
+   * @param {string} region - AWS区域
+   * @returns {Promise<Array>} Security Group IDs数组
+   */
+  static async getHyperPodSecurityGroups(clusterName, region) {
+    try {
+      // 根据命名约定生成HyperPod集群名称
+      const hpClusterName = clusterName.replace('eks-cluster-', 'hp-cluster-');
+      
+      const command = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --query 'VpcConfig.SecurityGroupIds' --output json`;
+      const result = execSync(command, { encoding: 'utf8' });
+      const securityGroups = JSON.parse(result);
+      
+      console.log(`Found HyperPod security groups for ${hpClusterName}:`, securityGroups);
+      return securityGroups || [];
+    } catch (error) {
+      console.warn(`Failed to get HyperPod security groups for cluster ${clusterName}:`, error.message);
+      return [];
     }
   }
 

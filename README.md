@@ -50,9 +50,10 @@ For detailed setup instructions, please refer to [Feishu Doc (zh_cn)](https://am
 
 
 ## Upcoming Features
-- (Cluster Building) Multi-type Instance Groups
-- (Cluster Building) Flexible Cluster dependency configuration
-- (Training) TorchTitan/Whisper Training Recipe Integration
-- (Inference) Cross node EP and PD Disaggregated Integration
 
-
+| Type | Feature | Updated At | Target Date |
+|------|---------|-----------|-------------------|
+| Cluster Building | Unified Scaling | 2025-10-19 | TBD |
+| Training | TorchTitan/Whisper Training Recipe Integration | 2025-10-17 | TBD |
+| Inference | Intelligent Routing Support | 2025-10-19 | TBD |
+| Inference | Cross node EP and PD Disaggregated Integration | 2025-10-19 | TBD |

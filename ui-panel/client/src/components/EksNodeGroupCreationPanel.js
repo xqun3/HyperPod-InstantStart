@@ -11,6 +11,7 @@ const EksNodeGroupCreationPanel = ({ onCreated }) => {
   const [clusterInfo, setClusterInfo] = useState(null);
   const [subnets, setSubnets] = useState({ publicSubnets: [], privateSubnets: [], hyperPodSubnets: [] });
   const [hyperPodGroups, setHyperPodGroups] = useState([]);
+  const [eksSecurityGroup, setEksSecurityGroup] = useState(null);
 
   useEffect(() => {
     fetchSubnetInfo();
@@ -33,6 +34,7 @@ const EksNodeGroupCreationPanel = ({ onCreated }) => {
           privateSubnets: result.data.privateSubnets || [],
           hyperPodSubnets: result.data.hyperPodSubnets || []
         });
+        setEksSecurityGroup(result.data.securityGroupId);
       } else {
         message.error(`Failed to fetch subnet info: ${result.error}`);
       }
@@ -127,6 +129,9 @@ const EksNodeGroupCreationPanel = ({ onCreated }) => {
           </Text>
           <Text type="secondary">
             <strong>VPC:</strong> {clusterInfo?.vpcId || 'Loading...'}
+          </Text>
+          <Text type="secondary">
+            <strong>Security Group:</strong> {eksSecurityGroup || 'Loading...'}
           </Text>
         </Space>
 

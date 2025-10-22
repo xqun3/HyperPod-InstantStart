@@ -6424,6 +6424,7 @@ app.get('/api/cluster/subnets', async (req, res) => {
     // 获取CloudFormation输出信息
     const stackInfo = await CloudFormationManager.fetchStackInfo(eksStackName, region);
     const vpcId = stackInfo.VPC_ID;
+    const securityGroupId = stackInfo.SECURITY_GROUP_ID;
     
     if (!vpcId) {
       return res.status(400).json({ success: false, error: 'VPC ID not found in stack outputs' });
@@ -6432,21 +6433,22 @@ app.get('/api/cluster/subnets', async (req, res) => {
     // 获取子网信息
     const subnetInfo = await CloudFormationManager.fetchSubnetInfo(vpcId, region);
     
-    // 获取HyperPod使用的子网
+    // 获取HyperPod使用的子网和Security Group
     let hyperPodSubnets = [];
+    let hyperPodSecurityGroup = null;
     try {
-      const hpClusterName = eksClusterName.replace('eks-cluster-', 'hp-cluster-');
-      const hpCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --output json`;
-      const hpResult = await execAsync(hpCmd);
-      const hpData = JSON.parse(hpResult.stdout);
-      
-      // 从VpcConfig中提取HyperPod使用的子网ID
-      if (hpData.VpcConfig && hpData.VpcConfig.Subnets) {
-        hyperPodSubnets = hpData.VpcConfig.Subnets;
-        console.log('Found HyperPod subnets:', hyperPodSubnets);
+      const hyperPodSecurityGroups = await CloudFormationManager.getHyperPodSecurityGroups(eksClusterName, region);
+      if (hyperPodSecurityGroups.length > 0) {
+        hyperPodSecurityGroup = hyperPodSecurityGroups[0];
       }
+      
+      const hpClusterName = eksClusterName.replace('eks-cluster-', 'hp-cluster-');
+      const hpCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --query 'VpcConfig.Subnets' --output json`;
+      const hpResult = await execAsync(hpCmd);
+      hyperPodSubnets = JSON.parse(hpResult.stdout) || [];
+      console.log('Found HyperPod subnets:', hyperPodSubnets);
     } catch (error) {
-      console.log('No HyperPod cluster found or error fetching HyperPod subnets:', error.message);
+      console.log('No HyperPod cluster found or error fetching HyperPod info:', error.message);
     }
     
     // 标记HyperPod使用的子网
@@ -6465,6 +6467,8 @@ app.get('/api/cluster/subnets', async (req, res) => {
         eksClusterName,
         region,
         vpcId,
+        securityGroupId,
+        hyperPodSecurityGroup,
         ...markedSubnets
       }
     });
@@ -6472,6 +6476,43 @@ app.get('/api/cluster/subnets', async (req, res) => {
   } catch (error) {
     console.error('Error fetching subnets:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 删除EKS节点组
+app.delete('/api/cluster/nodegroup/:nodeGroupName', async (req, res) => {
+  try {
+    const { nodeGroupName } = req.params;
+    const { promisify } = require('util');
+    const execAsync = promisify(require('child_process').exec);
+    
+    // 获取当前活跃集群信息
+    const activeCluster = clusterManager.getActiveCluster();
+    if (!activeCluster) {
+      return res.status(400).json({ success: false, error: 'No active cluster selected' });
+    }
+    
+    // 获取EKS集群名称
+    const initEnvsPath = path.join(__dirname, '../managed_clusters_info', activeCluster, 'config/init_envs');
+    const cmd = `source ${initEnvsPath} && echo $EKS_CLUSTER_NAME`;
+    const result = await execAsync(cmd, { shell: '/bin/bash' });
+    const eksClusterName = result.stdout.trim();
+    
+    if (!eksClusterName) {
+      return res.status(400).json({ success: false, error: 'EKS cluster name not found' });
+    }
+    
+    // 使用CloudFormationManager删除nodegroup
+    const deleteResult = await CloudFormationManager.deleteEksNodeGroup(nodeGroupName, eksClusterName);
+    
+    res.json(deleteResult);
+    
+  } catch (error) {
+    console.error('Error deleting nodegroup:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message
+    });
   }
 });
 

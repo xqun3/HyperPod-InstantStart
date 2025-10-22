@@ -11,6 +11,9 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
   const [loading, setLoading] = useState(false);
   const [scaleLoading, setScaleLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [eksDeleteLoading, setEksDeleteLoading] = useState(false);
+  const [eksDeleteTarget, setEksDeleteTarget] = useState(null);
   const [addInstanceGroupLoading, setAddInstanceGroupLoading] = useState(false);
   const [eksNodeGroups, setEksNodeGroups] = useState([]);
   const [hyperPodGroups, setHyperPodGroups] = useState([]);
@@ -408,6 +411,31 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
     }
   };
 
+  const handleDeleteEksNodeGroup = async (nodeGroupName) => {
+    try {
+      setEksDeleteLoading(true);
+      setEksDeleteTarget(nodeGroupName);
+      
+      const response = await fetch(`/api/cluster/nodegroup/${nodeGroupName}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        message.success(`NodeGroup ${nodeGroupName} deletion started`);
+        await fetchNodeGroups();
+      } else {
+        message.error(`Failed to delete nodegroup: ${result.error}`);
+      }
+    } catch (error) {
+      message.error(`Error deleting nodegroup: ${error.message}`);
+    } finally {
+      setEksDeleteLoading(false);
+      setEksDeleteTarget(null);
+    }
+  };
+
   const renderEKSActions = (record) => (
     <Space>
       <Button 
@@ -416,6 +444,15 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
         onClick={() => handleScale(record, 'eks')}
       >
         Scale
+      </Button>
+      <Button 
+        size="small" 
+        danger
+        icon={<DeleteOutlined />}
+        loading={eksDeleteLoading && eksDeleteTarget === record.name}
+        onClick={() => handleDeleteEksNodeGroup(record.name)}
+      >
+        Delete
       </Button>
     </Space>
   );
@@ -433,7 +470,7 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
         size="small" 
         icon={<DeleteOutlined />}
         danger
-        loading={deleteLoading}
+        loading={deleteLoading && deleteTarget === record.name}
         onClick={() => handleDeleteInstanceGroup(record)}
       >
         Delete
