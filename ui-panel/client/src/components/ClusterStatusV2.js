@@ -138,6 +138,7 @@ const ClusterStatusV2 = ({ clusterData = [], onRefresh }) => {
       title: 'Node Name',
       dataIndex: 'nodeName',
       key: 'nodeName',
+      width: '22%',
       render: (text, record) => (
         <div>
           <Space>
@@ -149,83 +150,90 @@ const ClusterStatusV2 = ({ clusterData = [], onRefresh }) => {
               </Tooltip>
             )}
           </Space>
-          {record.instanceType && record.instanceType !== 'Unknown' && (
-            <div style={{ fontSize: '12px', color: '#666', marginTop: 2 }}>
-              {record.instanceType}
-            </div>
-          )}
         </div>
       ),
     },
     {
-      title: 'Node Type',
-      key: 'nodeType',
+      title: 'Instance Type',
+      dataIndex: 'instanceType',
+      key: 'instanceType',
+      width: '13%',
+      render: (text) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>
+          {text && text !== 'Unknown' ? text : '-'}
+        </span>
+      ),
+    },
+    {
+      title: 'Capacity Type',
+      key: 'capacityType',
+      width: '12%',
       render: (_, record) => {
-        // 根据节点标签判断类型
-        const getNodeTypeInfo = (labels = {}) => {
-          // HyperPod节点
-          if (labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod') {
-            const instanceGroup = labels['sagemaker.amazonaws.com/instance-group-name'] || 'unknown';
-            return {
-              type: 'HyperPod',
-              color: '#722ed1',
-              details: [
-                `Group: ${instanceGroup}`,
-                'SageMaker HyperPod'
-              ]
-            };
-          }
-          
-          // EC2 Karpenter节点
-          if (labels['karpenter.sh/nodepool']) {
-            const capacityType = labels['karpenter.sh/capacity-type'] || 'unknown';
-            const ec2NodePool = labels['karpenter.sh/nodepool'];
-            return {
-              type: 'EC2 Karpenter',
-              color: '#52c41a',
-              details: [
-                `Pool: ${ec2NodePool}`,
-                `Type: ${capacityType === 'spot' ? 'Spot' : 'On-Demand'}`
-              ]
-            };
-          }
-          
-          // EKS NodeGroup节点
-          if (labels['eks.amazonaws.com/nodegroup']) {
-            const nodegroup = labels['eks.amazonaws.com/nodegroup'];
-            const capacityType = labels['eks.amazonaws.com/capacityType'] || 'ON_DEMAND';
-            return {
-              type: 'EKS NodeGroup',
-              color: '#1890ff',
-              details: [
-                `Group: ${nodegroup}`,
-                `Type: ${capacityType === 'SPOT' ? 'Spot' : 'On-Demand'}`
-              ]
-            };
-          }
-          
-          // 未知类型
-          return {
-            type: 'Unknown',
-            color: '#8c8c8c',
-            details: ['Unclassified Node']
-          };
-        };
+        const labels = record.labels || {};
         
-        const nodeTypeInfo = getNodeTypeInfo(record.labels || {});
+        // HyperPod节点
+        if (labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod') {
+          return (
+            <Tag color="#722ed1">HyperPod</Tag>
+          );
+        }
         
-        return (
-          <div>
-            <Tag color={nodeTypeInfo.color} style={{ marginBottom: 4 }}>
-              {nodeTypeInfo.type}
-            </Tag>
-            {nodeTypeInfo.details.map((detail, index) => (
-              <div key={index} style={{ fontSize: '11px', color: '#666' }}>
-                {detail}
+        // EC2 Karpenter节点
+        if (labels['karpenter.sh/nodepool']) {
+          const capacityType = labels['karpenter.sh/capacity-type'] || 'unknown';
+          return (
+            <div>
+              <Tag color="#52c41a">EC2 Karpenter</Tag>
+              <div style={{ fontSize: '11px', color: '#666', marginTop: 2 }}>
+                {capacityType === 'spot' ? 'Spot' : 'On-Demand'}
               </div>
-            ))}
-          </div>
-        );
+            </div>
+          );
+        }
+        
+        // EKS NodeGroup节点
+        if (labels['eks.amazonaws.com/nodegroup']) {
+          const capacityType = labels['eks.amazonaws.com/capacityType'] || 'ON_DEMAND';
+          return (
+            <div>
+              <Tag color="#1890ff">EKS NodeGroup</Tag>
+              <div style={{ fontSize: '11px', color: '#666', marginTop: 2 }}>
+                {capacityType === 'SPOT' ? 'Spot' : 'On-Demand'}
+              </div>
+            </div>
+          );
+        }
+        
+        // 未知类型
+        return <Tag color="#8c8c8c">Unknown</Tag>;
+      },
+    },
+    {
+      title: 'Group/Pool',
+      key: 'groupPool',
+      width: '13%',
+      render: (_, record) => {
+        const labels = record.labels || {};
+        
+        // HyperPod节点
+        if (labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod') {
+          const instanceGroup = labels['sagemaker.amazonaws.com/instance-group-name'] || 'unknown';
+          return <span style={{ fontSize: '12px' }}>Group: {instanceGroup}</span>;
+        }
+        
+        // EC2 Karpenter节点
+        if (labels['karpenter.sh/nodepool']) {
+          const ec2NodePool = labels['karpenter.sh/nodepool'];
+          return <span style={{ fontSize: '12px' }}>Pool: {ec2NodePool}</span>;
+        }
+        
+        // EKS NodeGroup节点
+        if (labels['eks.amazonaws.com/nodegroup']) {
+          const nodegroup = labels['eks.amazonaws.com/nodegroup'];
+          return <span style={{ fontSize: '12px' }}>Group: {nodegroup}</span>;
+        }
+        
+        return <span style={{ color: '#8c8c8c' }}>-</span>;
       },
     },
     {
