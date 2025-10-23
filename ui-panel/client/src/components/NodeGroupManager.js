@@ -34,7 +34,7 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
   const getEffectiveDependenciesStatus = () => {
     // 如果cluster对象存在且有dependencies信息，优先使用
     if (cluster?.dependencies) {
-      return cluster.dependencies.effectiveStatus || cluster.dependencies.configured;
+      return cluster.dependencies.configured;  // 统一使用configured字段
     }
     // 兼容旧的简单状态
     return dependenciesConfigured;
@@ -414,28 +414,37 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
   };
 
   const handleDeleteEksNodeGroup = async (nodeGroupName) => {
-    try {
-      setEksDeleteLoading(true);
-      setEksDeleteTarget(nodeGroupName);
-      
-      const response = await fetch(`/api/cluster/nodegroup/${nodeGroupName}`, {
-        method: 'DELETE'
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        message.success(`NodeGroup ${nodeGroupName} deletion started`);
-        await fetchNodeGroups();
-      } else {
-        message.error(`Failed to delete nodegroup: ${result.error}`);
+    Modal.confirm({
+      title: 'Delete EKS Node Group',
+      content: `Are you sure you want to delete the node group "${nodeGroupName}"? This action cannot be undone.`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setEksDeleteLoading(true);
+          setEksDeleteTarget(nodeGroupName);
+          
+          const response = await fetch(`/api/cluster/nodegroup/${nodeGroupName}`, {
+            method: 'DELETE'
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            message.success(`NodeGroup ${nodeGroupName} deletion started`);
+            await fetchNodeGroups();
+          } else {
+            message.error(`Failed to delete nodegroup: ${result.error}`);
+          }
+        } catch (error) {
+          message.error(`Error deleting nodegroup: ${error.message}`);
+        } finally {
+          setEksDeleteLoading(false);
+          setEksDeleteTarget(null);
+        }
       }
-    } catch (error) {
-      message.error(`Error deleting nodegroup: ${error.message}`);
-    } finally {
-      setEksDeleteLoading(false);
-      setEksDeleteTarget(null);
-    }
+    });
   };
 
   const renderEKSActions = (record) => (

@@ -4718,25 +4718,21 @@ app.get('/api/cluster/nodegroups', async (req, res) => {
       if (fs.existsSync(clusterInfoPath)) {
         const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
         
-        // 1. 优先使用用户创建的HyperPod集群
-        const userCreatedClusters = clusterInfo.hyperPodClusters?.userCreated || [];
-        // 2. 然后使用检测到的HyperPod集群
-        const detectedClusters = clusterInfo.hyperPodClusters?.detected || [];
-        
-        const allClusters = [...userCreatedClusters, ...detectedClusters];
-        console.log(`Found ${userCreatedClusters.length} user-created and ${detectedClusters.length} detected HyperPod clusters`);
-        
-        // 为每个HyperPod集群获取详细信息
-        for (const cluster of allClusters) {
+        // 使用新的hyperPodCluster结构，动态获取最新状态
+        if (clusterInfo.hyperPodCluster) {
+          const hpClusterName = clusterInfo.hyperPodCluster.ClusterName;
+          console.log(`Found HyperPod cluster: ${hpClusterName}, fetching latest status...`);
+          
           try {
-            const hpCmd = `aws sagemaker describe-cluster --cluster-name ${cluster.name} --region ${region} --output json`;
-            const hpResult = await execAsync(hpCmd);
-            const hpData = JSON.parse(hpResult.stdout);
+            // 使用AWS Helper动态获取最新的HyperPod集群状态
+            const AWSHelpers = require('./utils/awsHelpers');
+            const hpData = await AWSHelpers.describeHyperPodCluster(hpClusterName, region);
             
             for (const instanceGroup of hpData.InstanceGroups || []) {
               hyperPodGroups.push({
-                clusterName: cluster.name,
+                clusterName: hpData.ClusterName,
                 clusterArn: hpData.ClusterArn,
+                clusterStatus: hpData.ClusterStatus, // 添加集群级别状态
                 name: instanceGroup.InstanceGroupName,
                 status: instanceGroup.Status,
                 instanceType: instanceGroup.InstanceType,
@@ -4746,8 +4742,10 @@ app.get('/api/cluster/nodegroups', async (req, res) => {
               });
             }
           } catch (hpError) {
-            console.warn(`Failed to get details for HyperPod cluster ${cluster.name}:`, hpError.message);
+            console.warn(`Failed to get latest HyperPod cluster status for ${hpClusterName}:`, hpError.message);
           }
+        } else {
+          console.log('No HyperPod cluster found in metadata');
         }
       } else {
         console.log('No cluster metadata found, no HyperPod clusters available');
@@ -4871,16 +4869,12 @@ app.put('/api/cluster/hyperpod/instances/:name/scale', async (req, res) => {
       return res.status(400).json({ error: 'Cluster info not found' });
     }
     
-    const hyperPodClusters = [
-      ...(clusterInfo.hyperPodClusters?.userCreated || []),
-      ...(clusterInfo.hyperPodClusters?.detected || [])
-    ];
-    
-    if (hyperPodClusters.length === 0) {
-      return res.status(400).json({ error: 'No HyperPod clusters found for this EKS cluster' });
+    // 使用新的hyperPodCluster结构
+    if (!clusterInfo.hyperPodCluster) {
+      return res.status(400).json({ error: 'No HyperPod cluster found for this EKS cluster' });
     }
     
-    const hpClusterName = hyperPodClusters[0].name;
+    const hpClusterName = clusterInfo.hyperPodCluster.ClusterName;
     
     // HyperPod需要完整的实例组配置，不能只更新InstanceCount
     // 我们需要先获取当前配置，然后更新InstanceCount
@@ -5035,25 +5029,22 @@ app.post('/api/cluster/hyperpod/add-instance-group', async (req, res) => {
     }
 
     const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
-    const userCreatedClusters = clusterInfo.hyperPodClusters?.userCreated || [];
-    const detectedClusters = clusterInfo.hyperPodClusters?.detected || [];
-    const allClusters = [...userCreatedClusters, ...detectedClusters];
-
-    if (allClusters.length === 0) {
+    
+    // 使用新的hyperPodCluster结构
+    if (!clusterInfo.hyperPodCluster) {
       return res.status(400).json({ error: 'No HyperPod cluster found' });
     }
 
-    // 使用第一个HyperPod集群
-    const hyperPodCluster = allClusters[0];
+    const hyperPodCluster = clusterInfo.hyperPodCluster;
     
     // 获取现有集群的详细信息
-    const describeCmd = `aws sagemaker describe-cluster --cluster-name ${hyperPodCluster.name} --region ${region} --output json`;
+    const describeCmd = `aws sagemaker describe-cluster --cluster-name ${hyperPodCluster.ClusterName} --region ${region} --output json`;
     const describeResult = await execAsync(describeCmd);
     const clusterData = JSON.parse(describeResult.stdout);
 
     // 构建实例组配置
     const instanceGroupConfig = {
-      ClusterName: hyperPodCluster.name,
+      ClusterName: hyperPodCluster.ClusterName,
       InstanceGroups: [
         {
           InstanceCount: userConfig.instanceCount,
@@ -5150,21 +5141,18 @@ app.post('/api/cluster/hyperpod/delete-instance-group', async (req, res) => {
     }
 
     const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
-    const userCreatedClusters = clusterInfo.hyperPodClusters?.userCreated || [];
-    const detectedClusters = clusterInfo.hyperPodClusters?.detected || [];
-    const allClusters = [...userCreatedClusters, ...detectedClusters];
-
-    if (allClusters.length === 0) {
+    
+    // 使用新的hyperPodCluster结构
+    if (!clusterInfo.hyperPodCluster) {
       return res.status(400).json({ error: 'No HyperPod cluster found' });
     }
 
-    // 使用第一个HyperPod集群
-    const hyperPodCluster = allClusters[0];
+    const hyperPodCluster = clusterInfo.hyperPodCluster;
     
-    console.log(`Deleting instance group "${instanceGroupName}" from cluster "${hyperPodCluster.name}"`);
+    console.log(`Deleting instance group "${instanceGroupName}" from cluster "${hyperPodCluster.ClusterName}"`);
 
     // 调用AWS CLI删除实例组
-    const deleteCmd = `aws sagemaker update-cluster --cluster-name ${hyperPodCluster.name} --instance-groups-to-delete ${instanceGroupName} --region ${region}`;
+    const deleteCmd = `aws sagemaker update-cluster --cluster-name ${hyperPodCluster.ClusterName} --instance-groups-to-delete ${instanceGroupName} --region ${region}`;
     const deleteResult = await execAsync(deleteCmd);
 
     console.log('Instance group deletion result:', deleteResult.stdout);
@@ -5469,32 +5457,16 @@ async function registerCompletedHyperPod(clusterTag) {
         const hpResult = await execAsync(hpCmd);
         const hpData = JSON.parse(hpResult.stdout);
         
-        // 初始化hyperPodClusters结构（如果不存在）
-        if (!clusterInfo.hyperPodClusters) {
-          clusterInfo.hyperPodClusters = {
-            detected: [],
-            userCreated: []
-          };
-        }
+        // 添加来源标识到原始数据
+        hpData.source = 'ui-created';
         
-        // 添加到userCreated列表
-        const hyperPodInfo = {
-          name: hpData.ClusterName,
-          arn: hpData.ClusterArn,
-          status: hpData.ClusterStatus,
-          creationTime: hpData.CreationTime
-        };
+        // 保存完整的HyperPod集群信息（替换旧的结构）
+        clusterInfo.hyperPodCluster = hpData;
+        clusterInfo.lastModified = new Date().toISOString();
         
-        // 检查是否已存在，避免重复添加
-        const exists = clusterInfo.hyperPodClusters.userCreated.some(cluster => cluster.name === hyperPodInfo.name);
-        if (!exists) {
-          clusterInfo.hyperPodClusters.userCreated.push(hyperPodInfo);
-          clusterInfo.lastModified = new Date().toISOString();
-          
-          // 保存更新后的metadata
-          fs.writeFileSync(clusterInfoPath, JSON.stringify(clusterInfo, null, 2));
-          console.log(`Added HyperPod cluster ${hyperPodClusterName} to userCreated list`);
-        }
+        // 保存更新后的metadata
+        fs.writeFileSync(clusterInfoPath, JSON.stringify(clusterInfo, null, 2));
+        console.log(`Saved complete HyperPod cluster info for ${clusterTag} (ui-created)`);
         
       } catch (error) {
         console.warn('Failed to get HyperPod cluster details for metadata:', error.message);
@@ -5728,6 +5700,26 @@ async function registerCompletedCluster(clusterTag, status = 'active') {
     
     const creationMetadata = JSON.parse(fs.readFileSync(creationMetadataPath, 'utf8'));
     
+    // 获取CloudFormation Stack输出
+    let stackOutputs = {};
+    try {
+      const stackStatus = await CloudFormationManager.getStackStatus(
+        creationMetadata.cloudFormation.stackName,
+        creationMetadata.userConfig.awsRegion
+      );
+      
+      if (stackStatus.outputs && stackStatus.outputs.length > 0) {
+        // 将输出数组转换为键值对对象
+        stackOutputs = stackStatus.outputs.reduce((acc, output) => {
+          acc[output.OutputKey] = output.OutputValue;
+          return acc;
+        }, {});
+        console.log(`Retrieved CloudFormation outputs for ${clusterTag}:`, Object.keys(stackOutputs));
+      }
+    } catch (error) {
+      console.error(`Failed to get CloudFormation outputs for ${clusterTag}:`, error);
+    }
+    
     // 生成cluster_info.json（兼容现有格式 + 新增dependencies字段）
     const clusterInfo = {
       clusterTag: clusterTag,
@@ -5752,13 +5744,31 @@ async function registerCompletedCluster(clusterTag, status = 'active') {
       },
       cloudFormation: {
         stackName: creationMetadata.cloudFormation.stackName,
-        stackId: creationMetadata.cloudFormation.stackId
+        stackId: creationMetadata.cloudFormation.stackId,
+        outputs: stackOutputs
+      },
+      eksCluster: {
+        name: stackOutputs.OutputEKSClusterName || `eks-cluster-${clusterTag}`,
+        arn: stackOutputs.OutputEKSClusterArn || null,
+        vpcId: stackOutputs.OutputVpcId || null,
+        securityGroupId: stackOutputs.OutputSecurityGroupId || null,
+        privateSubnetIds: stackOutputs.OutputPrivateSubnetIds || null,
+        s3BucketName: stackOutputs.OutputS3BucketName || null,
+        sageMakerRoleArn: stackOutputs.OutputSageMakerIAMRoleArn || null
       }
     };
     
     // 保存cluster_info.json
     const clusterInfoPath = path.join(metadataDir, 'cluster_info.json');
     fs.writeFileSync(clusterInfoPath, JSON.stringify(clusterInfo, null, 2));
+    
+    // 更新creation_metadata.json，添加CloudFormation输出
+    if (Object.keys(stackOutputs).length > 0) {
+      creationMetadata.cloudFormation.outputs = stackOutputs;
+      creationMetadata.cloudFormation.outputsRetrievedAt = new Date().toISOString();
+      fs.writeFileSync(creationMetadataPath, JSON.stringify(creationMetadata, null, 2));
+      console.log(`Updated creation_metadata.json with CloudFormation outputs for ${clusterTag}`);
+    }
     
     console.log(`Successfully registered cluster: ${clusterTag}`);
     
@@ -5802,6 +5812,13 @@ app.post('/api/cluster/configure-dependencies', async (req, res) => {
     const clusterInfo = await getClusterInfo(activeCluster);
     if (!clusterInfo) {
       return res.status(400).json({ error: 'Active cluster not found' });
+    }
+
+    // 检查是否为导入的EKS+HyperPod集群（不需要配置依赖）
+    if (clusterInfo.hyperPodCluster && clusterInfo.type === 'imported') {
+      return res.status(400).json({ 
+        error: 'Dependencies configuration not needed for imported clusters with HyperPod' 
+      });
     }
 
     // 检查是否已配置或正在配置中
@@ -6198,15 +6215,29 @@ app.get('/api/cluster/info', async (req, res) => {
     
     const eksClusterName = await getEnvVar('EKS_CLUSTER_NAME');
     const region = await getEnvVar('AWS_REGION');
-    let vpcId = await getEnvVar('VPC_ID', stackEnvsPath);
     
-    // 如果从stack_envs获取不到VPC_ID（导入的集群），通过AWS API获取
+    // 优先从metadata获取VPC ID（适用于创建的集群）
+    const MetadataUtils = require('./utils/metadataUtils');
+    let vpcId = null;
+    
+    if (MetadataUtils.isCreatedCluster(activeCluster)) {
+      const eksInfo = MetadataUtils.getEKSClusterInfo(activeCluster);
+      vpcId = eksInfo.vpcId;
+      console.log(`Retrieved VPC ID from metadata for created cluster ${activeCluster}: ${vpcId}`);
+    }
+    
+    // 如果metadata中没有，尝试从stack_envs获取
+    if (!vpcId) {
+      vpcId = await getEnvVar('VPC_ID', stackEnvsPath);
+    }
+    
+    // 如果仍然获取不到（导入的集群），通过AWS API获取
     if (!vpcId && eksClusterName && region) {
       try {
         const cmd = `aws eks describe-cluster --name ${eksClusterName} --region ${region} --query 'cluster.resourcesVpcConfig.vpcId' --output text`;
         const result = await execAsync(cmd);
         vpcId = result.stdout.trim();
-        console.log(`Retrieved VPC ID for imported cluster ${eksClusterName}: ${vpcId}`);
+        console.log(`Retrieved VPC ID via AWS API for cluster ${eksClusterName}: ${vpcId}`);
       } catch (error) {
         console.warn(`Failed to get VPC ID for cluster ${eksClusterName}:`, error.message);
         vpcId = null;
@@ -6298,21 +6329,41 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
       });
     }
     
-    // 获取EKS集群信息
-    const initEnvsPath = path.join(__dirname, '../managed_clusters_info', activeCluster, 'config/init_envs');
-    console.log('Init envs path:', initEnvsPath);
-    const getEnvVar = async (varName) => {
-      const cmd = `source ${initEnvsPath} && echo $${varName}`;
-      const result = await execAsync(cmd, { shell: '/bin/bash' });
-      return result.stdout.trim();
-    };
+    // 获取EKS集群信息 - 从metadata获取（兼容创建和导入的集群）
+    const MetadataUtils = require('./utils/metadataUtils');
     
-    const eksStackName = await getEnvVar('CLOUD_FORMATION_FULL_STACK_NAME');
-    const region = await getEnvVar('AWS_REGION');
+    // 获取EKS集群基本信息
+    const eksClusterInfo = MetadataUtils.getEKSClusterInfo(activeCluster);
+    const region = MetadataUtils.getClusterRegion(activeCluster);
     
-    if (!eksStackName || !region) {
-      return res.status(400).json({ success: false, error: 'Missing EKS cluster configuration' });
+    if (!eksClusterInfo || !region) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'EKS cluster information not found in metadata' 
+      });
     }
+    
+    console.log('EKS cluster info from metadata:', eksClusterInfo);
+    
+    // 获取NAT Gateway ID（动态获取）
+    const ClusterDependencyManager = require('./utils/clusterDependencyManager');
+    const natGatewayId = await ClusterDependencyManager.getNatGatewayId(eksClusterInfo.vpcId, region);
+    
+    // 从SageMaker角色ARN中提取角色名称
+    const sageMakerRoleName = eksClusterInfo.sageMakerRoleArn ? 
+      eksClusterInfo.sageMakerRoleArn.split('/').pop() : null;
+    
+    // 构建EKS基础设施信息（从metadata获取，与CloudFormationManager.fetchStackInfo格式对齐）
+    const eksInfrastructureInfo = {
+      VPC_ID: eksClusterInfo.vpcId,
+      SECURITY_GROUP_ID: eksClusterInfo.securityGroupId,
+      PRIVATE_SUBNET_ID: eksClusterInfo.privateSubnetIds,
+      EKS_CLUSTER_NAME: eksClusterInfo.name,
+      SAGEMAKER_ROLE_ARN: eksClusterInfo.sageMakerRoleArn,
+      SAGEMAKER_ROLE_NAME: sageMakerRoleName,
+      S3_BUCKET_NAME: eksClusterInfo.s3BucketName,
+      NAT_GATEWAY_ID: natGatewayId
+    };
     
     // 生成HyperPod配置
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
@@ -6328,8 +6379,13 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
     const azResult = execSync(azCommand, { encoding: 'utf8' });
     const availabilityZoneId = azResult.trim();
     
-    // 获取EKS基础设施信息
-    const stackInfo = await CloudFormationManager.fetchStackInfo(eksStackName, region);
+    // 验证必需的基础设施信息
+    if (!eksInfrastructureInfo.VPC_ID || !eksInfrastructureInfo.SECURITY_GROUP_ID) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required EKS infrastructure information (VPC or Security Group)' 
+      });
+    }
     
     // 生成CIDR配置
     const cidrResponse = await fetch('http://localhost:3001/api/cluster/generate-cidr-config', {
@@ -6380,7 +6436,7 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
     const stackResult = await CloudFormationManager.createHyperPodStack(
       hyperPodStackName,
       region,
-      stackInfo,
+      eksInfrastructureInfo,
       hyperPodConfig
     );
     
@@ -6390,7 +6446,7 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
       stackId: stackResult.stackId,
       region: region,
       userConfig: userConfig,
-      infrastructureInfo: stackInfo,
+      infrastructureInfo: eksInfrastructureInfo,  // 从metadata构建的EKS基础设施信息
       createdAt: new Date().toISOString()
     });
     
@@ -6484,7 +6540,6 @@ app.get('/api/cluster/subnets', async (req, res) => {
   try {
     const { promisify } = require('util');
     const execAsync = promisify(require('child_process').exec);
-    const path = require('path');
     
     // 获取当前活跃集群信息
     const activeCluster = clusterManager.getActiveCluster();
@@ -6492,32 +6547,25 @@ app.get('/api/cluster/subnets', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active cluster selected' });
     }
     
-    // 获取集群配置
-    const initEnvsPath = path.join(__dirname, '../managed_clusters_info', activeCluster, 'config/init_envs');
-    const getEnvVar = async (varName) => {
-      const cmd = `source ${initEnvsPath} && echo $${varName}`;
-      const result = await execAsync(cmd, { shell: '/bin/bash' });
-      return result.stdout.trim();
-    };
+    // 从metadata获取集群信息
+    const MetadataUtils = require('./utils/metadataUtils');
+    const clusterInfo = MetadataUtils.getClusterInfo(activeCluster);
     
-    const eksStackName = await getEnvVar('CLOUD_FORMATION_FULL_STACK_NAME');
-    const region = await getEnvVar('AWS_REGION');
-    const eksClusterName = await getEnvVar('EKS_CLUSTER_NAME');
-    
-    if (!eksStackName || !region) {
-      return res.status(400).json({ success: false, error: 'Missing EKS cluster configuration' });
+    if (!clusterInfo) {
+      return res.status(400).json({ success: false, error: 'Cluster metadata not found' });
     }
     
-    // 获取CloudFormation输出信息
-    const stackInfo = await CloudFormationManager.fetchStackInfo(eksStackName, region);
-    const vpcId = stackInfo.VPC_ID;
-    const securityGroupId = stackInfo.SECURITY_GROUP_ID;
+    // 从metadata获取基本信息
+    const eksClusterName = clusterInfo.eksCluster.name;
+    const region = clusterInfo.region;
+    const vpcId = clusterInfo.eksCluster.vpcId;
+    const securityGroupId = clusterInfo.eksCluster.securityGroupId;
     
     if (!vpcId) {
-      return res.status(400).json({ success: false, error: 'VPC ID not found in stack outputs' });
+      return res.status(400).json({ success: false, error: 'VPC ID not found in metadata' });
     }
     
-    // 获取子网信息
+    // 获取子网信息（仍需要动态获取，因为子网信息不在metadata中）
     const subnetInfo = await CloudFormationManager.fetchSubnetInfo(vpcId, region);
     
     // 获取HyperPod使用的子网和Security Group

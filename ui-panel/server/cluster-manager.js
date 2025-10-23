@@ -370,35 +370,39 @@ class ClusterManager {
     // 创建基础cluster_info.json
     const clusterInfo = {
       clusterTag,
+      region: importConfig.AWS_REGION,  // 统一region字段位置
       status: 'imported',
-      lastModified: new Date().toISOString(),
-      config: {
-        clusterTag,
-        awsRegion: importConfig.AWS_REGION,
-        eksClusterName: importConfig.EKS_CLUSTER_NAME,
-        clusterType: 'imported'
-      },
       type: 'imported',
-      hasHyperPod: hasHyperPod,
+      createdAt: new Date().toISOString(),  // 统一使用createdAt
+      lastModified: new Date().toISOString(),
+      source: 'ui-panel-import',  // 统一source字段
       // 根据是否有HyperPod设置不同的依赖状态
       dependencies: hasHyperPod ? {
         // 有HyperPod的导入集群：不需要配置依赖
-        detected: false,
-        effectiveStatus: false
-        // 不设置configured字段，表示N/A状态
+        configured: false,
+        status: 'pending',
+        lastAttempt: null,
+        lastSuccess: null,
+        components: {
+          helmDependencies: false,
+          nlbController: false,
+          s3CsiDriver: false,
+          kuberayOperator: false,
+          certManager: false
+        }
       } : {
         // 纯EKS导入集群：需要配置依赖
         configured: false,
-        detected: false,
-        effectiveStatus: false
-      },
-      hyperPodClusters: {
-        detected: [],
-        userCreated: []
-      },
-      nodeGroups: {
-        detected: [],
-        userCreated: []
+        status: 'pending',
+        lastAttempt: null,
+        lastSuccess: null,
+        components: {
+          helmDependencies: false,
+          nlbController: false,
+          s3CsiDriver: false,
+          kuberayOperator: false,
+          certManager: false
+        }
       }
     };
     
@@ -421,26 +425,12 @@ class ClusterManager {
     
     const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
     
-    // 更新检测状态
-    clusterInfo.dependencies = detectedState?.dependencies ? {
-      configured: clusterInfo.dependencies?.configured || false,
-      detected: true,
-      effectiveStatus: detectedState.dependencies.configured,
-      components: detectedState.dependencies.components,
-      lastDetected: detectedState.dependencies.lastDetected
-    } : clusterInfo.dependencies;
+    // 更新依赖检测状态（保持与创建集群一致的结构）
+    if (detectedState?.dependencies) {
+      clusterInfo.dependencies.components = detectedState.dependencies.components;
+      // 不添加detected、effectiveStatus等字段，保持与创建集群一致
+    }
     
-    clusterInfo.hyperPodClusters = {
-      detected: detectedState?.hyperPodClusters || [],
-      userCreated: clusterInfo.hyperPodClusters?.userCreated || []
-    };
-    
-    clusterInfo.nodeGroups = {
-      detected: detectedState?.nodeGroups || [],
-      userCreated: clusterInfo.nodeGroups?.userCreated || []
-    };
-    
-    clusterInfo.detectedAt = detectedState?.detectedAt || new Date().toISOString();
     clusterInfo.lastModified = new Date().toISOString();
     
     fs.writeFileSync(clusterInfoPath, JSON.stringify(clusterInfo, null, 2));
@@ -559,10 +549,6 @@ export DEPLOY_MODEL_S3_BUCKET=cluster-mount-${clusterTag}
 export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export STACK_ID=${stackName || `full-stack-${clusterTag}`}
 export AWS_AZ=$(aws ec2 describe-availability-zones --region ${awsRegion} --query "AvailabilityZones[?ZoneName=='${gpuCapacityAz || ''}'].ZoneId" --output text)
-
-export CURRENT_ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
-export CURRENT_ROLE_NAME=$(echo "$CURRENT_ROLE_ARN" | sed 's/.*role\\///' | sed 's/\\/.*//')
-export IAM_ROLE_ARN=arn:aws:iam::$ACCOUNT_ID:role/$CURRENT_ROLE_NAME
 
 export CURRENT_ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
 export CURRENT_ROLE_NAME=$(echo "$CURRENT_ROLE_ARN" | sed 's/.*role\\///' | sed 's/\\/.*//')

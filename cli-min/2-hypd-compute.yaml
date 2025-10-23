@@ -301,6 +301,24 @@ Resources:
 Outputs:
   HyperPodClusterName:
     Value: !GetAtt HyperPodClusterStack.Outputs.HyperPodClusterName
+    Description: HyperPod cluster name
 
   HyperPodClusterArn:
     Value: !GetAtt HyperPodClusterStack.Outputs.HyperPodClusterArn
+    Description: HyperPod cluster ARN
+
+  PrivateSubnetId:
+    Value: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetId
+    Description: Private subnet ID created for HyperPod
+
+  PrivateRouteTableId:
+    Value: !GetAtt PrivateSubnetStack.Outputs.PrivateRouteTableId
+    Description: Private route table ID
+
+  VpcId:
+    Value: !Ref ExistingVpcId
+    Description: VPC ID used by HyperPod cluster
+
+  SecurityGroupId:
+    Value: !Ref ExistingSecurityGroupId
+    Description: Security group ID used by HyperPod cluster

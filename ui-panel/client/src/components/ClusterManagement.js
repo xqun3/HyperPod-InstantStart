@@ -102,7 +102,7 @@ const DependencyStatus = ({ cluster, dependenciesConfigured }) => {
 };
 
 // 依赖配置按钮组件
-const DependencyConfigButton = ({ clusterTag, refreshTrigger }) => {
+const DependencyConfigButton = ({ clusterTag, refreshTrigger, currentCluster }) => {
   const [depStatus, setDepStatus] = useState(null);
   const [configuring, setConfiguring] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -178,6 +178,16 @@ const DependencyConfigButton = ({ clusterTag, refreshTrigger }) => {
         disabled: true,
         type: 'default',
         icon: <SettingOutlined />
+      };
+    }
+
+    // 检查是否为导入的EKS+HyperPod集群（不需要配置依赖）
+    if (currentCluster?.hyperPodCluster && currentCluster?.type === 'imported') {
+      return {
+        text: 'Dependencies N/A',
+        disabled: true,
+        type: 'default',
+        icon: <CheckCircleOutlined />
       };
     }
 
@@ -1025,6 +1035,7 @@ const ClusterManagement = () => {
                                 <DependencyConfigButton 
                                   clusterTag={activeCluster} 
                                   refreshTrigger={refreshTrigger}
+                                  currentCluster={clusters.find(c => c.clusterTag === activeCluster)}
                                 />
                               )}
                               <Button 

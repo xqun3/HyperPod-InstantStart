@@ -55,9 +55,29 @@ class ClusterDependencyManager {
   /**
    * 获取CloudFormation Stack的输出信息
    */
-  static async fetchCloudFormationOutputs(clusterConfigDir) {
+  static async fetchCloudFormationOutputs(clusterConfigDir, clusterTag = null) {
     console.log('Fetching CloudFormation outputs...');
     
+    // 如果提供了clusterTag，尝试从metadata获取
+    if (clusterTag) {
+      const MetadataUtils = require('./metadataUtils');
+      
+      // 对于创建的集群和导入的集群，都尝试从metadata获取
+      const clusterType = MetadataUtils.getClusterType(clusterTag);
+      if (clusterType === 'created' || clusterType === 'imported') {
+        console.log(`Using metadata for ${clusterType} cluster: ${clusterTag}`);
+        const stackEnvsContent = MetadataUtils.generateStackEnvsFromMetadata(clusterTag);
+        
+        const stackEnvsPath = path.join(clusterConfigDir, 'stack_envs');
+        fs.writeFileSync(stackEnvsPath, stackEnvsContent);
+        
+        console.log('Generated stack_envs from metadata');
+        return stackEnvsPath;
+      }
+    }
+    
+    // 对于未知类型的集群或未提供clusterTag的情况，从CloudFormation API获取
+    console.log('Fetching from CloudFormation API...');
     const fetchCmd = `cd ${clusterConfigDir} && bash -c 'source init_envs && 
 aws cloudformation describe-stacks --stack-name $CLOUD_FORMATION_FULL_STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[*].[OutputKey,OutputValue]" --output text | 
 while read -r key value; do
@@ -439,7 +459,7 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
         throw new Error(`Cluster config directory not found: ${configDir}`);
       }
       
-      await this.fetchCloudFormationOutputs(configDir);
+      await this.fetchCloudFormationOutputs(configDir, clusterTag);
       
       await this.configureKubectlAndOIDC(configDir);
       
@@ -528,6 +548,29 @@ helm uninstall hyperpod-dependencies -n kube-system || true'`;
     } catch (error) {
       console.error('Error cleaning up dependencies:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 获取VPC中的NAT Gateway ID
+   * @param {string} vpcId - VPC ID
+   * @param {string} region - AWS区域
+   * @returns {Promise<string>} NAT Gateway ID
+   */
+  static async getNatGatewayId(vpcId, region) {
+    try {
+      const command = `aws ec2 describe-nat-gateways --region ${region} --filter "Name=vpc-id,Values=${vpcId}" "Name=state,Values=available" --query 'NatGateways[0].NatGatewayId' --output text`;
+      const result = execSync(command, { encoding: 'utf8' }).trim();
+      
+      if (result === 'None' || !result) {
+        console.warn(`No available NAT Gateway found in VPC ${vpcId}`);
+        return 'nat-placeholder';
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting NAT Gateway:', error);
+      return 'nat-placeholder';
     }
   }
 }

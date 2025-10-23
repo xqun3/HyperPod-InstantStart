@@ -660,10 +660,20 @@ class MultiClusterAPIs {
       // 8. 更新配置文件包含检测状态
       await this.clusterManager.updateImportConfigWithDetectedState(eksClusterName, detectedState);
       
-      // 9. 设置为活跃集群
+      // 9. 获取并保存集群资源信息（与创建集群格式对齐）
+      try {
+        const MetadataUtils = require('./utils/metadataUtils');
+        await MetadataUtils.saveImportedClusterResources(eksClusterName, eksClusterName, awsRegion, hyperPodClusters);
+        console.log(`Successfully saved imported cluster resources for: ${eksClusterName}`);
+      } catch (error) {
+        console.warn(`Failed to save imported cluster resources: ${error.message}`);
+        // 不阻断导入流程，但记录警告
+      }
+      
+      // 10. 设置为活跃集群
       this.clusterManager.setActiveCluster(eksClusterName);
 
-      // 10. 获取节点数量
+      // 11. 获取节点数量
       const nodeCount = await this.getNodeCount();
       
       res.json({
