@@ -32,6 +32,11 @@ const NodeGroupManager = ({ dependenciesConfigured = false, activeCluster, onDep
 
   // 计算有效的依赖配置状态
   const getEffectiveDependenciesStatus = () => {
+    // 对于导入的EKS+HyperPod集群，不受依赖配置约束
+    if (cluster?.type === 'imported' && cluster?.hyperPodCluster) {
+      return true;
+    }
+    
     // 如果cluster对象存在且有dependencies信息，优先使用
     if (cluster?.dependencies) {
       return cluster.dependencies.configured;  // 统一使用configured字段

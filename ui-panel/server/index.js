@@ -4876,8 +4876,7 @@ app.put('/api/cluster/hyperpod/instances/:name/scale', async (req, res) => {
     
     const hpClusterName = clusterInfo.hyperPodCluster.ClusterName;
     
-    // HyperPod需要完整的实例组配置，不能只更新InstanceCount
-    // 我们需要先获取当前配置，然后更新InstanceCount
+    // 动态获取当前实例组的完整配置
     const getCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region}`;
     const getResult = await execAsync(getCmd);
     const clusterData = JSON.parse(getResult.stdout);
@@ -4888,24 +4887,29 @@ app.put('/api/cluster/hyperpod/instances/:name/scale', async (req, res) => {
       throw new Error(`Instance group ${name} not found`);
     }
     
-    // 构建更新命令，使用完整的实例组配置
-    const updateInstanceGroup = {
-      InstanceGroupName: instanceGroup.InstanceGroupName,
-      InstanceType: instanceGroup.InstanceType,
-      InstanceCount: targetCount,
-      ExecutionRole: instanceGroup.ExecutionRole,
-      LifeCycleConfig: instanceGroup.LifeCycleConfig
-    };
+    // 根据AWS CLI文档，update-cluster支持的字段
+    const allowedFields = [
+      'InstanceCount', 'InstanceGroupName', 'InstanceType', 'LifeCycleConfig',
+      'ExecutionRole', 'ThreadsPerCore', 'InstanceStorageConfigs', 
+      'OnStartDeepHealthChecks', 'TrainingPlanArn', 'OverrideVpcConfig', 
+      'ScheduledUpdateConfig', 'ImageId'
+    ];
     
-    // 添加可选参数
-    if (instanceGroup.ThreadsPerCore) {
-      updateInstanceGroup.ThreadsPerCore = instanceGroup.ThreadsPerCore;
-    }
-    if (instanceGroup.InstanceStorageConfigs) {
-      updateInstanceGroup.InstanceStorageConfigs = instanceGroup.InstanceStorageConfigs;
-    }
+    // 构建更新配置，只保留允许的字段
+    const updateInstanceGroup = {};
+    allowedFields.forEach(field => {
+      if (instanceGroup.hasOwnProperty(field)) {
+        updateInstanceGroup[field] = instanceGroup[field];
+      }
+    });
+    
+    // 修改InstanceCount为目标值
+    updateInstanceGroup.InstanceCount = targetCount;
     
     const cmd = `aws sagemaker update-cluster --cluster-name ${hpClusterName} --instance-groups '${JSON.stringify(updateInstanceGroup)}' --region ${region}`;
+    
+    console.log('Executing HyperPod scaling command:', cmd);
+    console.log('Update instance group object:', JSON.stringify(updateInstanceGroup, null, 2));
     
     await execAsync(cmd);
     
@@ -6572,18 +6576,29 @@ app.get('/api/cluster/subnets', async (req, res) => {
     let hyperPodSubnets = [];
     let hyperPodSecurityGroup = null;
     try {
-      const hyperPodSecurityGroups = await CloudFormationManager.getHyperPodSecurityGroups(eksClusterName, region);
-      if (hyperPodSecurityGroups.length > 0) {
-        hyperPodSecurityGroup = hyperPodSecurityGroups[0];
+      // 从metadata获取实际的HyperPod集群名称
+      if (clusterInfo.hyperPodCluster && clusterInfo.hyperPodCluster.ClusterName) {
+        const hpClusterName = clusterInfo.hyperPodCluster.ClusterName;
+        
+        // 使用兼容的查询命令获取计算节点子网
+        const hpCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --query 'InstanceGroups[0].OverrideVpcConfig.Subnets[] || VpcConfig.Subnets[]' --output text`;
+        const hpResult = await execAsync(hpCmd);
+        const subnetText = hpResult.stdout.trim();
+        if (subnetText) {
+          hyperPodSubnets = subnetText.split(/\s+/).filter(s => s.length > 0);
+        }
+        console.log('Found HyperPod compute subnets:', hyperPodSubnets);
+        
+        // 获取HyperPod Security Groups
+        const hyperPodSecurityGroups = await CloudFormationManager.getHyperPodSecurityGroups(eksClusterName, region);
+        if (hyperPodSecurityGroups.length > 0) {
+          hyperPodSecurityGroup = hyperPodSecurityGroups[0];
+        }
+      } else {
+        console.log('No HyperPod cluster found in metadata');
       }
-      
-      const hpClusterName = eksClusterName.replace('eks-cluster-', 'hp-cluster-');
-      const hpCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --query 'VpcConfig.Subnets' --output json`;
-      const hpResult = await execAsync(hpCmd);
-      hyperPodSubnets = JSON.parse(hpResult.stdout) || [];
-      console.log('Found HyperPod subnets:', hyperPodSubnets);
     } catch (error) {
-      console.log('No HyperPod cluster found or error fetching HyperPod info:', error.message);
+      console.log('Error fetching HyperPod compute subnet info:', error.message);
     }
     
     // 标记HyperPod使用的子网
@@ -6668,31 +6683,30 @@ app.post('/api/cluster/create-nodegroup', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active cluster selected' });
     }
     
-    // 获取集群配置
-    const initEnvsPath = path.join(__dirname, '../managed_clusters_info', activeCluster, 'config/init_envs');
-    const getEnvVar = async (varName) => {
-      const cmd = `source ${initEnvsPath} && echo $${varName}`;
-      const result = await execAsync(cmd, { shell: '/bin/bash' });
-      return result.stdout.trim();
-    };
+    // 直接从集群metadata获取所有必要信息
+    const clusterInfo = await clusterManager.getClusterInfo(activeCluster);
+    if (!clusterInfo || !clusterInfo.cloudFormation || !clusterInfo.cloudFormation.outputs) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Cluster metadata not found. Please ensure the cluster was properly created or imported.' 
+      });
+    }
     
-    const eksClusterName = await getEnvVar('EKS_CLUSTER_NAME');
-    const region = await getEnvVar('AWS_REGION');
-    const eksStackName = await getEnvVar('CLOUD_FORMATION_FULL_STACK_NAME');
-    
-    // 获取CloudFormation输出信息
-    const stackInfo = await CloudFormationManager.fetchStackInfo(eksStackName, region);
+    const eksClusterName = clusterInfo.cloudFormation.outputs.OutputEKSClusterName;
+    const region = clusterInfo.region;
+    const vpcId = clusterInfo.cloudFormation.outputs.OutputVpcId;
+    const securityGroupId = clusterInfo.cloudFormation.outputs.OutputSecurityGroupId;
     
     // 获取子网信息
-    const subnetInfo = await CloudFormationManager.fetchSubnetInfo(stackInfo.VPC_ID, region);
+    const subnetInfo = await CloudFormationManager.fetchSubnetInfo(vpcId, region);
     
     // 创建节点组配置
     const createResult = await CloudFormationManager.createEksNodeGroup(
       userConfig, 
       region, 
       eksClusterName,
-      stackInfo.VPC_ID,
-      stackInfo.SECURITY_GROUP_ID,
+      vpcId,
+      securityGroupId,
       subnetInfo
     );
 

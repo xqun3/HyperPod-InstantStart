@@ -61,7 +61,7 @@ const DependencyStatus = ({ cluster, dependenciesConfigured }) => {
       
       if (isImported) {
         // 导入的集群：区分有无HyperPod
-        if (cluster.hasHyperPod) {
+        if (cluster.hyperPodCluster) {
           // 有HyperPod的导入集群：显示N/A
           return <Tag color="default">N/A</Tag>;
         } else {
@@ -423,6 +423,11 @@ const ClusterManagement = () => {
         if (result.activeCluster !== activeCluster) {
           setActiveCluster(result.activeCluster);
           
+          // 集群切换时刷新页面以清除缓存
+          if (result.activeCluster && activeCluster) {
+            window.location.reload();
+          }
+          
           // 如果有活跃集群，加载其配置到表单
           if (result.activeCluster) {
             const activeClusterInfo = result.clusters.find(c => c.clusterTag === result.activeCluster);
@@ -477,6 +482,9 @@ const ClusterManagement = () => {
       const result = await response.json();
       if (result.success) {
         setActiveCluster(clusterTag);
+        
+        // 集群切换时刷新页面以清除缓存
+        window.location.reload();
         
         // 检查是否有kubectl警告
         if (result.kubectlWarning) {
@@ -1093,7 +1101,7 @@ const ClusterManagement = () => {
                                   </Col>
                                   <Col span={12}>
                                     <div>
-                                      <Text strong>Compute Node VPC:</Text>
+                                      <Text strong>Cluster VPC:</Text>
                                       <br />
                                       <Text code>{vpcId}</Text>
                                     </div>
