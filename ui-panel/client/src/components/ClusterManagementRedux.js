@@ -529,7 +529,14 @@ const ClusterManagementRedux = () => {
                         {/* 集群信息显示 */}
                         {activeCluster && (() => {
                           const cluster = clusters.find(c => c.clusterTag === activeCluster);
-                          if (!cluster) return <Text type="secondary">Loading cluster information...</Text>;
+                          if (!cluster) {
+                            // 集群不存在时的处理
+                            if (clusters.length === 0) {
+                              return <Text type="secondary">No clusters available</Text>;
+                            } else {
+                              return <Text type="secondary">Cluster "{activeCluster}" not found</Text>;
+                            }
+                          }
 
                           // 统一获取cluster tag和region
                           const clusterTag = cluster.clusterTag || 'N/A';

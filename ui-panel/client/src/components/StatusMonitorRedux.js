@@ -62,12 +62,10 @@ const StatusMonitorRedux = ({ activeTab }) => {
   const [deletingServices, setDeletingServices] = useState(new Set());
   const [deletingRayJob, setDeletingRayJob] = useState(false);
 
-  // 初始化时获取数据
+  // 初始化时获取数据（只执行一次）
   useEffect(() => {
-    if ((pods.length === 0 || services.length === 0) && !loading) {
-      dispatch(refreshAllAppStatus());
-    }
-  }, [dispatch, pods.length, services.length, loading]);
+    dispatch(refreshAllAppStatus());
+  }, [dispatch]); // 只依赖dispatch，避免无限循环
 
   // 手动刷新
   const handleRefresh = useCallback(async () => {

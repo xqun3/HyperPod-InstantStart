@@ -45,12 +45,12 @@ const ClusterStatusV2Redux = () => {
   const clusterStats = useSelector(selectCalculatedClusterStats);
   const lastUpdate = useSelector(selectClusterLastUpdate);
 
-  // 初始化时获取数据
+
+  // 初始化时获取数据（只执行一次）
   useEffect(() => {
-    if (clusterNodes.length === 0 && !loading) {
-      dispatch(refreshClusterData());
-    }
-  }, [dispatch, clusterNodes.length, loading]);
+    dispatch(refreshClusterData());
+  }, [dispatch]); // 只依赖dispatch，避免无限循环
+
 
   // 手动刷新
   const handleRefresh = useCallback(async () => {
@@ -249,19 +249,14 @@ const ClusterStatusV2Redux = () => {
   return (
     <Spin spinning={loading} tip="Refreshing cluster status...">
       <div>
-        {/* 错误提示 */}
+        {/* 简单错误提示 - 可选显示 */}
         {error && (
           <Alert
-            message="Cluster Status Error"
-            description={error}
-            type="error"
+            message="Unable to fetch cluster status"
+            type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            action={
-              <Button size="small" type="primary" onClick={handleRefresh}>
-                Retry
-              </Button>
-            }
+            closable
           />
         )}
 
@@ -347,11 +342,12 @@ const ClusterStatusV2Redux = () => {
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          {lastUpdate && (
-            <span style={{ fontSize: '12px', color: '#666' }}>
-              Last updated: {new Date(lastUpdate).toLocaleTimeString()}
-            </span>
-          )}
+          <span style={{ fontSize: '12px', color: '#666' }}>
+            {lastUpdate
+              ? `Last updated: ${new Date(lastUpdate).toLocaleTimeString()}`
+              : 'No data loaded yet'
+            }
+          </span>
           <Button
             icon={<ReloadOutlined />}
             onClick={handleRefresh}

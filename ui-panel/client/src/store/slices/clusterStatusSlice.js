@@ -204,14 +204,15 @@ const clusterStatusSlice = createSlice({
 
     // 处理组合刷新操作
       .addCase(refreshClusterData.pending, (state) => {
-        // 组合操作不改变 loading 状态，由各自的操作管理
+        state.loading = true;
+        state.error = null;
       })
       .addCase(refreshClusterData.fulfilled, (state, action) => {
-        // 组合操作成功，更新整体时间戳
+        state.loading = false;
         state.lastUpdate = action.payload.timestamp;
       })
       .addCase(refreshClusterData.rejected, (state, action) => {
-        // 组合操作失败，设置错误信息
+        state.loading = false;
         state.error = action.payload;
       });
   }
