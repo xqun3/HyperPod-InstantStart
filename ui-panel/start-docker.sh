@@ -1,6 +1,8 @@
 #!/bin/bash
 
-REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web:latest"
+# REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web:latest"
+REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web25:latest"
+
 LOCAL_IMAGE="ui-panel-dev2"
 
 
