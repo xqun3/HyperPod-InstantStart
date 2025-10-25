@@ -1358,13 +1358,103 @@ if (stackStatus === 'DELETE_COMPLETE') {
 - **用户体验**: 避免同时显示多个状态 banner
 - **清理完整性**: 删除时必须清理所有相关的 metadata 字段
 
+### HyperPod 管理按钮条件系统
+**功能**: NodeGroupManagerRedux 组件中各操作按钮的启用条件控制
+**更新时间**: 2025-10-25
+
+#### 按钮条件汇总表
+
+| 按钮类型 | 依赖配置要求 | HyperPod存在要求 | 操作状态要求 |
+|---------|-------------|-----------------|-------------|
+| **Create HyperPod** | ✅ 必须已配置 | ❌ 不能存在 | ❌ 不能有创建/删除中 |
+| **Add Instance Group** | ❌ 无要求 | ✅ 必须存在 | ❌ 不能有创建/删除/添加中 |
+| **Create Node Group** | ❌ 无要求 | ✅ 必须存在 | ❌ 无要求 |
+
+#### 详细条件说明
+
+**1. Create HyperPod 按钮**
+```javascript
+disabled={
+  !effectiveDependenciesConfigured ||   // 依赖未配置时禁用
+  !!hyperPodCreationStatus ||           // 创建中时禁用
+  !!hyperPodDeletionStatus ||           // 删除中时禁用
+  hyperPodGroups.length > 0             // 已存在HyperPod时禁用
+}
+```
+- **业务逻辑**: 创建新的HyperPod集群
+- **前置条件**: 需要依赖配置完成，确保基础设施就绪
+- **互斥条件**: 一个EKS集群只能有一个HyperPod集群
+
+**2. Add Instance Group 按钮**
+```javascript
+disabled={
+  !!hyperPodCreationStatus ||          // 创建中时禁用
+  !!hyperPodDeletionStatus ||          // 删除中时禁用
+  hyperPodGroups.length === 0 ||       // 没有HyperPod时禁用
+  addInstanceGroupLoading              // 添加中时禁用
+}
+```
+- **业务逻辑**: 向现有HyperPod集群添加新的实例组
+- **前置条件**: 必须已有HyperPod集群存在
+- **操作限制**: 避免并发操作导致的状态冲突
+
+**3. Create Node Group 按钮**
+```javascript
+disabled={hyperPodGroups.length === 0}
+```
+- **业务逻辑**: 为HyperPod集群创建配套的EKS节点组
+- **前置条件**: 必须已有HyperPod集群存在
+- **最简条件**: 只要求HyperPod存在，无其他限制
+
+#### 依赖配置状态判断 (`effectiveDependenciesConfigured`)
+```javascript
+// 导入的EKS+HyperPod集群自动视为已配置
+if (clusterDetails?.type === 'imported' && clusterDetails?.hyperPodCluster) {
+  return true;
+}
+
+// 其他情况检查实际配置状态
+return dependencies?.configured || false;
+```
+
+**配置状态为 true 的情况**:
+1. **导入的EKS+HyperPod集群**: 自动视为已配置
+2. **创建的集群**: 通过UI手动配置依赖后变为 true
+3. **导入的纯EKS集群**: 需要手动配置依赖
+
+#### 按钮状态提示信息
+
+**Create HyperPod 提示优先级**:
+1. "Dependencies must be configured first"
+2. "HyperPod creation in progress"
+3. "HyperPod deletion in progress"
+4. "HyperPod cluster already exists in this EKS cluster"
+5. "Create HyperPod cluster" (正常状态)
+
+**Add Instance Group 提示优先级**:
+1. "HyperPod creation in progress"
+2. "HyperPod deletion in progress"
+3. "No HyperPod cluster exists"
+4. "Adding instance group..."
+5. "Add instance group to existing HyperPod cluster" (正常状态)
+
+**Create Node Group 提示**:
+1. "HyperPod cluster must exist to create node groups"
+2. "Create Node Group" (正常状态)
+
+#### 设计原则
+- **业务逻辑导向**: 按钮条件直接反映业务操作的前置要求
+- **用户引导**: 通过按钮状态和提示信息引导用户正确的操作流程
+- **状态一致性**: 避免并发操作导致的状态冲突
+- **操作安全性**: 防止在不合适的时机执行危险操作
+
 ### HyperPod 实例组动态扩展
 **功能**: 向现有 HyperPod 集群添加实例组，支持动态扩展计算资源
 **实现时间**: 2025-10-22
 
 #### 功能特性
 - **Add Instance Group 按钮**: 位于 "Create HyperPod" 按钮之前
-- **启用条件**: 依赖已配置 + 存在 HyperPod 集群 + 无创建/删除操作进行中
+- **启用条件**: 存在 HyperPod 集群 + 无创建/删除/添加操作进行中
 - **支持的实例类型**: 与 Create HyperPod 完全对齐
 
 **支持的实例类型**:

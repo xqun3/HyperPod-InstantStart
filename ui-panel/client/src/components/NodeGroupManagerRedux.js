@@ -463,7 +463,6 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                 fetchClusterInfo(); // 确保获取最新信息
               }}
               disabled={
-                !effectiveDependenciesConfigured ||   // 依赖未配置时禁用
                 !!hyperPodCreationStatus ||  // 创建中时禁用
                 !!hyperPodDeletionStatus ||  // 删除中时禁用
                 hyperPodGroups.length === 0 ||   // 没有HyperPod时禁用
@@ -471,17 +470,15 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
               }
               loading={addInstanceGroupLoading}
               title={
-                !effectiveDependenciesConfigured
-                  ? "Dependencies must be configured first"
-                  : hyperPodCreationStatus
-                    ? "HyperPod creation in progress"
-                    : hyperPodDeletionStatus
-                      ? "HyperPod deletion in progress"
-                      : hyperPodGroups.length === 0
-                        ? "No HyperPod cluster exists"
-                        : addInstanceGroupLoading
-                          ? "Adding instance group..."
-                          : "Add instance group to existing HyperPod cluster"
+                hyperPodCreationStatus
+                  ? "HyperPod creation in progress"
+                  : hyperPodDeletionStatus
+                    ? "HyperPod deletion in progress"
+                    : hyperPodGroups.length === 0
+                      ? "No HyperPod cluster exists"
+                      : addInstanceGroupLoading
+                        ? "Adding instance group..."
+                        : "Add instance group to existing HyperPod cluster"
               }
             >
               Add Instance Group
@@ -585,10 +582,10 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             size="small"
             icon={<PlusOutlined />}
             onClick={() => setCreateEksNodeGroupModalVisible(true)}
-            disabled={!effectiveDependenciesConfigured}
+            disabled={hyperPodGroups.length === 0}
             title={
-              !effectiveDependenciesConfigured
-                ? "Dependencies must be configured first"
+              hyperPodGroups.length === 0
+                ? "HyperPod cluster must exist to create node groups"
                 : "Create Node Group"
             }
           >
