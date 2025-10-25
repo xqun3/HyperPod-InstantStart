@@ -418,10 +418,7 @@ const DeploymentManager = () => {
       }
       extra={
         <Space>
-          <span style={{ fontSize: '12px', color: '#1890ff' }}>
-            • Managed by Global Refresh
-          </span>
-          <Button 
+          <Button
             icon={<ReloadOutlined />} 
             onClick={() => fetchDeployments(true)}
             loading={loading}

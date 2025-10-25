@@ -35,7 +35,6 @@ import {
   selectAppBusinessServices,
   selectAppStatusLoading,
   selectAppStatusError,
-  selectAppLastUpdate,
   selectAppStats
 } from '../store/selectors';
 import { CONFIG } from '../config/constants';
@@ -54,7 +53,6 @@ const StatusMonitorRedux = ({ activeTab }) => {
   const businessServices = useSelector(selectAppBusinessServices);
   const loading = useSelector(selectAppStatusLoading);
   const error = useSelector(selectAppStatusError);
-  const lastUpdate = useSelector(selectAppLastUpdate);
   const appStats = useSelector(selectAppStats);
 
   // 本地状态（操作相关）
@@ -666,23 +664,13 @@ const StatusMonitorRedux = ({ activeTab }) => {
       alignItems: 'center',
       marginBottom: '16px'
     }}>
-      <div>
-        {lastUpdate && (
-          <Text type="secondary" style={{ fontSize: '11px' }}>
-            Last updated: {new Date(lastUpdate).toLocaleTimeString()}
-          </Text>
-        )}
-      </div>
+      <div></div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Text type="secondary" style={{ fontSize: '11px', color: '#1890ff' }}>
-          • Managed by Redux
-        </Text>
         <Button
           size="small"
           icon={<ReloadOutlined />}
           loading={loading}
           onClick={handleRefresh}
-          style={{ fontSize: '11px', height: '20px', padding: '0 6px' }}
         >
           Refresh
         </Button>

@@ -226,9 +226,6 @@ const HyperPodJobManager = () => {
           HyperPod PyTorchJob Management
         </Text>
         <Space>
-          <span style={{ fontSize: '12px', color: '#52c41a' }}>
-            Auto-refresh: {Math.floor(config.INTERVAL / 60000)}min
-          </span>
           <Button
             size="small"
             icon={<ReloadOutlined />}

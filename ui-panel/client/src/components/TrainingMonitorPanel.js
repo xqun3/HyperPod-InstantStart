@@ -628,9 +628,6 @@ const TrainingMonitorPanel = () => {
         }
         extra={
           <Space>
-            <span style={{ fontSize: '11px', color: '#1890ff' }}>
-              • Managed by Global Refresh
-            </span>
             <Button
               icon={<ReloadOutlined />}
               onClick={() => fetchTrainingJobs(true)}

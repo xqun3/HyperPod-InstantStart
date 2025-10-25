@@ -881,13 +881,6 @@ function App() {
               <Tabs 
                 defaultActiveKey="pods" 
                 size="small"
-                tabBarExtraContent={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#1890ff' }}>
-                      • Managed by Global Refresh
-                    </span>
-                  </div>
-                }
               >
                 <TabPane 
                   tab={

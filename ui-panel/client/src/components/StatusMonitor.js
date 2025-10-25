@@ -666,9 +666,6 @@ const StatusMonitor = ({ pods, services, businessServices: propBusinessServices,
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Text type="secondary" style={{ fontSize: '11px', color: '#1890ff' }}>
-            • Managed by Global Refresh
-          </Text>
           <Button 
             size="small" 
             icon={<ReloadOutlined />}
@@ -836,9 +833,6 @@ const StatusMonitor = ({ pods, services, businessServices: propBusinessServices,
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Text type="secondary" style={{ fontSize: '11px', color: '#1890ff' }}>
-                  • Managed by Global Refresh
-                </Text>
                 <Button 
                   size="small" 
                   icon={<ReloadOutlined />}
@@ -889,9 +883,6 @@ const StatusMonitor = ({ pods, services, businessServices: propBusinessServices,
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Text type="secondary" style={{ fontSize: '11px', color: '#1890ff' }}>
-                  • Managed by Global Refresh
-                </Text>
                 <Button 
                   size="small" 
                   icon={<ReloadOutlined />}
@@ -942,9 +933,6 @@ const StatusMonitor = ({ pods, services, businessServices: propBusinessServices,
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Text type="secondary" style={{ fontSize: '11px', color: '#1890ff' }}>
-                  • Managed by Global Refresh
-                </Text>
                 <Button 
                   size="small" 
                   icon={<ReloadOutlined />}
