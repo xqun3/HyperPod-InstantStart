@@ -1,0 +1,83 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: SERVENGINE-MODEL_TAG-inference
+  labels:
+    app: SERVENGINE-MODEL_TAG-inference
+    model-type: "SERVENGINE"
+    deployment-tag: "MODEL_TAG"
+spec:
+  replicas: REPLICAS_COUNT
+  selector:
+    matchLabels:
+      app: SERVENGINE-MODEL_TAG-inference
+  template:
+    metadata:
+      labels:
+        app: SERVENGINE-MODEL_TAG-inference
+    spec:
+      nodeSelector:
+        beta.kubernetes.io/instance-type: INSTANCE_TYPE
+      containers:
+        - name: SERVENGINE
+          image: DOCKER_IMAGE
+          resources:
+            limits:
+              nvidia.com/gpu: GPU_COUNT
+            requests:
+              # cpu: "4"
+              # memory: 8Gi
+              nvidia.com/gpu: GPU_COUNT
+          command: ENTRY_CMD
+          ports:
+            - containerPort: PORT_NUMBER
+              name: http
+          volumeMounts:
+            - name: persistent-storage-s3
+              mountPath: /s3
+              readOnly: true
+            - name: local-cache
+              mountPath: /root/.cache
+            - name: shm
+              mountPath: /dev/shm
+          env:HF_TOKEN_ENV
+            - name: TRANSFORMERS_CACHE
+              value: "/root/.cache/huggingface"
+          securityContext:
+            capabilities:
+              add:
+                - IPC_LOCK
+      volumes:
+        - name: persistent-storage-s3
+          persistentVolumeClaim:
+            claimName: s3-claim
+        - name: local-cache
+          hostPath:
+            path: /opt/dlami/nvme/.cache
+            type: DirectoryOrCreate
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: SERVENGINE-MODEL_TAG-nlb
+  labels:
+    model-type: "SERVENGINE"
+    deployment-tag: "MODEL_TAG"
+  annotations:NLB_ANNOTATIONS
+spec:
+  ports:
+    - port: PORT_NUMBER
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: SERVENGINE-MODEL_TAG-inference
+  type: LoadBalancer

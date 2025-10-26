@@ -11,6 +11,8 @@ const http = require('http');
 // 引入工具模块
 const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
 const { getCurrentRegion } = require('./utils/awsHelpers');
+const AWSHelpers = require('./utils/awsHelpers');
+const MetadataUtils = require('./utils/metadataUtils');
 
 // 引入集群状态V2模块
 const { 
@@ -735,10 +737,10 @@ app.post('/api/deploy', async (req, res) => {
 
       // 根据deployAsPool选择模板
       if (deployAsPool) {
-        templatePath = path.join(__dirname, '../templates/vllm-sglang-model-pool-template.yaml');
+        templatePath = path.join(__dirname, '../templates/inference-container-model-pool-template.yaml');
         console.log('Using model pool template (no service will be created)');
       } else {
-        templatePath = path.join(__dirname, '../templates/vllm-sglang-template.yaml');
+        templatePath = path.join(__dirname, '../templates/inference-container-template.yaml');
         console.log('Using standard template (with service)');
       }
       
@@ -760,7 +762,7 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/GPU_COUNT/g, gpuCount.toString())
         .replace(/INSTANCE_TYPE/g, instanceType)
         .replace(/HF_TOKEN_ENV/g, hfTokenEnv)
-        .replace(/VLLM_COMMAND/g, JSON.stringify(parsedCommand.fullCommand))
+        .replace(/ENTRY_CMD/g, JSON.stringify(parsedCommand.fullCommand))
         .replace(/DOCKER_IMAGE/g, dockerImage)
         .replace(/PORT_NUMBER/g, port || 8000)
         .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
@@ -7091,6 +7093,183 @@ app.post('/api/cluster/cancel-creation/:clusterTag', async (req, res) => {
 });
 
 console.log('EKS cluster creation APIs loaded');
+
+// 🎨 AWS Instance Types API for Advanced Scaling (Cache-based, no fallbacks)
+app.get('/api/aws/instance-types', async (req, res) => {
+  try {
+    // Get current active cluster
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const activeClusterName = clusterManager.getActiveCluster();
+
+    if (!activeClusterName) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster configured. Please select a cluster first.'
+      });
+    }
+
+    // Try to get cached instance types
+    const cachedData = MetadataUtils.getInstanceTypesCache(activeClusterName);
+
+    if (cachedData && !cachedData.error) {
+      console.log(`Returning cached instance types for cluster: ${activeClusterName} (last updated: ${cachedData.lastUpdated})`);
+      return res.json({
+        success: true,
+        region: cachedData.region,
+        instanceTypes: cachedData.instanceTypes,
+        lastUpdated: cachedData.lastUpdated,
+        cached: true
+      });
+    }
+
+    // No cache or cache has error - return error and ask user to refresh
+    if (cachedData && cachedData.error) {
+      return res.status(500).json({
+        success: false,
+        error: `Instance types cache has error: ${cachedData.error}`,
+        lastUpdated: cachedData.lastUpdated,
+        needsRefresh: true
+      });
+    }
+
+    // No cache at all
+    return res.status(404).json({
+      success: false,
+      error: 'Instance types not cached yet. Please click refresh to fetch from AWS.',
+      needsRefresh: true
+    });
+
+  } catch (error) {
+    console.error('Error accessing instance types cache:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🎨 AWS Instance Types Refresh API (Manual cache update)
+app.post('/api/aws/instance-types/refresh', async (req, res) => {
+  try {
+    // Get current active cluster
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const activeClusterName = clusterManager.getActiveCluster();
+
+    if (!activeClusterName) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster configured. Please select a cluster first.'
+      });
+    }
+
+    // Get current AWS region
+    const currentRegion = AWSHelpers.getCurrentRegion();
+    console.log(`Refreshing instance types for cluster: ${activeClusterName}, region: ${currentRegion}`);
+
+    const { families } = req.body;
+    const familyFilter = families && families.length > 0 ? families : ['g5', 'g6', 'g6e', 'p4', 'p5', 'p5e', 'p5en', 'p6'];
+
+    const instanceTypes = [];
+    const errors = [];
+
+    for (const family of familyFilter) {
+      try {
+        // AWS CLI command to get instance types for current region
+        const cmd = `aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${family}.*" --query "InstanceTypes[?GpuInfo.Gpus].{InstanceType:InstanceType,VCpuInfo:VCpuInfo,MemoryInfo:MemoryInfo,GpuInfo:GpuInfo}" --output json`;
+
+        console.log(`Executing: aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${family}.*"`);
+
+        const output = execSync(cmd, { encoding: 'utf8', timeout: 15000 });
+        const awsInstanceTypes = JSON.parse(output);
+
+        // Transform AWS data to our format
+        const transformedTypes = awsInstanceTypes
+          .filter(type => type.GpuInfo && type.GpuInfo.Gpus && type.GpuInfo.Gpus.length > 0)
+          .map(type => {
+            const gpuInfo = type.GpuInfo.Gpus[0];
+            const gpuCount = type.GpuInfo.Gpus.reduce((sum, gpu) => sum + (gpu.Count || 1), 0);
+            const gpuName = gpuInfo.Name || 'GPU';
+
+            return {
+              value: type.InstanceType,
+              label: type.InstanceType,
+              family: family,
+              vcpu: type.VCpuInfo.DefaultVCpus,
+              memory: Math.round(type.MemoryInfo.SizeInMiB / 1024), // Convert to GB
+              gpu: gpuCount > 1 ? `${gpuCount}x ${gpuName}` : `1x ${gpuName}`
+            };
+          })
+          .sort((a, b) => {
+            // Sort by instance size: xlarge < 2xlarge < 4xlarge etc.
+            const getSize = (instanceType) => {
+              const match = instanceType.match(/(\d*)xlarge/);
+              return match ? (match[1] ? parseInt(match[1]) : 1) : 0;
+            };
+            return getSize(a.value) - getSize(b.value);
+          });
+
+        instanceTypes.push(...transformedTypes);
+        console.log(`Found ${transformedTypes.length} ${family} instance types`);
+      } catch (error) {
+        const errorMsg = `Failed to fetch ${family} instance types: ${error.message}`;
+        console.error(errorMsg);
+        errors.push(errorMsg);
+      }
+    }
+
+    // Prepare cache data
+    const cacheData = {
+      region: currentRegion,
+      lastUpdated: new Date().toISOString(),
+      instanceTypes: instanceTypes,
+      error: errors.length > 0 ? errors.join('; ') : null,
+      familiesRequested: familyFilter,
+      totalFound: instanceTypes.length
+    };
+
+    // Save to cache
+    const saved = MetadataUtils.saveInstanceTypesCache(activeClusterName, cacheData);
+
+    if (!saved) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save instance types to cache'
+      });
+    }
+
+    // Return result
+    if (instanceTypes.length > 0) {
+      console.log(`Successfully refreshed ${instanceTypes.length} instance types for cluster: ${activeClusterName}`);
+      res.json({
+        success: true,
+        region: currentRegion,
+        instanceTypes: instanceTypes,
+        lastUpdated: cacheData.lastUpdated,
+        totalFound: instanceTypes.length,
+        errors: errors.length > 0 ? errors : null
+      });
+    } else {
+      const errorMessage = errors.length > 0 ? errors.join('; ') : 'No GPU instance types found in this region';
+      console.error(`No instance types found for cluster: ${activeClusterName}, errors: ${errorMessage}`);
+      res.status(500).json({
+        success: false,
+        error: errorMessage,
+        region: currentRegion
+      });
+    }
+
+  } catch (error) {
+    console.error('Error refreshing instance types:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+console.log('AWS Instance Types API loaded');
 
 app.listen(PORT, () => {
   console.log('🚀 ========================================');

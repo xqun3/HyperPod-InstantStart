@@ -157,6 +157,51 @@ class MetadataUtils {
     const clusterInfo = this.getClusterInfo(clusterTag);
     return clusterInfo?.region || null;
   }
+
+  /**
+   * 获取实例类型缓存文件路径
+   */
+  static getInstanceTypesCachePath(clusterTag) {
+    return path.join(this.getMetadataDir(clusterTag), 'instance_types_cache.json');
+  }
+
+  /**
+   * 读取实例类型缓存
+   */
+  static getInstanceTypesCache(clusterTag) {
+    try {
+      const cachePath = this.getInstanceTypesCachePath(clusterTag);
+      if (fs.existsSync(cachePath)) {
+        return JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error reading instance types cache for ${clusterTag}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 保存实例类型缓存
+   */
+  static saveInstanceTypesCache(clusterTag, cacheData) {
+    try {
+      const cachePath = this.getInstanceTypesCachePath(clusterTag);
+
+      // 确保metadata目录存在
+      const metadataDir = this.getMetadataDir(clusterTag);
+      if (!fs.existsSync(metadataDir)) {
+        fs.mkdirSync(metadataDir, { recursive: true });
+      }
+
+      fs.writeFileSync(cachePath, JSON.stringify(cacheData, null, 2));
+      console.log(`Instance types cache saved for cluster: ${clusterTag}`);
+      return true;
+    } catch (error) {
+      console.error(`Error saving instance types cache for ${clusterTag}:`, error);
+      return false;
+    }
+  }
   /**
    * 通过AWS CLI获取导入集群的资源信息（包含HyperPod子网）
    */

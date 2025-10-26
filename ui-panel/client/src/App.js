@@ -18,6 +18,8 @@ import ClusterManagement from './components/ClusterManagementRedux';
 import GlobalRefreshButtonRedux from './components/GlobalRefreshButtonRedux';
 import OperationFeedback from './components/OperationFeedback';
 import EnhancedModelManagement from './components/EnhancedModelManagement';
+// 🎨 PREVIEW ONLY - Remove this import to clean up preview
+import AdvancedScalingPanelV2 from './components/AdvancedScalingPanelV2';
 import globalRefreshManager from './hooks/useGlobalRefresh';
 import operationRefreshManager from './hooks/useOperationRefresh';
 import { refreshManager } from './hooks/useAutoRefresh';
@@ -598,6 +600,37 @@ function App() {
     }
   };
 
+  // 🎨 PREVIEW ONLY - Remove this function to clean up preview
+  const handleAdvancedScalingDeploy = async (config) => {
+    try {
+      console.log('Deploying advanced scaling configuration:', config);
+
+      const response = await fetch('/api/deploy-advanced-scaling', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        message.success('Advanced scaling stack deployed successfully!');
+        // 触发操作刷新
+        operationRefreshManager.triggerOperationRefresh('advanced-scaling-deploy', {
+          timestamp: new Date().toISOString(),
+          source: 'advanced-scaling-panel'
+        });
+      } else {
+        message.error(`Advanced scaling deployment failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error deploying advanced scaling:', error);
+      message.error('Failed to deploy advanced scaling stack');
+    }
+  };
+
   const handleTrainingLaunch = async (config) => {
     try {
       console.log('Launching training job with config:', config);
@@ -789,8 +822,24 @@ function App() {
                         key: 'service-config',
                         label: 'Service Configuration',
                         children: (
-                          <ServiceConfigPanel 
+                          <ServiceConfigPanel
                             onDeploy={handleServiceDeploy}
+                            deploymentStatus={deploymentStatus}
+                          />
+                        )
+                      },
+                      // 🎨 PREVIEW ONLY - Remove this tab to clean up preview
+                      {
+                        key: 'advanced-scaling-preview',
+                        label: (
+                          <Space>
+                            Advanced Scaling
+                            <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
+                          </Space>
+                        ),
+                        children: (
+                          <AdvancedScalingPanelV2
+                            onDeploy={handleAdvancedScalingDeploy}
                             deploymentStatus={deploymentStatus}
                           />
                         )
