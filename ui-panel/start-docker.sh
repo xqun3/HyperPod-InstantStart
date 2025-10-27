@@ -36,7 +36,7 @@ else
         echo "🏷️ Tagged as $LOCAL_IMAGE"
     else
         echo "🔧 Failed to pull from remote repository, building locally..."
-        docker build -f Dockerfile.dev -t $LOCAL_IMAGE .
+        docker build -f Dockerfile.dev25 -t $LOCAL_IMAGE .
     fi
 fi
 
