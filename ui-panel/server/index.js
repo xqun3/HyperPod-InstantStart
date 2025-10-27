@@ -7176,10 +7176,18 @@ app.post('/api/aws/instance-types/refresh', async (req, res) => {
 
     for (const family of familyFilter) {
       try {
-        // AWS CLI command to get instance types for current region
-        const cmd = `aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${family}.*" --query "InstanceTypes[?GpuInfo.Gpus].{InstanceType:InstanceType,VCpuInfo:VCpuInfo,MemoryInfo:MemoryInfo,GpuInfo:GpuInfo}" --output json`;
+        // 特殊处理 p6 家族的命名格式
+        let filterPattern;
+        if (family === 'p6') {
+          filterPattern = 'p6-b200.*'; // p6 实例使用 p6-b200.* 格式
+        } else {
+          filterPattern = `${family}.*`; // 其他家族使用标准格式
+        }
 
-        console.log(`Executing: aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${family}.*"`);
+        // AWS CLI command to get instance types for current region
+        const cmd = `aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${filterPattern}" --query "InstanceTypes[?GpuInfo.Gpus].{InstanceType:InstanceType,VCpuInfo:VCpuInfo,MemoryInfo:MemoryInfo,GpuInfo:GpuInfo}" --output json`;
+
+        console.log(`Executing: aws ec2 describe-instance-types --region ${currentRegion} --filters "Name=instance-type,Values=${filterPattern}"`);
 
         const output = execSync(cmd, { encoding: 'utf8', timeout: 15000 });
         const awsInstanceTypes = JSON.parse(output);
@@ -7270,6 +7278,585 @@ app.post('/api/aws/instance-types/refresh', async (req, res) => {
 });
 
 console.log('AWS Instance Types API loaded');
+
+// ==========================================
+// Karpenter Management APIs
+// ==========================================
+
+const KarpenterManager = require('./utils/karpenterManager');
+
+// 安装 Karpenter
+app.post('/api/cluster/karpenter/install', async (req, res) => {
+  try {
+    const { clusterTag } = req.body;
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+
+    // 如果没有提供clusterTag，使用活跃集群
+    const targetCluster = clusterTag || clusterManager.getActiveCluster();
+
+    if (!targetCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No cluster specified and no active cluster found'
+      });
+    }
+
+    console.log(`Installing Karpenter for cluster: ${targetCluster}`);
+
+    // 异步安装Karpenter，避免请求超时
+    setTimeout(async () => {
+      try {
+        await KarpenterManager.installKarpenterDependencies(targetCluster, clusterManager);
+
+        // 广播安装完成消息
+        broadcast({
+          type: 'karpenter_installation_completed',
+          clusterTag: targetCluster,
+          message: 'Karpenter installation completed successfully',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Karpenter installation failed:', error);
+
+        // 广播安装失败消息
+        broadcast({
+          type: 'karpenter_installation_failed',
+          clusterTag: targetCluster,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 1000);
+
+    // 立即返回开始安装的响应
+    res.json({
+      success: true,
+      message: 'Karpenter installation started',
+      clusterTag: targetCluster,
+      status: 'installing'
+    });
+
+  } catch (error) {
+    console.error('Error starting Karpenter installation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 检查 Karpenter 状态
+app.get('/api/cluster/karpenter/status', async (req, res) => {
+  try {
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const activeCluster = clusterManager.getActiveCluster();
+
+    if (!activeCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster found'
+      });
+    }
+
+    // 从metadata中获取安装状态
+    const metadataDir = clusterManager.getClusterMetadataDir(activeCluster);
+    const clusterInfoPath = path.join(metadataDir, 'cluster_info.json');
+
+    let karpenterInfo = null;
+    if (fs.existsSync(clusterInfoPath)) {
+      const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
+      karpenterInfo = clusterInfo.karpenter;
+    }
+
+    // 如果metadata中显示已安装，验证实际状态
+    if (karpenterInfo?.installed) {
+      try {
+        // 获取集群基本信息用于状态检查
+        const configDir = clusterManager.getClusterConfigDir(activeCluster);
+        const initEnvsPath = path.join(configDir, 'init_envs');
+
+        if (fs.existsSync(initEnvsPath)) {
+          const envContent = fs.readFileSync(initEnvsPath, 'utf8');
+          const eksClusterMatch = envContent.match(/export EKS_CLUSTER_NAME=(.+)/);
+          const regionMatch = envContent.match(/export AWS_REGION=(.+)/);
+
+          const eksClusterName = eksClusterMatch ? eksClusterMatch[1] : null;
+          const region = regionMatch ? regionMatch[1] : 'us-west-2';
+
+          if (eksClusterName) {
+            const runtimeStatus = await KarpenterManager.checkKarpenterStatus(eksClusterName, region);
+
+            res.json({
+              success: true,
+              installed: karpenterInfo.installed,
+              version: karpenterInfo.version,
+              installationDate: karpenterInfo.installationDate,
+              components: karpenterInfo.components,
+              runtimeStatus: runtimeStatus,
+              clusterTag: activeCluster
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to get runtime status:', error.message);
+      }
+    }
+
+    // 返回metadata状态或未安装状态
+    res.json({
+      success: true,
+      installed: karpenterInfo?.installed || false,
+      version: karpenterInfo?.version || null,
+      installationDate: karpenterInfo?.installationDate || null,
+      components: karpenterInfo?.components || null,
+      clusterTag: activeCluster
+    });
+
+  } catch (error) {
+    console.error('Error checking Karpenter status:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取 Karpenter 节点
+app.get('/api/cluster/karpenter/nodes', async (req, res) => {
+  try {
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const activeCluster = clusterManager.getActiveCluster();
+
+    if (!activeCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster found'
+      });
+    }
+
+    // 获取集群基本信息
+    const configDir = clusterManager.getClusterConfigDir(activeCluster);
+    const initEnvsPath = path.join(configDir, 'init_envs');
+
+    if (!fs.existsSync(initEnvsPath)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cluster configuration not found'
+      });
+    }
+
+    const envContent = fs.readFileSync(initEnvsPath, 'utf8');
+    const eksClusterMatch = envContent.match(/export EKS_CLUSTER_NAME=(.+)/);
+    const regionMatch = envContent.match(/export AWS_REGION=(.+)/);
+
+    const eksClusterName = eksClusterMatch ? eksClusterMatch[1] : null;
+    const region = regionMatch ? regionMatch[1] : 'us-west-2';
+
+    if (!eksClusterName) {
+      return res.status(400).json({
+        success: false,
+        error: 'EKS cluster name not found in configuration'
+      });
+    }
+
+    const nodes = await KarpenterManager.getKarpenterNodes(eksClusterName, region);
+
+    res.json({
+      success: true,
+      nodes: nodes,
+      total: nodes.length,
+      clusterTag: activeCluster,
+      eksClusterName: eksClusterName
+    });
+
+  } catch (error) {
+    console.error('Error getting Karpenter nodes:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 卸载 Karpenter
+app.delete('/api/cluster/karpenter/uninstall', async (req, res) => {
+  try {
+    const { clusterTag } = req.body;
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+
+    // 如果没有提供clusterTag，使用活跃集群
+    const targetCluster = clusterTag || clusterManager.getActiveCluster();
+
+    if (!targetCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No cluster specified and no active cluster found'
+      });
+    }
+
+    console.log(`Uninstalling Karpenter for cluster: ${targetCluster}`);
+
+    // 异步卸载Karpenter
+    setTimeout(async () => {
+      try {
+        await KarpenterManager.uninstallKarpenter(targetCluster, clusterManager);
+
+        // 广播卸载完成消息
+        broadcast({
+          type: 'karpenter_uninstallation_completed',
+          clusterTag: targetCluster,
+          message: 'Karpenter uninstallation completed successfully',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Karpenter uninstallation failed:', error);
+
+        // 广播卸载失败消息
+        broadcast({
+          type: 'karpenter_uninstallation_failed',
+          clusterTag: targetCluster,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 1000);
+
+    // 立即返回开始卸载的响应
+    res.json({
+      success: true,
+      message: 'Karpenter uninstallation started',
+      clusterTag: targetCluster,
+      status: 'uninstalling'
+    });
+
+  } catch (error) {
+    console.error('Error starting Karpenter uninstallation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ===== Karpenter NodeClass 管理 API =====
+
+// 创建 NodeClass
+app.post('/api/cluster/karpenter/nodeclass', async (req, res) => {
+  try {
+    const activeCluster = clusterManager.getActiveCluster();
+    if (!activeCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster selected'
+      });
+    }
+
+    const config = req.body;
+
+    // 验证必需字段
+    if (!config.nodeClassName) {
+      return res.status(400).json({
+        success: false,
+        error: 'NodeClass name is required'
+      });
+    }
+
+    console.log(`Creating NodeClass: ${config.nodeClassName} for cluster: ${activeCluster}`);
+
+    const result = await KarpenterManager.createNodeClass(activeCluster, config, clusterManager);
+
+    // 广播创建成功消息
+    broadcast({
+      type: 'karpenter_nodeclass_created',
+      clusterTag: activeCluster,
+      nodeClassName: config.nodeClassName,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating NodeClass:', error);
+
+    // 广播创建失败消息
+    broadcast({
+      type: 'karpenter_nodeclass_create_failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取所有 NodeClass
+app.get('/api/cluster/karpenter/nodeclass', async (req, res) => {
+  try {
+    const nodeClasses = await KarpenterManager.getNodeClasses();
+
+    res.json({
+      success: true,
+      data: nodeClasses
+    });
+  } catch (error) {
+    console.error('Error getting NodeClasses:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      data: []
+    });
+  }
+});
+
+// 删除 NodeClass
+app.delete('/api/cluster/karpenter/nodeclass/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const activeCluster = clusterManager.getActiveCluster();
+
+    console.log(`Deleting NodeClass: ${name} from cluster: ${activeCluster}`);
+
+    const result = await KarpenterManager.deleteNodeClass(name);
+
+    // 广播删除成功消息
+    broadcast({
+      type: 'karpenter_nodeclass_deleted',
+      clusterTag: activeCluster,
+      nodeClassName: name,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting NodeClass:', error);
+
+    // 广播删除失败消息
+    broadcast({
+      type: 'karpenter_nodeclass_delete_failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ===== Karpenter NodePool 管理 API =====
+
+// 创建 NodePool
+app.post('/api/cluster/karpenter/nodepool', async (req, res) => {
+  try {
+    const activeCluster = clusterManager.getActiveCluster();
+    if (!activeCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster selected'
+      });
+    }
+
+    const config = req.body;
+
+    // 验证必需字段
+    if (!config.nodePoolName) {
+      return res.status(400).json({
+        success: false,
+        error: 'NodePool name is required'
+      });
+    }
+
+    if (!config.nodeClassRef) {
+      return res.status(400).json({
+        success: false,
+        error: 'NodeClass reference is required'
+      });
+    }
+
+    console.log(`Creating NodePool: ${config.nodePoolName} for cluster: ${activeCluster}`);
+
+    const result = await KarpenterManager.createNodePool(activeCluster, config, clusterManager);
+
+    // 广播创建成功消息
+    broadcast({
+      type: 'karpenter_nodepool_created',
+      clusterTag: activeCluster,
+      nodePoolName: config.nodePoolName,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating NodePool:', error);
+
+    // 广播创建失败消息
+    broadcast({
+      type: 'karpenter_nodepool_create_failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取所有 NodePool
+app.get('/api/cluster/karpenter/nodepool', async (req, res) => {
+  try {
+    const nodePools = await KarpenterManager.getNodePools();
+
+    res.json({
+      success: true,
+      data: nodePools
+    });
+  } catch (error) {
+    console.error('Error getting NodePools:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      data: []
+    });
+  }
+});
+
+// 删除 NodePool
+app.delete('/api/cluster/karpenter/nodepool/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const activeCluster = clusterManager.getActiveCluster();
+
+    console.log(`Deleting NodePool: ${name} from cluster: ${activeCluster}`);
+
+    const result = await KarpenterManager.deleteNodePool(name);
+
+    // 广播删除成功消息
+    broadcast({
+      type: 'karpenter_nodepool_deleted',
+      clusterTag: activeCluster,
+      nodePoolName: name,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting NodePool:', error);
+
+    // 广播删除失败消息
+    broadcast({
+      type: 'karpenter_nodepool_delete_failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ===== Karpenter 综合资源状态 API =====
+
+// 统一创建 Karpenter 资源 (NodeClass + NodePool)
+app.post('/api/cluster/karpenter/unified-resources', async (req, res) => {
+  try {
+    const activeCluster = clusterManager.getActiveCluster();
+    if (!activeCluster) {
+      return res.status(400).json({
+        success: false,
+        error: 'No active cluster selected'
+      });
+    }
+
+    const config = req.body;
+
+    // 验证必需字段
+    if (!config.nodeClassName || !config.nodePoolName) {
+      return res.status(400).json({
+        success: false,
+        error: 'NodeClass name and NodePool name are required'
+      });
+    }
+
+    console.log(`Creating unified Karpenter resources for cluster: ${activeCluster}`);
+    console.log(`NodeClass: ${config.nodeClassName}, NodePool: ${config.nodePoolName}`);
+
+    const result = await KarpenterManager.createUnifiedKarpenterResources(activeCluster, config, clusterManager);
+
+    // 广播创建成功消息
+    broadcast({
+      type: 'karpenter_unified_resources_created',
+      clusterTag: activeCluster,
+      nodeClassName: config.nodeClassName,
+      nodePoolName: config.nodePoolName,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating unified Karpenter resources:', error);
+
+    // 广播创建失败消息
+    broadcast({
+      type: 'karpenter_unified_resources_create_failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取所有 Karpenter 资源
+app.get('/api/cluster/karpenter/resources', async (req, res) => {
+  try {
+    const activeCluster = clusterManager.getActiveCluster();
+    const resources = await KarpenterManager.getKarpenterResources(activeCluster);
+
+    res.json({
+      success: true,
+      data: resources
+    });
+  } catch (error) {
+    console.error('Error getting Karpenter resources:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      data: {
+        nodeClasses: [],
+        nodePools: [],
+        nodes: [],
+        summary: {
+          nodeClassCount: 0,
+          nodePoolCount: 0,
+          nodeCount: 0
+        }
+      }
+    });
+  }
+});
+
+console.log('Karpenter NodeClass/NodePool Management APIs loaded');
+console.log('Karpenter Management APIs loaded');
 
 app.listen(PORT, () => {
   console.log('🚀 ========================================');

@@ -93,6 +93,7 @@ train-recipes/
 1. **创建阶段**: 点击Create Cluster时立即保存用户输入、CIDR配置、创建状态
 2. **完成阶段**: CloudFormation CREATE_COMPLETE时自动保存完整集群信息和CloudFormation输出
 3. **运行阶段**: 持续更新依赖状态、节点组信息、HyperPod集群关联
+4. **Karpenter阶段**: 安装Karpenter时保存完整配置和资源状态
 
 **保存的信息类型**:
 - **用户输入信息**: 集群标签、AWS区域、自定义CIDR等表单数据
@@ -104,6 +105,7 @@ train-recipes/
 - **依赖配置状态**: 各组件安装状态、配置历史
 - **环境变量配置**: init_envs文件，包含所有必要的环境变量
 - **导入集群资源**: 通过AWS CLI获取的VPC、安全组、子网等基础设施信息
+- **Karpenter配置信息**: 安装状态、版本、NodeClass/NodePool资源清单
 
 **CloudFormation输出获取**:
 - **触发时机**: EKS集群创建完成时自动触发
@@ -132,7 +134,7 @@ train-recipes/
 managed_clusters_info/
 ├── {clusterTag}/
 │   ├── metadata/           # 核心元数据
-│   │   ├── cluster_info.json          # 主要集群信息 + EKS资源 + HyperPod完整数据
+│   │   ├── cluster_info.json          # 主要集群信息 + EKS资源 + HyperPod完整数据 + Karpenter配置
 │   │   ├── creation_metadata.json     # 创建过程记录 + CF输出（创建集群）
 │   │   ├── import_metadata.json       # 导入过程记录（导入集群）
 │   │   ├── hyperpod-config.json       # HyperPod创建配置（UI创建时）
@@ -142,9 +144,31 @@ managed_clusters_info/
 │   │   ├── init_envs      # 环境变量配置
 │   │   └── stack_envs     # CloudFormation输出环境变量（依赖配置时生成）
 │   ├── logs/              # 操作日志
+│   │   ├── karpenter-install.log     # Karpenter安装日志
+│   │   └── karpenter-uninstall.log   # Karpenter卸载日志
 │   └── current/           # 当前状态
 ├── creating-clusters.json # 创建中集群跟踪
 └── active_cluster.json    # 当前活跃集群
+```
+
+**Karpenter Metadata 结构**:
+```json
+{
+  "karpenter": {
+    "installed": true,
+    "version": "1.8.1",
+    "installationDate": "2025-10-27T10:30:00Z",
+    "components": {
+      "karpenterController": "installed",
+      "prometheus": "installed",
+      "keda": "installed",
+      "vpcEndpoints": ["ec2", "sqs"]
+    },
+    "nodeClasses": [],
+    "nodePools": [],
+    "source": "ui-installed"
+  }
+}
 ```
 
 **自动触发机制**:
@@ -997,6 +1021,704 @@ torchtitan_recipe_dist_run.sh # TorchTitan
 - **权限安全**: 基于 OIDC 的安全访问控制
 - **统一管理**: 集成到现有的集群管理系统
 
+### Karpenter 自动扩缩容模块
+
+#### 功能特性
+- **一键安装**: 自动化部署 Karpenter v1.8.1 及相关组件
+- **前置依赖**: 依赖 HyperPod 集群存在，作为补充算力资源
+- **资源管理**: 自动创建 VPC Endpoints、IAM 角色、CloudFormation Stack
+- **监控集成**: 包含 Prometheus 和 KEDA 监控组件
+- **动态资源配置**: UI 化创建和管理 NodeClass/NodePool 资源
+- **多GPU系列支持**: 支持 G5、G6、G6e、P4、P5、P5e、P5en、P6 等 GPU 实例类型
+
+#### 关键实现文件
+| 功能 | 后端组件 | 前端组件 | 说明 |
+|------|----------|----------|------|
+| 核心管理 | `utils/karpenterManager.js` | `NodeGroupManagerRedux.js` | 完整生命周期管理 |
+| 安装逻辑 | `KarpenterManager.installKarpenterDependencies()` | Install 按钮 | 模块化安装流程 |
+| 状态检查 | `/api/cluster/karpenter/status` | 状态显示区域 | 实时状态同步 |
+| 节点管理 | `/api/cluster/karpenter/nodes` | 节点表格 | Karpenter 节点监控 |
+| 卸载功能 | `/api/cluster/karpenter/uninstall` | Uninstall 按钮 | 安全卸载机制 |
+
+#### 🚨 关键技术决策
+
+##### 1. 基于 Metadata 的资源获取 (2025-10-27)
+**设计原则**: 直接从集群 metadata 获取基础设施信息，而非 CloudFormation 输出
+**实现方式**:
+```javascript
+// 优先从 eksCluster 字段获取
+if (clusterInfo.eksCluster) {
+  stackInfo.EKS_CLUSTER_NAME = clusterInfo.eksCluster.name;
+  stackInfo.VPC_ID = clusterInfo.eksCluster.vpcId;
+  stackInfo.SECURITY_GROUP_ID = clusterInfo.eksCluster.securityGroupId;
+}
+
+// CloudFormation outputs 作为备用
+if (clusterInfo.cloudFormation && clusterInfo.cloudFormation.outputs) {
+  // 备用资源获取逻辑
+}
+```
+**技术优势**:
+- ✅ **数据一致性**: 与其他组件使用相同的数据源
+- ✅ **兼容性**: 支持创建和导入的集群
+- ✅ **可靠性**: 基于实际保存的 metadata 而非动态 API 调用
+
+##### 2. NodeClass/NodePool 统一资源创建架构 (2025-10-27)
+**设计原则**: 采用类似命令行 YAML 部署的统一创建模式，NodeClass 和 NodePool 一次性部署
+**核心实现**:
+```javascript
+// 统一资源创建 - karpenterManager.js
+static async createUnifiedKarpenterResources(clusterTag, config, clusterManager) {
+  const nodeClassYaml = this.generateNodeClassYaml(config, stackInfo);
+  const nodePoolYaml = this.generateNodePoolYaml(config, stackInfo);
+
+  // 组合成单个 YAML 文件，用 --- 分隔（就像命令行部署一样）
+  const unifiedYaml = `${nodeClassYaml}\n---\n${nodePoolYaml}`;
+
+  // 一次性应用所有资源
+  const result = await this.applyKubernetesYaml(unifiedYaml, 'UnifiedKarpenterResources');
+}
+```
+
+**前端统一配置**:
+```javascript
+// NodeGroupManagerRedux.js - 统一配置对象
+const unifiedConfig = {
+  nodeClassName: `${baseName}-nodeclass`,
+  nodePoolName: `${baseName}-nodepool`,
+  nodeClassRef: nodeClassName, // NodePool 需要引用 NodeClass 的名称
+  instanceTypes: values.instanceTypes, // 直接使用选中的实例类型
+  capacityTypes: capacityTypes, // 支持的容量类型
+  nodePoolWeight: values.nodePoolWeight || 100,
+  gpuLimit: values.gpuLimit,
+  volumeSize: values.volumeSize || 200,
+  volumeType: 'gp3',
+  amiAlias: 'al2023@latest'
+};
+```
+
+**技术优势**:
+- ✅ **原子性**: NodeClass 和 NodePool 同时创建，避免依赖问题
+- ✅ **一致性**: 与命令行 `kubectl apply -f` 部署方式保持一致
+- ✅ **简化管理**: 删除时一并清理关联资源
+
+##### 3. 动态实例类型发现与缓存机制 (2025-10-27)
+**设计原则**: 提供跨 GPU 系列的实例类型选择，支持缓存机制优化性能
+**缓存架构**:
+```javascript
+// 获取缓存的实例类型
+const fetchAvailableInstanceTypes = useCallback(async (autoRefreshOnMissing = true) => {
+  const response = await fetch('/api/aws/instance-types');
+  const data = await response.json();
+
+  if (response.ok && data.success) {
+    // 成功获取缓存数据
+    setAvailableInstanceTypes(data.instanceTypes);
+    setCacheInfo({
+      region: data.region,
+      lastUpdated: data.lastUpdated,
+      cached: data.cached,
+      totalFound: data.instanceTypes.length
+    });
+  }
+}, []);
+```
+
+**实例类型分组展示**:
+```javascript
+// 按实例系列分组
+const groupedTypes = availableInstanceTypes.reduce((acc, type) => {
+  if (!acc[type.family]) {
+    acc[type.family] = [];
+  }
+  acc[type.family].push(type);
+  return acc;
+}, {});
+
+// GPU实例类型配置
+const gpuInstanceFamilies = {
+  g5: { name: 'G5', description: 'NVIDIA A10G GPUs' },
+  g6: { name: 'G6', description: 'NVIDIA L4 GPUs' },
+  g6e: { name: 'G6e', description: 'NVIDIA L40S GPUs' },
+  p4: { name: 'P4d', description: 'NVIDIA A100 GPUs' },
+  p5: { name: 'P5', description: 'NVIDIA H100 GPUs' },
+  p5e: { name: 'P5e', description: 'NVIDIA H100 GPUs' },
+  p5en: { name: 'P5en', description: 'NVIDIA H100 GPUs' },
+  p6: { name: 'P6-B200', description: 'NVIDIA B200 GPUs' }
+};
+```
+
+**后端实例类型过滤** (修复 p6-b200 命名问题):
+```javascript
+// server/index.js - p6 特殊处理
+if (family === 'p6') {
+  filterPattern = 'p6-b200.*'; // 特殊命名格式
+} else {
+  filterPattern = `${family}.*`;
+}
+```
+
+**技术优势**:
+- ✅ **跨系列选择**: 支持在同一 NodePool 中选择不同 GPU 系列实例
+- ✅ **缓存优化**: 减少 AWS API 调用，提升用户体验
+- ✅ **智能刷新**: 缓存过期时自动提示手动刷新
+
+##### 4. Capacity Type 架构设计 (2025-10-27)
+**设计原则**: 基于 Karpenter v1 架构，简化容量类型配置
+**UI 配置选项**:
+```javascript
+<Select placeholder="Select capacity type">
+  <Select.Option value="spot">Spot Only (Cost-optimized)</Select.Option>
+  <Select.Option value="on-demand">On-Demand Only (Reliable)</Select.Option>
+  <Select.Option value="both">Both (Spot preferred)</Select.Option>
+</Select>
+
+// 根据用户选择的capacity type确定配置
+const capacityTypes = [];
+if (values.capacityType === 'spot') {
+  capacityTypes.push('spot');
+} else if (values.capacityType === 'on-demand') {
+  capacityTypes.push('on-demand');
+} else if (values.capacityType === 'both') {
+  capacityTypes.push('spot', 'on-demand');
+}
+```
+
+**YAML 生成逻辑**:
+```javascript
+// 添加 capacity-type requirement
+if (config.capacityTypes && config.capacityTypes.length > 0) {
+  requirements.push({
+    key: 'karpenter.sh/capacity-type',
+    operator: 'In',
+    values: config.capacityTypes
+  });
+} else {
+  // 默认使用 spot
+  requirements.push({
+    key: 'karpenter.sh/capacity-type',
+    operator: 'In',
+    values: ['spot']
+  });
+}
+```
+
+**表格显示优化** (确保显示顺序一致):
+```javascript
+// 确保显示顺序：先Spot，再OD
+[...capacityTypes].sort((a, b) => {
+  if (a === 'spot' && b === 'on-demand') return -1;
+  if (a === 'on-demand' && b === 'spot') return 1;
+  return 0;
+}).map(type => (
+  <Tag key={type} color={type === 'on-demand' ? 'green' : 'orange'}>
+    {type === 'on-demand' ? 'OD' : 'Spot'}
+  </Tag>
+))
+```
+
+**技术优势**:
+- ✅ **成本优化**: 默认使用 Spot 实例降低成本
+- ✅ **灵活配置**: 支持混合容量类型满足不同需求
+- ✅ **一致显示**: 标准化显示顺序避免混乱
+
+##### 5. HyperPod 依赖的前置条件 (2025-10-27)
+**设计原则**: Karpenter 仅依赖 HyperPod 集群存在，无其他前置要求
+**判断逻辑**:
+```javascript
+// 按钮禁用条件
+disabled={
+  hyperPodGroups.length === 0 ||  // HyperPod 不存在时禁用
+  karpenterInstalling             // 安装中时禁用
+}
+```
+**业务价值**:
+- 🎯 **角色定位**: Karpenter 作为 HyperPod 的补充算力资源
+- 🔗 **依赖关系**: 简化依赖链，只要求 HyperPod 存在
+- 📋 **操作流程**: 符合用户的自然操作顺序
+
+##### 3. 按钮布局标准化 (2025-10-27)
+**设计原则**: 遵循项目统一的按钮布局规范
+**实现方式**:
+```jsx
+// 按钮放置在 Card 标题同一行右侧
+<Card
+  title="Karpenter Auto Scaling"
+  extra={
+    <Space>
+      {!karpenterStatus?.installed && (
+        <Button type="primary" icon={<PlusOutlined />}>
+          Install Karpenter
+        </Button>
+      )}
+      {karpenterStatus?.installed && (
+        <>
+          <Button icon={<ReloadOutlined />}>Refresh Nodes</Button>
+          <Button danger>Uninstall</Button>
+        </>
+      )}
+    </Space>
+  }
+>
+```
+**一致性**:
+- 🎨 **视觉统一**: 与 HyperPod 和 EKS Node Groups 布局一致
+- 🔄 **交互模式**: 遵循相同的状态切换和按钮行为
+- 📱 **响应式**: 适配不同屏幕尺寸的显示效果
+
+#### 安装流程详解
+
+**完整安装步骤**:
+1. **集群信息获取**: 从 metadata 获取 VPC、安全组、EKS 集群信息
+2. **VPC Endpoints 创建**: 创建 EC2 和 SQS VPC Endpoints (幂等操作)
+3. **资源标签添加**: 为集群、子网、安全组添加 Karpenter 发现标签
+4. **IAM 资源创建**: 创建 Karpenter Controller 和 Node 相关的 IAM 角色
+5. **Helm Chart 安装**: 部署 Karpenter v1.8.1 到 kube-system namespace
+6. **监控组件安装**: 安装 Prometheus 和 KEDA (可选，失败不阻断)
+7. **Metadata 更新**: 记录安装信息到 cluster_info.json
+
+**日志记录**:
+```
+ui-panel/tmp/karpenter-install-{clusterTag}.log           # 临时日志
+ui-panel/managed_clusters_info/{clusterTag}/logs/         # 集群日志目录
+```
+
+**Metadata 结构**:
+```json
+{
+  "karpenter": {
+    "installed": true,
+    "version": "1.8.1",
+    "installationDate": "2025-10-27T10:30:00Z",
+    "components": {
+      "karpenterController": "installed",
+      "prometheus": "installed",
+      "keda": "installed",
+      "vpcEndpoints": ["ec2", "sqs"]
+    },
+    "nodeClasses": [],
+    "nodePools": [],
+    "source": "ui-installed"
+  }
+}
+```
+
+#### 卸载和重装机制
+
+**安全卸载流程**:
+1. **确认对话框**: 警告用户卸载的影响和后果
+2. **Helm Chart 卸载**: 删除 Karpenter Controller 和 CRDs
+3. **CloudFormation 清理**: 删除相关的 IAM 资源
+4. **Metadata 清理**: 从 cluster_info.json 移除 karpenter 字段
+5. **状态通知**: WebSocket 广播卸载完成消息
+
+**重装友好设计**:
+- ✅ **VPC Endpoints 复用**: 避免重复创建，提升性能
+- ✅ **标签幂等操作**: 重复添加标签不会报错
+- ✅ **快速重装**: 利用已有资源，减少安装时间
+
+#### API 端点汇总
+
+| 功能 | 方法 | 端点 | 说明 |
+|------|------|------|------|
+| 安装状态检查 | GET | `/api/cluster/karpenter/status` | 检查Karpenter安装状态和版本信息 |
+| 安装Karpenter | POST | `/api/cluster/karpenter/install` | 安装Karpenter及相关依赖 |
+| 卸载Karpenter | DELETE | `/api/cluster/karpenter/uninstall` | 完整卸载Karpenter和清理资源 |
+| 获取资源列表 | GET | `/api/cluster/karpenter/resources` | 获取NodeClass/NodePool/Nodes列表 |
+| 统一创建资源 | POST | `/api/cluster/karpenter/unified-resources` | 创建NodeClass+NodePool |
+| 删除NodePool | DELETE | `/api/cluster/karpenter/nodepool/:name` | 删除NodePool及关联NodeClass |
+| 获取实例类型 | GET | `/api/aws/instance-types` | 获取缓存的GPU实例类型列表 |
+| 刷新实例类型 | POST | `/api/aws/instance-types/refresh` | 从AWS刷新实例类型缓存 |
+
+#### WebSocket 消息类型
+```javascript
+// Karpenter 生命周期消息
+'karpenter_installation_completed'    // Karpenter安装完成
+'karpenter_installation_failed'       // Karpenter安装失败
+'karpenter_uninstallation_completed'  // Karpenter卸载完成
+'karpenter_uninstallation_failed'     // Karpenter卸载失败
+
+// NodeClass/NodePool 资源消息
+'karpenter_nodeclass_created'         // NodeClass创建完成
+'karpenter_nodeclass_deleted'         // NodeClass删除完成
+'karpenter_nodepool_created'          // NodePool创建完成
+'karpenter_nodepool_deleted'          // NodePool删除完成
+```
+
+#### 故障排查指南
+
+##### 常见问题解决
+
+**1. Karpenter 安装失败**
+```bash
+# 检查 CloudFormation 状态
+aws cloudformation describe-stacks --stack-name "Karpenter-{EKS_CLUSTER_NAME}"
+
+# 检查 IAM 权限
+aws iam list-roles | grep -i karpenter
+
+# 检查 VPC Endpoints
+aws ec2 describe-vpc-endpoints --filters Name=vpc-id,Values={VPC_ID}
+```
+
+**2. NodeClass/NodePool 创建失败**
+```bash
+# 检查 Karpenter 控制器状态
+kubectl get pods -n kube-system -l app.kubernetes.io/name=karpenter
+
+# 检查 CRD 定义
+kubectl get crd | grep karpenter
+
+# 查看详细错误
+kubectl describe nodeclass {nodeclass-name}
+kubectl describe nodepool {nodepool-name}
+```
+
+**3. 实例类型获取失败**
+- **p6-b200 命名问题**: 确保过滤器使用 `p6-b200.*` 而非 `p6.*`
+- **缓存过期**: 使用刷新按钮手动更新缓存
+- **AWS API 限制**: 检查区域可用性和 AWS 配额
+
+**4. 跨 GPU 系列选择问题**
+- **单一 Checkbox.Group**: 确保所有实例类型在同一个表单组件中
+- **useCallback 依赖**: 避免无限循环依赖问题
+- **状态同步**: 检查前端状态管理和 Redux 同步
+
+##### 日志位置
+```bash
+# Karpenter 安装日志
+./managed_clusters_info/{clusterTag}/logs/karpenter-install.log
+
+# Karpenter 卸载日志
+./managed_clusters_info/{clusterTag}/logs/karpenter-uninstall.log
+
+# Karpenter 控制器日志
+kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --follow
+
+# 后端 API 日志
+tail -f ./server/server.log
+```
+
+#### YAML 配置模板与生成逻辑
+
+##### NodeClass YAML 模板
+**核心配置要点**:
+- **角色配置**: 使用 CloudFormation 创建的 `KarpenterNodeRole-${EKS_CLUSTER_NAME}`
+- **AMI 选择**: 默认使用 `al2023@latest`，支持最新的 Amazon Linux 2023
+- **子网发现**: 基于 `karpenter.sh/discovery` 标签自动发现
+- **安全组配置**: 同时支持标签发现和直接 ID 指定
+- **存储配置**: 默认 200GB gp3 卷，支持自定义大小
+
+```yaml
+# 生成的 NodeClass 模板示例
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: my-gpu-nodes-nodeclass
+spec:
+  role: "KarpenterNodeRole-eks-cluster-name"
+  amiSelectorTerms:
+    - alias: "al2023@latest"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "eks-cluster-name"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "eks-cluster-name"
+    - id: sg-xxxxxxxxx
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 200Gi
+        volumeType: gp3
+        deleteOnTermination: true
+        encrypted: true
+```
+
+##### NodePool YAML 模板
+**核心配置要点**:
+- **实例要求**: 支持精确的实例类型列表或系列匹配
+- **容量类型**: 支持 spot、on-demand 或混合配置
+- **GPU 污点**: 自动添加 `nvidia.com/gpu=true:NoSchedule` 污点
+- **资源限制**: GPU 数量限制和权重配置
+- **整合策略**: WhenEmpty 策略，30秒后整合空节点
+
+```yaml
+# 生成的 NodePool 模板示例
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: my-gpu-nodes-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        node-type: gpu
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["g5.8xlarge", "g5.12xlarge", "p5.48xlarge"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: my-gpu-nodes-nodeclass
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+  weight: 100
+  limits:
+    nvidia.com/gpu: 50
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+```
+
+##### 生成逻辑实现
+**Requirements 构建**:
+```javascript
+// karpenterManager.js - generateNodePoolYaml
+const requirements = [
+  {
+    key: 'kubernetes.io/arch',
+    operator: 'In',
+    values: ['amd64']
+  }
+];
+
+// 动态添加容量类型要求
+if (config.capacityTypes && config.capacityTypes.length > 0) {
+  requirements.push({
+    key: 'karpenter.sh/capacity-type',
+    operator: 'In',
+    values: config.capacityTypes
+  });
+}
+
+// 精确实例类型匹配
+if (config.instanceTypes && config.instanceTypes.length > 0) {
+  requirements.push({
+    key: 'node.kubernetes.io/instance-type',
+    operator: 'In',
+    values: config.instanceTypes
+  });
+}
+```
+
+**标签约束处理**:
+- **Karpenter v1 兼容**: 使用 `node.kubernetes.io/instance-type` 而非受限的 `karpenter.k8s.aws/instance-type`
+- **多值支持**: 支持同一 NodePool 中配置多种实例类型
+- **容量类型优先级**: spot 优先显示，确保成本优化可见性
+
+#### UI 表格设计与显示逻辑
+
+##### 统一表格架构
+**设计原则**: NodeClass 作为 NodePool 的属性列显示，避免分离展示的复杂性
+
+**表格列设计**:
+```javascript
+// NodeGroupManagerRedux.js - Karpenter 表格列配置
+const karpenterColumns = [
+  {
+    title: 'Karpenter Node Pool Name',
+    dataIndex: 'name',
+    key: 'name',
+    render: (text) => <Text strong>{text}</Text>
+  },
+  {
+    title: 'NodeClass',
+    dataIndex: 'nodeClassRef',
+    key: 'nodeClassRef',
+    render: (nodeClassRef) => {
+      const nodeClass = karpenterResources.nodeClasses.find(nc => nc.name === nodeClassRef);
+      return (
+        <div>
+          <Tag color="blue">{nodeClassRef}</Tag>
+          {nodeClass && (
+            <div style={{ fontSize: '11px', color: '#8c8c8c' }}>
+              AMI: {nodeClass.amiAlias} • Vol: {nodeClass.volumeSize} ({nodeClass.volumeType})
+            </div>
+          )}
+        </div>
+      );
+    }
+  },
+  {
+    title: 'Capacity Type',
+    dataIndex: 'capacityTypes',
+    key: 'capacityTypes',
+    render: (capacityTypes) => (
+      <div>
+        {/* 确保显示顺序：先Spot，再OD */}
+        {[...capacityTypes].sort((a, b) => {
+          if (a === 'spot' && b === 'on-demand') return -1;
+          if (a === 'on-demand' && b === 'spot') return 1;
+          return 0;
+        }).map(type => (
+          <Tag key={type} color={type === 'on-demand' ? 'green' : 'orange'}>
+            {type === 'on-demand' ? 'OD' : 'Spot'}
+          </Tag>
+        ))}
+      </div>
+    )
+  },
+  {
+    title: 'Weight',
+    dataIndex: 'weight',
+    key: 'weight',
+    render: (text) => text || 100
+  },
+  {
+    title: 'Max GPU Limit',
+    dataIndex: 'gpuLimit',
+    key: 'gpuLimit',
+    render: (text) => text || 'Not Set'
+  },
+  {
+    title: 'Instance Types',
+    dataIndex: 'instanceTypes',
+    key: 'instanceTypes',
+    render: (instanceTypes) => (
+      <div>
+        {instanceTypes && instanceTypes.length > 0 ? (
+          <div>
+            {instanceTypes.slice(0, 3).map(type => (
+              <Tag key={type} size="small">{type}</Tag>
+            ))}
+            {instanceTypes.length > 3 && (
+              <Tag size="small">+{instanceTypes.length - 3} more</Tag>
+            )}
+          </div>
+        ) : (
+          <Text type="secondary">Any</Text>
+        )}
+      </div>
+    )
+  }
+];
+```
+
+##### 数据解析逻辑
+**NodePool 数据提取**:
+```javascript
+// karpenterManager.js - getNodePools
+return nodePools.items.map(np => ({
+  name: np.metadata.name,
+  nodeClassRef: np.spec.template.spec.nodeClassRef?.name,
+  capacityTypes: np.spec.template.spec.requirements
+    ?.find(r => r.key === 'karpenter.sh/capacity-type')?.values || [],
+  instanceTypes: np.spec.template.spec.requirements
+    ?.find(r => r.key === 'node.kubernetes.io/instance-type')?.values || [],
+  gpuLimit: np.spec.limits?.['nvidia.com/gpu'],
+  weight: np.spec.weight,
+  creationTimestamp: np.metadata.creationTimestamp,
+  status: 'Active'
+}));
+```
+
+#### 设计要点
+- **完美集成**: 与现有架构无缝融合，零破坏性修改
+- **用户友好**: 直观的安装按钮和状态显示
+- **错误处理**: 完善的异常处理和用户反馈机制
+- **性能优化**: 资源复用和异步处理避免 UI 阻塞
+- **监控完备**: 实时节点状态显示和管理功能
+- **可靠卸载**: 优化的5步卸载流程，避免CloudFormation DELETE_FAILED问题
+- **统一部署**: NodeClass 和 NodePool 原子性创建，确保资源一致性
+- **智能显示**: 标准化容量类型显示顺序，提升用户体验
+
+#### 卸载流程优化 (2025-10-27)
+**问题背景**: 原始卸载流程可能导致CloudFormation DELETE_FAILED，因为IAM Policy仍附加到角色上
+
+**优化的5步卸载流程**:
+```javascript
+// 步骤1: Pre-cleanup - 清理手动创建的IAM依赖关系
+await this.cleanupManualIAMBindings(stackInfo, logFile);
+  // - 分离KarpenterControllerPolicy从Controller Role
+  // - 删除Pod Identity Associations
+  // - 删除Access Entry
+  // - 删除手动创建的Controller Role
+
+// 步骤2: 卸载Helm chart
+helm uninstall karpenter -n kube-system
+
+// 步骤3: 删除CloudFormation stack (现在应该成功)
+aws cloudformation delete-stack --stack-name Karpenter-${EKS_CLUSTER_NAME}
+aws cloudformation wait stack-delete-complete  // 等待完成
+
+// 步骤4: Post-cleanup - 清理残留资源
+await this.cleanupRemainingResources(stackInfo, logFile);
+  // - 检查Spot服务链接角色状态
+  // - 报告VPC Endpoints状态(保留给其他服务)
+  // - 验证Kubernetes资源清理状态
+
+// 步骤5: 更新metadata
+await this.removeKarpenterFromMetadata(clusterTag, clusterManager);
+```
+
+**关键优化点**:
+- ✅ **依赖解除**: 在CF删除前手动分离IAM绑定关系
+- ✅ **容错机制**: 每步都有try-catch，失败不阻断流程
+- ✅ **等待完成**: 使用`cloudformation wait`确保删除完成
+- ✅ **资源检查**: 全面检查和报告清理状态
+- ✅ **日志完整**: 详细记录每个清理步骤
+
+**解决的问题**:
+- CloudFormation DELETE_FAILED: "Cannot delete a policy attached to entities"
+- 手动资源残留导致的重装问题
+- 缺乏清理状态可见性
+
+#### 单节点环境适配 (2025-10-27)
+**设计挑战**: Karpenter 默认为多节点、多可用区环境设计，单节点 HyperPod 环境需要特殊处理
+
+**核心问题**:
+- 默认要求2个副本但只有1个节点
+- Pod反亲和性要求分散到不同主机
+- 拓扑约束要求分布在不同可用区
+
+**解决策略**:
+- 调整副本数量适应单节点限制
+- 禁用分散约束允许单点部署
+- 保持核心功能不变的前提下适配环境
+
+#### 异步操作与UI响应性 (2025-10-27)
+**设计原则**: 长时间操作不应阻塞整个应用的响应性
+
+**问题识别**:
+- 同步执行的Helm操作可能长时间等待
+- Node.js单线程特性导致所有API请求被阻塞
+- 用户在等待期间触发其他操作造成界面冻结
+
+**架构改进**:
+- 将长时间操作设计为异步非阻塞
+- 通过WebSocket提供实时状态更新
+- 前端状态管理与后端操作进度解耦
+
+#### 状态管理与用户反馈 (2025-10-27)
+**设计理念**: UI状态应准确反映实际操作进度，提供清晰的用户反馈
+
+**状态同步挑战**:
+- API调用成功 ≠ 实际操作完成
+- 前端状态与后端进度存在时间差
+- 用户需要明确知道何时可以进行下一步操作
+
+**解决方案设计**:
+- **分离启动与完成**: 区分操作启动成功和实际完成
+- **事件驱动更新**: 使用WebSocket消息驱动UI状态变更
+- **即时反馈机制**: 关键状态变化立即反映到界面
+
+**关键流程**:
+1. **操作启动**: API返回启动成功，设置loading状态
+2. **进度跟踪**: 后端操作进行中，按钮保持禁用
+3. **完成通知**: WebSocket广播完成消息，重置UI状态
+4. **失败处理**: 仅在启动失败或异常时立即重置状态
+
 ## 🔄 关键数据流
 
 ### 集群创建流程
@@ -1358,9 +2080,9 @@ if (stackStatus === 'DELETE_COMPLETE') {
 - **用户体验**: 避免同时显示多个状态 banner
 - **清理完整性**: 删除时必须清理所有相关的 metadata 字段
 
-### HyperPod 管理按钮条件系统
+### 集群管理按钮条件系统
 **功能**: NodeGroupManagerRedux 组件中各操作按钮的启用条件控制
-**更新时间**: 2025-10-25
+**更新时间**: 2025-10-27
 
 #### 按钮条件汇总表
 
@@ -1369,6 +2091,7 @@ if (stackStatus === 'DELETE_COMPLETE') {
 | **Create HyperPod** | ✅ 必须已配置 | ❌ 不能存在 | ❌ 不能有创建/删除中 |
 | **Add Instance Group** | ❌ 无要求 | ✅ 必须存在 | ❌ 不能有创建/删除/添加中 |
 | **Create Node Group** | ❌ 无要求 | ✅ 必须存在 | ❌ 无要求 |
+| **Install Karpenter** | ❌ 无要求 | ✅ 必须存在 | ❌ 不能安装中 |
 
 #### 详细条件说明
 
@@ -1406,6 +2129,17 @@ disabled={hyperPodGroups.length === 0}
 - **前置条件**: 必须已有HyperPod集群存在
 - **最简条件**: 只要求HyperPod存在，无其他限制
 
+**4. Install Karpenter 按钮**
+```javascript
+disabled={
+  hyperPodGroups.length === 0 ||  // 没有HyperPod时禁用
+  karpenterInstalling             // 安装中时禁用
+}
+```
+- **业务逻辑**: 为集群安装Karpenter自动扩缩容系统
+- **前置条件**: 必须已有HyperPod集群存在
+- **设计原因**: Karpenter作为HyperPod的补充算力资源，需要HyperPod集群提供基础环境
+
 #### 依赖配置状态判断 (`effectiveDependenciesConfigured`)
 ```javascript
 // 导入的EKS+HyperPod集群自动视为已配置
@@ -1441,6 +2175,11 @@ return dependencies?.configured || false;
 **Create Node Group 提示**:
 1. "HyperPod cluster must exist to create node groups"
 2. "Create Node Group" (正常状态)
+
+**Install Karpenter 提示优先级**:
+1. "HyperPod cluster must exist to install Karpenter"
+2. "Installing Karpenter..."
+3. "Install Karpenter auto-scaling system" (正常状态)
 
 #### 设计原则
 - **业务逻辑导向**: 按钮条件直接反映业务操作的前置要求
@@ -1833,6 +2572,42 @@ cat ui-panel/managed_clusters_info/creating-hyperpod-clusters.json
 
 ---
 
+## 🔧 关键注意事项
+
+#### Karpenter 前置依赖
+**环境要求**:
+- HyperPod 集群必须存在且运行正常
+- EKS 集群具备必要的 IAM 权限
+- CloudFormation stack 状态为 CREATE_COMPLETE
+
+**安装链路**:
+1. **依赖检查**: 验证前置条件满足
+2. **基础设施**: 通过 CloudFormation 创建 IAM 资源
+3. **控制器角色**: 创建专用的 Karpenter 服务账户和权限绑定
+4. **Helm 部署**: 安装 Karpenter 控制器到 kube-system
+5. **状态验证**: 确认 Pod 就绪并更新 metadata
+
+**卸载链路**:
+1. **Pre-cleanup**: 清理手动创建的 IAM 绑定关系
+2. **Helm 卸载**: 移除 Karpenter 控制器和相关资源
+3. **CloudFormation 清理**: 删除基础设施 stack
+4. **Post-cleanup**: 检查残留资源状态
+5. **Metadata 更新**: 重置集群状态信息
+
+**重要注意点**:
+- **单节点适配**: 需要调整反亲和性和拓扑约束
+- **依赖顺序**: IAM 资源必须在 CloudFormation 删除前手动清理
+- **状态同步**: 卸载完成后立即更新 UI 状态，避免按钮卡住
+- **操作隔离**: 长时间操作进行中避免触发其他刷新操作
+
+#### 操作最佳实践
+- **环境检查**: 安装前确认集群状态和权限配置
+- **单点操作**: 避免在一个操作进行中启动其他操作
+- **状态监控**: 通过 WebSocket 消息判断操作完成状态
+- **错误恢复**: 失败后清理中间状态再重试
+
+---
+
 ## 📖 相关文档
 
 - [原始优化分析](KUBECTL_OPTIMIZATION_ANALYSIS.md) - 详细的技术实现记录
@@ -1842,4 +2617,4 @@ cat ui-panel/managed_clusters_info/creating-hyperpod-clusters.json
 
 ---
 
-*本文档作为项目的快速索引和开发指南，帮助开发者快速理解项目架构和核心功能实现。*
+*本文档作为项目的快速索引和开发指南，帮助开发者快速理解项目架构和核心功能实现。更新于 2025-10-27，包含了 Karpenter 单节点适配的重要实践经验。*

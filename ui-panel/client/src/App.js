@@ -216,7 +216,27 @@ function App() {
             message.error('HyperPod deletion failed');
             operationRefreshManager.triggerOperationRefresh('hyperpod-delete', data);
             break;
-            
+
+          case 'karpenter_installation_completed':
+            message.success('Karpenter installation completed successfully');
+            operationRefreshManager.triggerOperationRefresh('karpenter-install', data);
+            break;
+
+          case 'karpenter_installation_failed':
+            message.error('Karpenter installation failed');
+            operationRefreshManager.triggerOperationRefresh('karpenter-install', data);
+            break;
+
+          case 'karpenter_uninstallation_completed':
+            message.success('Karpenter uninstallation completed successfully');
+            operationRefreshManager.triggerOperationRefresh('karpenter-uninstall', data);
+            break;
+
+          case 'karpenter_uninstallation_failed':
+            message.error('Karpenter uninstallation failed');
+            operationRefreshManager.triggerOperationRefresh('karpenter-uninstall', data);
+            break;
+
           case 'undeployment':
             if (data.status === 'success') {
               message.success(data.message);
