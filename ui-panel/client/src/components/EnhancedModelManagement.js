@@ -12,7 +12,7 @@ const EnhancedModelManagement = () => {
   const [selectedStorage, setSelectedStorage] = useState('s3-claim');
   const [availableStorages, setAvailableStorages] = useState([]);
 
-  // 获取可用的存储配置
+  // 获取可用的存储配置 - 改为手动触发，不在组件挂载时自动执行
   const fetchAvailableStorages = async () => {
     try {
       const response = await fetch('/api/s3-storages');
@@ -29,9 +29,10 @@ const EnhancedModelManagement = () => {
     }
   };
 
-  useEffect(() => {
-    fetchAvailableStorages();
-  }, []);
+  // 移除自动触发的useEffect，让S3StoragePanel自主管理数据获取
+  // useEffect(() => {
+  //   fetchAvailableStorages();
+  // }, []);
 
   return (
     <Row gutter={[16, 16]} style={{ height: '100%' }}>
