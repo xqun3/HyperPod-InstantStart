@@ -407,7 +407,7 @@ const AdvancedScalingPanelPreview = () => {
         </Col>
 
         <Col span={12}>
-          <Card title="Model Configuration" size="small">
+          <Card title="Model Deployment" size="small">
             <Form.Item label="Model Path">
               <Input
                 placeholder="/s3/Qwen-Qwen3-0.6B/"
@@ -509,7 +509,7 @@ const AdvancedScalingPanelPreview = () => {
               setTimeout(() => setDeploying(false), 3000);
             }}
           >
-            Deploy Advanced Scaling Stack
+            Deploy KVCache-aware Routing Stack
           </Button>
 
           <Button
@@ -550,7 +550,7 @@ const AdvancedScalingPanelPreview = () => {
       <Alert
         type="info"
         message="UI Design Preview"
-        description="This is a preview of the Advanced Scaling configuration panel. All interactions are simulated for demonstration purposes."
+        description="This is a preview of the KVCache-aware Routing configuration panel. All interactions are simulated for demonstration purposes."
         showIcon
         closable
         style={{ marginBottom: 16 }}
@@ -560,7 +560,7 @@ const AdvancedScalingPanelPreview = () => {
         title={
           <Space>
             <SettingOutlined />
-            <span>Advanced Scaling Configuration</span>
+            <span>KVCache-aware Routing Configuration</span>
             <Tag color="orange">SGLang + Karpenter</Tag>
           </Space>
         }

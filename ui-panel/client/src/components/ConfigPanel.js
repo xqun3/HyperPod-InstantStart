@@ -1,41 +1,46 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { 
-  Form, 
-  Input, 
-  InputNumber, 
-  Button, 
-  Space, 
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import {
+  Form,
+  Input,
+  InputNumber,
+  Button,
+  Space,
   Alert,
   Tooltip,
-  Tabs,
-  Typography,
-  Checkbox,
   Row,
   Col,
-  AutoComplete
+  AutoComplete,
+  Select,
+  Radio
 } from 'antd';
-import { 
-  RocketOutlined, 
+import {
+  RocketOutlined,
   InfoCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   CodeOutlined,
-  ThunderboltOutlined,
-  LinkOutlined,
   GlobalOutlined,
   DockerOutlined,
-  TagOutlined
+  TagOutlined,
+  LinkOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
-const { TabPane } = Tabs;
-const { Link } = Typography;
+const { Option, OptGroup } = Select;
+
 
 const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
-  const [vllmForm] = Form.useForm();
-  const [ollamaForm] = Form.useForm();
+  const [deploymentForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('container');
+
+  // 实例类型相关状态
+  const [instanceTypes, setInstanceTypes] = useState({
+    hyperpod: [],
+    eksNodeGroup: [],
+    karpenter: []
+  });
+  const [instanceTypesLoading, setInstanceTypesLoading] = useState(false);
 
   // Docker镜像预设选项 - 使用useMemo避免重新创建导致焦点丢失
   const dockerImageOptions = useMemo(() => [
@@ -54,7 +59,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
   ], []);
 
   // 根据Docker镜像获取对应的默认命令
-  const getDefaultCommandByImage = (dockerImage) => {
+  const getDefaultCommandByImage = useCallback((dockerImage) => {
     if (!dockerImage) {
       return ''; // 没有选择镜像时返回空命令
     }
@@ -84,16 +89,70 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
 --port 8000 \\
 --trust-remote-code`;
     }
-  };
+  }, []);
 
   // 处理Docker镜像选择变化
   const handleDockerImageChange = useCallback((value) => {
     const newCommand = getDefaultCommandByImage(value);
-    vllmForm.setFieldsValue({ vllmCommand: newCommand });
-  }, [vllmForm]);
+    deploymentForm.setFieldsValue({ deploymentCommand: newCommand });
+  }, [getDefaultCommandByImage, deploymentForm]);
+
+  // 获取集群可用实例类型
+  const fetchInstanceTypes = useCallback(async () => {
+    setInstanceTypesLoading(true);
+    try {
+      const response = await fetch('/api/cluster/cluster-available-instance');
+      const data = await response.json();
+
+      if (data.success) {
+        setInstanceTypes(data.data);
+        console.log('Instance types loaded:', data.data);
+      } else {
+        console.error('Failed to fetch instance types:', data.error);
+      }
+    } catch (error) {
+      console.error('Error fetching instance types:', error);
+    } finally {
+      setInstanceTypesLoading(false);
+    }
+  }, []);
+
+  // 组件挂载时获取实例类型
+  useEffect(() => {
+    fetchInstanceTypes();
+  }, [fetchInstanceTypes]);
+
+  // 移除不再使用的过滤函数
+
+  // 使用useMemo优化实例类型选项渲染，避免频繁重新创建
+  const instanceTypeOptions = useMemo(() => (
+    <>
+      <OptGroup label="HyperPod (ml.*)">
+        {instanceTypes.hyperpod.map(type => (
+          <Option key={`hp-${type.type}`} value={type.type}>
+            {type.type} ({type.group}) [{type.count} nodes]
+          </Option>
+        ))}
+      </OptGroup>
+      <OptGroup label="EC2">
+        {/* EKS NodeGroup 实例 */}
+        {instanceTypes.eksNodeGroup.map(type => (
+          <Option key={`eks-${type.type}`} value={type.type}>
+            {type.type} (NodeGroup: {type.nodeGroup}) [{type.count} nodes]
+          </Option>
+        ))}
+        {/* Karpenter 实例 */}
+        {instanceTypes.karpenter.map((type, index) => (
+          <Option key={`kar-${type.type}-${index}`} value={type.type}>
+            {type.type} (Karpenter: {type.nodePool})
+          </Option>
+        ))}
+      </OptGroup>
+    </>
+  ), [instanceTypes]);
 
   // 校验Container Entry命令格式
-  const validateVllmCommand = (_, value) => {
+  const validateDeploymentCommand = (_, value) => {
     if (!value) {
       return Promise.reject(new Error('Please input entry command!'));
     }
@@ -111,33 +170,18 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
     return Promise.resolve();
   };
 
-  // 处理标签切换
-  const handleTabChange = (key) => {
-    console.log('Tab changed to:', key);
-    setActiveTab(key);
-  };
+  // 移除标签切换处理 - 不再需要
 
   const handleSubmit = async (values) => {
     console.log('handleSubmit called with values:', values);
-    console.log('activeTab:', activeTab);
-    
-    // 对于Ollama部署，过滤掉不需要的字段
-    let cleanValues = { ...values };
-    if (activeTab === 'ollama') {
-      // 移除VLLM特有的字段
-      delete cleanValues.dockerImage;
-      delete cleanValues.vllmCommand;
-    }
-    
-    console.log('Cleaned values:', cleanValues);
-    
+
     setLoading(true);
     try {
       const deploymentConfig = {
-        ...cleanValues,
-        deploymentType: activeTab
+        ...values,
+        deploymentType: 'container'  // 固定为container类型
       };
-      
+
       console.log('deploymentConfig:', deploymentConfig);
       console.log('Calling onDeploy with config:', deploymentConfig);
       await onDeploy(deploymentConfig);
@@ -183,23 +227,22 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
     return null;
   };
 
-  const VLLMForm = () => (
+  const DeploymentForm = () => (
     <Form
-      form={vllmForm}
+      form={deploymentForm}
       layout="vertical"
       onFinish={handleSubmit}
       onFinishFailed={(errorInfo) => {
-        console.log('VLLM Form validation failed:', errorInfo);
+        console.log('Deployment Form validation failed:', errorInfo);
       }}
       initialValues={{
         replicas: 1,
         gpuCount: 1,
-        instanceType: 'ml.g6.12xlarge',
-        isExternal: true,
-        deployAsPool: false,
+        instanceTypes: [],
+        serviceType: 'external',
         deploymentName: '',
         dockerImage: '', // 改为空，用户必须选择
-        vllmCommand: '', // 命令也为空，等待用户选择镜像后自动填充
+        deploymentCommand: '', // 命令也为空，等待用户选择镜像后自动填充
         port: 8000 // 添加端口默认值
       }}
     >
@@ -283,21 +326,26 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
           <Form.Item
             label={
               <Space>
-                Instance Type
-                <Tooltip title="EC2 instance type for node selector">
+                Instance Types
+                <Tooltip title="Select one or more instance types for hybrid scheduling">
                   <InfoCircleOutlined />
                 </Tooltip>
               </Space>
             }
-            name="instanceType"
+            name="instanceTypes"
             rules={[
-              { required: true, message: 'Please input instance type!' }
+              { required: true, message: 'Please select at least one instance type!' }
             ]}
           >
-            <Input 
-              placeholder="e.g., ml.g6.12xlarge"
+            <Select
+              mode="multiple"
+              placeholder="Select instance types"
+              loading={instanceTypesLoading}
               style={{ fontFamily: 'monospace' }}
-            />
+              allowClear
+            >
+              {instanceTypeOptions}
+            </Select>
           </Form.Item>
         </Col>
       </Row>
@@ -354,8 +402,8 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
             </Tooltip>
           </Space>
         }
-        name="vllmCommand"
-        rules={[{ validator: validateVllmCommand }]}
+        name="deploymentCommand"
+        rules={[{ validator: validateDeploymentCommand }]}
       >
         <TextArea
           rows={8}
@@ -379,257 +427,72 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
       {/* 部署选项 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
-          <Form.Item>
-            <Form.Item
-              name="deployAsPool"
-              valuePropName="checked"
-              style={{ marginBottom: 8 }}
-            >
-              <Checkbox>
+          <Form.Item
+            label={
+              <Space>
+                Service Type
+                <Tooltip title="Select the service exposure type">
+                  <InfoCircleOutlined />
+                </Tooltip>
+              </Space>
+            }
+            name="serviceType"
+            rules={[
+              { required: true, message: 'Please select service type!' }
+            ]}
+          >
+            <Radio.Group>
+              <Radio value="external">
                 <Space>
-                  <ThunderboltOutlined />
-                  <span>Deploy as Model Pool</span>
-                  <Tooltip title="Create a model pool for dynamic service allocation. Pods can be assigned to different services later.">
-                    <InfoCircleOutlined />
-                  </Tooltip>
+                  <GlobalOutlined />
+                  External Access
                 </Space>
-              </Checkbox>
-            </Form.Item>
+              </Radio>
+              <Radio value="clusterip">
+                <Space>
+                  <LinkOutlined />
+                  Cluster IP
+                </Space>
+              </Radio>
+              <Radio value="modelpool">
+                <Space>
+                  <DockerOutlined />
+                  Model Pool
+                </Space>
+              </Radio>
+            </Radio.Group>
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item dependencies={['deployAsPool']}>
-            {({ getFieldValue }) => (
-              <Form.Item
-                name="isExternal"
-                valuePropName="checked"
-                style={{ marginTop: 8 }}
-              >
-                <Checkbox 
-                  disabled={getFieldValue('deployAsPool')}
-                  style={{ 
-                    opacity: getFieldValue('deployAsPool') ? 0.5 : 1 
-                  }}
-                >
-                  <Space>
-                    <GlobalOutlined />
-                    <span>External Access</span>
-                    <Tooltip title={
-                      getFieldValue('deployAsPool') 
-                        ? "External Access is not applicable for Model Pool deployments. Use Service Configuration to create external services."
-                        : "Enable internet-facing LoadBalancer for external access. Uncheck for internal-only access."
-                    }>
-                      <InfoCircleOutlined />
-                    </Tooltip>
-                  </Space>
-                </Checkbox>
-              </Form.Item>
-            )}
-          </Form.Item>
+          {/* 预留空间用于将来的配置选项 */}
         </Col>
       </Row>
 
       {/* 部署按钮 - 全宽 */}
-      <Form.Item dependencies={['deployAsPool']}>
-        {({ getFieldValue }) => (
-          <Button 
-            type="primary" 
-            htmlType="submit" 
-            loading={loading}
-            icon={<RocketOutlined />}
-            size="large"
-            block
-            className="deploy-btn"
-          >
-            {loading 
-              ? (getFieldValue('deployAsPool') ? 'Deploying Model Pool...' : 'Deploying Model...') 
-              : (getFieldValue('deployAsPool') ? 'Deploy Model Pool' : 'Deploy Model')
-            }
-          </Button>
-        )}
+      <Form.Item>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={loading}
+          icon={<RocketOutlined />}
+          size="large"
+          block
+          className="deploy-btn"
+        >
+          {loading ? 'Deploying Model...' : 'Deploy Model'}
+        </Button>
       </Form.Item>
     </Form>
   );
 
-  const OllamaForm = () => (
-    <Form
-      form={ollamaForm}
-      layout="vertical"
-      onFinish={handleSubmit}
-      onFinishFailed={(errorInfo) => {
-        console.log('Form validation failed:', errorInfo);
-      }}
-      initialValues={{
-        replicas: 1,
-        ollamaModelId: 'gpt-oss:20b',
-        gpuCount: 1,
-        isExternal: true
-      }}
-    >
-      <Form.Item
-        label={
-          <Space>
-            Replicas
-            <Tooltip title="Number of model replicas to deploy">
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        }
-        name="replicas"
-        rules={[
-          { required: true, message: 'Please input replicas count!' },
-          { type: 'number', min: 1, max: 10, message: 'Replicas must be between 1 and 10' }
-        ]}
-      >
-        <InputNumber 
-          min={1} 
-          max={10} 
-          style={{ width: '100%' }}
-          placeholder="Number of replicas"
-        />
-      </Form.Item>
-
-      <Form.Item
-        label={
-          <Space>
-            Ollama Model ID
-            <Tooltip title={
-              <div>
-                The model ID that Ollama will pull and run.<br/>
-                <Link href="https://ollama.com/search" target="_blank" rel="noopener noreferrer">
-                  <LinkOutlined /> Browse available models at ollama.com/search
-                </Link>
-              </div>
-            }>
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        }
-        name="ollamaModelId"
-        rules={[{ required: true, message: 'Please input Ollama model ID!' }]}
-      >
-        <Input
-          placeholder="e.g., gpt-oss:20b, llama2:7b, mistral"
-          style={{ width: '100%' }}
-        />
-      </Form.Item>
-
-      <Form.Item
-        label={
-          <Space>
-            GPU Count
-            <Tooltip title="Number of GPUs allocated per replica">
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        }
-        name="gpuCount"
-        rules={[
-          { required: true, message: 'Please input GPU count!' },
-          { type: 'number', min: 1, max: 8, message: 'GPU count must be between 1 and 8' }
-        ]}
-      >
-        <InputNumber 
-          min={1} 
-          max={8} 
-          style={{ width: '100%' }}
-          placeholder="Number of GPUs per replica"
-        />
-      </Form.Item>
-
-      <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f0f9ff', borderRadius: 6 }}>
-        <div style={{ fontSize: '12px', color: '#0369a1', marginBottom: 8 }}>
-          <strong>Ollama 部署说明：</strong>
-        </div>
-        <div style={{ fontSize: '11px', color: '#0c4a6e' }}>
-          • Ollama会自动拉取指定的模型<br/>
-          • 服务将在端口11434上运行<br/>
-          • 支持标准的Ollama API格式<br/>
-          • 模型会缓存在持久存储中<br/>
-          • 部署名称将基于模型ID自动生成
-        </div>
-      </div>
-
-      {/* 部署选项 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Form.Item>
-            <Button 
-              type="primary" 
-              htmlType="submit" 
-              loading={loading}
-              icon={<ThunderboltOutlined />}
-              size="large"
-              block
-              className="deploy-btn"
-              onClick={() => {
-                console.log('Deploy button clicked!');
-                console.log('Form values:', ollamaForm.getFieldsValue());
-              }}
-            >
-              {loading ? 'Deploying Ollama Model...' : 'Deploy Ollama Model'}
-            </Button>
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item
-            name="isExternal"
-            valuePropName="checked"
-            style={{ marginTop: 8 }}
-          >
-            <Checkbox>
-              <Space>
-                <GlobalOutlined />
-                <span>External Access</span>
-                <Tooltip title="Enable internet-facing LoadBalancer for external access. Uncheck for internal-only access.">
-                  <InfoCircleOutlined />
-                </Tooltip>
-              </Space>
-            </Checkbox>
-          </Form.Item>
-        </Col>
-      </Row>
-    </Form>
-  );
+  // Ollama 表单已移除 - 不再需要
 
   return (
     <div>
       {getStatusAlert()}
-      
-      <Tabs 
-        activeKey={activeTab} 
-        onChange={handleTabChange}
-        type="card"
-        size="small"
-      >
-        <TabPane 
-          tab={
-            <Space>
-              <RocketOutlined />
-              Container
-            </Space>
-          } 
-          key="container"
-        >
-          <VLLMForm />
-        </TabPane>
-        <TabPane 
-          tab={
-            <Space>
-              <ThunderboltOutlined />
-              Ollama
-            </Space>
-          } 
-          key="ollama"
-        >
-          <OllamaForm />
-        </TabPane>
-      </Tabs>
 
-      <div style={{ marginTop: 16, fontSize: '12px', color: '#666' }}>
-        <strong>Note:</strong> 系统会根据选择的部署类型和访问模式生成相应的Kubernetes配置。
-        确保EKS集群有足够的GPU资源。
-      </div>
+      {/* 直接显示Container配置表单，无需Tab层级 */}
+      <DeploymentForm />
     </div>
   );
 };

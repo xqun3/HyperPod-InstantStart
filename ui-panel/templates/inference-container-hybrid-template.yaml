@@ -2,45 +2,52 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: SERVENGINE-unified-MODEL_TAG-inference
+  name: SERVENGINE-MODEL_TAG-inference
   labels:
+    app: SERVENGINE-MODEL_TAG-inference
     model-type: "SERVENGINE"
+    deployment-tag: "MODEL_TAG"
 spec:
   replicas: REPLICAS_COUNT
   selector:
     matchLabels:
-      app: SERVENGINE-unified-MODEL_TAG-inference
+      app: SERVENGINE-MODEL_TAG-inference
   template:
     metadata:
       labels:
-        app: SERVENGINE-unified-MODEL_TAG-inference
+        app: SERVENGINE-MODEL_TAG-inference
+        model-type: "SERVENGINE"
     spec:
-      priorityClassName: od-spot-priority
+      # 混合调度：优先HyperPod，资源不足时EKS NodeGroup，最后Karpenter自动扩展
       affinity:
         nodeAffinity:
+          # 优先级调度
           preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 20
+          # 最高优先：HyperPod节点 (资源固定，性能稳定)
+          - weight: 100
             preference:
               matchExpressions:
-              - key: capacity-type
-                operator: In
-                values: ["on-demand"]
-          - weight: 10
-            preference:
-              matchExpressions:
-              - key: capacity-type
-                operator: In
-                values: ["spot"]
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-type
-                operator: In
-                values: ["gpu"]
-            - matchExpressions:
               - key: sagemaker.amazonaws.com/compute-type
                 operator: In
                 values: ["hyperpod"]
+          # 次优先：EKS NodeGroup节点 (预付费资源)
+          - weight: 90
+            preference:
+              matchExpressions:
+              - key: alpha.eksctl.io/nodegroup-name
+                operator: Exists
+          # 第三优先：Karpenter节点 (按需自动扩展，成本优化)
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: karpenter.sh/capacity-type
+                operator: Exists
+
+          # 必须条件：实例类型匹配
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+HYBRID_NODE_SELECTOR_TERMS
+
       containers:
         - name: SERVENGINE
           image: DOCKER_IMAGE
@@ -63,7 +70,7 @@ spec:
               mountPath: /root/.cache
             - name: shm
               mountPath: /dev/shm
-          env:
+          env:HF_TOKEN_ENV
             - name: TRANSFORMERS_CACHE
               value: "/root/.cache/huggingface"
           securityContext:
@@ -84,6 +91,5 @@ spec:
             sizeLimit: 2Gi
       tolerations:
         - key: "nvidia.com/gpu"
-          value: "true"
-          operator: "Equal"
+          operator: "Exists"
           effect: "NoSchedule"

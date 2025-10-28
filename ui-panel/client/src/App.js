@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Row, Col, Card, message, Tabs, Space, Badge, Typography } from 'antd';
+import { Layout, Row, Col, Card, message, Tabs, Space, Badge } from 'antd';
 import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, CloudServerOutlined, SettingOutlined } from '@ant-design/icons';
 import ThemeProvider from './components/ThemeProvider';
 import ConfigPanel from './components/ConfigPanel';
@@ -11,8 +11,8 @@ import DeploymentManager from './components/DeploymentManagerRedux';
 import HyperPodRecipes from './components/HyperPodRecipes';
 import TrainingMonitorPanel from './components/TrainingMonitorPanelRedux';
 import TrainingHistoryPanel from './components/TrainingHistoryPanel';
-import ModelDownloadPanel from './components/ModelDownloadPanel';
-import S3StoragePanel from './components/S3StoragePanel';
+// import ModelDownloadPanel from './components/ModelDownloadPanel'; // 未使用
+// import S3StoragePanel from './components/S3StoragePanel'; // 未使用
 import HyperPodJobManager from './components/HyperPodJobManager';
 import ClusterManagement from './components/ClusterManagementRedux';
 import GlobalRefreshButtonRedux from './components/GlobalRefreshButtonRedux';
@@ -22,7 +22,7 @@ import EnhancedModelManagement from './components/EnhancedModelManagement';
 import AdvancedScalingPanelV2 from './components/AdvancedScalingPanelV2';
 import globalRefreshManager from './hooks/useGlobalRefresh';
 import operationRefreshManager from './hooks/useOperationRefresh';
-import { refreshManager } from './hooks/useAutoRefresh';
+// import { refreshManager } from './hooks/useAutoRefresh'; // 未使用
 import { getActiveTheme } from './config/themeConfig';
 import './utils/testOperationRefresh'; // 导入测试工具
 import './utils/refreshConfigViewer'; // 导入刷新配置查看工具
@@ -31,7 +31,7 @@ import './styles/dynamic-theme.css';
 
 const { Header, Content } = Layout;
 const { TabPane } = Tabs;
-const { Text } = Typography;
+// const { Text } = Typography; // 未使用
 
 function App() {
   const [clusterData, setClusterData] = useState([]);
@@ -830,7 +830,7 @@ function App() {
                     items={[
                       {
                         key: 'model-config',
-                        label: 'Model Configuration',
+                        label: 'Model Deployment',
                         children: (
                           <ConfigPanel 
                             onDeploy={handleDeploy}
@@ -853,7 +853,7 @@ function App() {
                         key: 'advanced-scaling-preview',
                         label: (
                           <Space>
-                            Advanced Scaling
+                            KVCache-aware Routing
                             <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
                           </Space>
                         ),

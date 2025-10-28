@@ -13,6 +13,7 @@ const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
 const { getCurrentRegion } = require('./utils/awsHelpers');
 const AWSHelpers = require('./utils/awsHelpers');
 const MetadataUtils = require('./utils/metadataUtils');
+const EKSServiceHelper = require('./utils/eksServiceHelper');
 
 // 引入集群状态V2模块
 const { 
@@ -172,9 +173,9 @@ function generateNLBAnnotations(isExternal) {
 }
 
 // 简化的命令解析函数 - 移除GPU自动解析逻辑
-function parseVllmCommand(vllmCommandString) {
+function parseVllmCommand(deploymentCommandString) {
   // 移除换行符和多余空格，处理反斜杠换行
-  const cleanCommand = vllmCommandString
+  const cleanCommand = deploymentCommandString
     .replace(/\\\s*\n/g, ' ')  // 处理反斜杠换行
     .replace(/\s+/g, ' ')      // 合并多个空格
     .trim();
@@ -662,32 +663,31 @@ app.post('/api/proxy-request', async (req, res) => {
   }
 });
 
-// 生成并部署YAML配置 - 仅用于推理部署（VLLM和Ollama）
+// 生成并部署YAML配置 - 仅用于推理部署（Container部署）
 app.post('/api/deploy', async (req, res) => {
   try {
     const {
       replicas,
       huggingFaceToken,
       deploymentType,
-      vllmCommand,
-      ollamaModelId,
+      deploymentCommand,
+      // ollamaModelId - 已移除Ollama支持
       gpuCount,
-      instanceType = 'ml.g6.12xlarge',
-      isExternal = true,
+      instanceTypes = [],  // 新增：多选实例类型数组
+      serviceType = 'external',  // 新增：服务类型 ('external', 'clusterip', 'modelpool')
       deploymentName,  // 用户输入的部署名称
       dockerImage = 'vllm/vllm-openai:latest',
-      deployAsPool = false,  // 新增：是否部署为模型池
-      port = 8000  // 新增：端口配置，默认8000
+      port = 8000  // 端口配置，默认8000
     } = req.body;
 
-    console.log('Inference deployment request:', { 
-      deploymentType, 
+    console.log('Inference deployment request:', {
+      deploymentType,
       deploymentName,
-      ollamaModelId, 
-      replicas, 
-      isExternal,
-      dockerImage,
-      deployAsPool
+      // ollamaModelId - 已移除
+      replicas,
+      instanceTypes,
+      serviceType,
+      dockerImage
     });
 
     // 生成带时间戳的唯一标签（符合Kubernetes命名规范）
@@ -701,27 +701,54 @@ app.post('/api/deploy', async (req, res) => {
 
     let templatePath, newYamlContent, servEngine;
 
-    // 生成NLB注解
+    // 生成NLB注解 - 基于serviceType判断是否需要外部访问
+    const isExternal = serviceType === 'external';
     const nlbAnnotations = generateNLBAnnotations(isExternal);
     console.log(`Generated NLB annotations (external: ${isExternal}):`, nlbAnnotations);
 
-    if (deploymentType === 'ollama') {
-      // 处理Ollama部署
-      templatePath = path.join(__dirname, '../templates/ollama-template.yaml');
-      const templateContent = await fs.readFile(templatePath, 'utf8');
-      
-      // 替换模板中的占位符
-      newYamlContent = templateContent
-        .replace(/MODEL_TAG/g, finalDeploymentTag)
-        .replace(/OLLAMA_MODEL_ID/g, ollamaModelId)
-        .replace(/REPLICAS_COUNT/g, replicas.toString())
-        .replace(/GPU_COUNT/g, gpuCount.toString())
-        .replace(/INSTANCE_TYPE/g, instanceType)
-        .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
-      
-    } else {
+    // 生成混合调度节点选择器条件
+    const generateHybridNodeSelectorTerms = (selectedInstanceTypes) => {
+      if (!selectedInstanceTypes || selectedInstanceTypes.length === 0) {
+        console.warn('No instance types selected, using default ml.g6.12xlarge');
+        selectedInstanceTypes = ['ml.g6.12xlarge'];
+      }
+
+      const hyperpodTypes = selectedInstanceTypes.filter(t => t.startsWith('ml.'));
+      const gpuTypes = selectedInstanceTypes.filter(t => !t.startsWith('ml.'));
+
+      let nodeSelectorTerms = [];
+
+      // HyperPod 节点选择器条件
+      if (hyperpodTypes.length > 0) {
+        nodeSelectorTerms.push(`            # 选项1：HyperPod 节点
+            - matchExpressions:
+              - key: sagemaker.amazonaws.com/compute-type
+                operator: In
+                values: ["hyperpod"]
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: [${hyperpodTypes.map(t => `"${t}"`).join(', ')}]`);
+      }
+
+      // EC2 节点选择器条件 (EKS NodeGroup + Karpenter)
+      if (gpuTypes.length > 0) {
+        nodeSelectorTerms.push(`            # 选项2：EC2 GPU 节点 (EKS NodeGroup + Karpenter)
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: [${gpuTypes.map(t => `"${t}"`).join(', ')}]`);
+      }
+
+      return nodeSelectorTerms.join('\n');
+    };
+
+    const hybridNodeSelectorTerms = generateHybridNodeSelectorTerms(instanceTypes);
+    console.log('Generated hybrid node selector terms:', hybridNodeSelectorTerms);
+
+    // 处理Container部署（移除了Ollama支持）
+    {
       // 处理VLLM/SGLang/Custom部署
-      const parsedCommand = parseVllmCommand(vllmCommand);
+      const parsedCommand = parseVllmCommand(deploymentCommand);
       console.log('Parsed command:', parsedCommand);
       
       // 根据命令类型确定服务引擎前缀
@@ -734,13 +761,14 @@ app.post('/api/deploy', async (req, res) => {
       }
       console.log(`Using service engine: ${servEngine} for command type: ${parsedCommand.commandType}`);
 
-      // 根据deployAsPool选择模板
-      if (deployAsPool) {
+      // 根据serviceType选择模板
+      if (serviceType === 'modelpool') {
         templatePath = path.join(__dirname, '../templates/inference-container-model-pool-template.yaml');
         console.log('Using model pool template (no service will be created)');
       } else {
-        templatePath = path.join(__dirname, '../templates/inference-container-template.yaml');
-        console.log('Using standard template (with service)');
+        // 使用混合调度模板
+        templatePath = path.join(__dirname, '../templates/inference-container-hybrid-template.yaml');
+        console.log('Using hybrid scheduling template');
       }
       
       const templateContent = await fs.readFile(templatePath, 'utf8');
@@ -753,18 +781,36 @@ app.post('/api/deploy', async (req, res) => {
               value: "${huggingFaceToken}"`;
       }
       
-      // 替换模板中的占位符 - 使用用户指定的GPU数量
+      // 替换模板中的占位符 - 使用混合调度和Service类型
       newYamlContent = templateContent
         .replace(/SERVENGINE/g, servEngine)
         .replace(/MODEL_TAG/g, finalDeploymentTag)
         .replace(/REPLICAS_COUNT/g, replicas.toString())
         .replace(/GPU_COUNT/g, gpuCount.toString())
-        .replace(/INSTANCE_TYPE/g, instanceType)
+        .replace(/HYBRID_NODE_SELECTOR_TERMS/g, hybridNodeSelectorTerms)
         .replace(/HF_TOKEN_ENV/g, hfTokenEnv)
         .replace(/ENTRY_CMD/g, JSON.stringify(parsedCommand.fullCommand))
         .replace(/DOCKER_IMAGE/g, dockerImage)
         .replace(/PORT_NUMBER/g, port || 8000)
         .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
+
+      // 使用EKSServiceHelper生成Service YAML
+      if (serviceType !== 'modelpool') {
+        const serviceYaml = EKSServiceHelper.generateServiceYaml(
+          serviceType,
+          servEngine,
+          finalDeploymentTag,
+          port || 8000,
+          nlbAnnotations
+        );
+
+        if (serviceYaml) {
+          newYamlContent += '\n' + serviceYaml;
+          console.log(`Generated ${serviceType} Service YAML`);
+        } else {
+          console.log('No Service generated (Model Pool mode)');
+        }
+      }
     }
     
     // 保存到项目目录中的deployments文件夹
@@ -775,8 +821,8 @@ app.post('/api/deploy', async (req, res) => {
     
     const accessType = isExternal ? 'external' : 'internal';
     const poolType = deployAsPool ? 'pool' : 'standard';
-    // 使用实际的引擎类型：ollama使用deploymentType，container使用解析出的servEngine
-    const actualEngineType = deploymentType === 'ollama' ? 'ollama' : servEngine;
+    // 使用实际的引擎类型：container使用解析出的servEngine
+    const actualEngineType = servEngine;
     const tempYamlPath = path.join(deploymentsDir, `${finalDeploymentTag}-${actualEngineType}-${poolType}-${accessType}.yaml`);
     await fs.writeFile(tempYamlPath, newYamlContent);
     
@@ -803,7 +849,7 @@ app.post('/api/deploy', async (req, res) => {
       output: applyOutput,
       yamlPath: tempYamlPath,
       generatedYaml: newYamlContent,
-      deploymentType: deploymentType === 'ollama' ? 'ollama' : servEngine,
+      deploymentType: servEngine,
       deploymentTag: finalDeploymentTag,
       accessType
     });
@@ -3173,25 +3219,7 @@ app.get('/api/deployment-details', async (req, res) => {
           }
         }
         
-        // 对于Ollama部署，从postStart生命周期钩子中提取模型ID
-        if (modelType === 'ollama' && modelId === 'unknown') {
-          try {
-            const containers = deployment.spec?.template?.spec?.containers || [];
-            const ollamaContainer = containers.find(c => c.name === 'ollama');
-            if (ollamaContainer && ollamaContainer.lifecycle?.postStart?.exec?.command) {
-              const command = ollamaContainer.lifecycle.postStart.exec.command;
-              // 查找包含"ollama pull"的命令
-              const commandStr = command.join(' ');
-              const pullMatch = commandStr.match(/ollama pull ([^\s\\]+)/);
-              if (pullMatch) {
-                modelId = pullMatch[1]; // 提取模型ID
-                console.log('Extracted Ollama model ID from postStart:', modelId);
-              }
-            }
-          } catch (error) {
-            console.log('Failed to extract model ID from Ollama postStart command:', error.message);
-          }
-        }
+        // 移除了Ollama特定的模型ID提取逻辑
         
         // 对于无法提取的情况，使用解码逻辑
         if (modelId === 'unknown' && encodedModelId !== 'unknown') {
@@ -4520,6 +4548,140 @@ app.get('/api/cluster/mlflow-info', (req, res) => {
   } catch (error) {
     console.error('Error reading MLflow server info:', error);
     res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取集群可用实例类型 API
+app.get('/api/cluster/cluster-available-instance', async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+    const AWSHelpers = require('./utils/awsHelpers');
+
+    console.log('Fetching cluster available instance types...');
+
+    // 初始化结果数据结构
+    const result = {
+      success: true,
+      data: {
+        hyperpod: [],
+        eksNodeGroup: [],
+        karpenter: []
+      }
+    };
+
+    // 获取当前区域
+    const region = AWSHelpers.getCurrentRegion();
+
+    // 1. 获取 HyperPod 实例类型
+    try {
+      const nodesJson = execSync('kubectl get nodes -o json', { encoding: 'utf8', timeout: 10000 });
+      const nodesData = JSON.parse(nodesJson);
+
+      // 过滤HyperPod节点并统计实例类型
+      const hyperPodNodes = nodesData.items.filter(node =>
+        node.metadata.labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod'
+      );
+
+      const hyperPodTypeMap = new Map();
+      hyperPodNodes.forEach(node => {
+        const instanceType = node.metadata.labels['node.kubernetes.io/instance-type'];
+        const instanceGroup = node.metadata.labels['sagemaker.amazonaws.com/instance-group-name'];
+
+        if (instanceType && instanceType.startsWith('ml.')) {
+          const key = `${instanceType}-${instanceGroup}`;
+          if (!hyperPodTypeMap.has(key)) {
+            hyperPodTypeMap.set(key, {
+              type: instanceType,
+              group: instanceGroup,
+              count: 0
+            });
+          }
+          hyperPodTypeMap.get(key).count++;
+        }
+      });
+
+      result.data.hyperpod = Array.from(hyperPodTypeMap.values());
+      console.log(`Found ${result.data.hyperpod.length} HyperPod instance types`);
+    } catch (error) {
+      console.warn('Error fetching HyperPod instance types:', error.message);
+    }
+
+    // 2. 获取 EKS NodeGroup 实例类型
+    try {
+      const nodesJson = execSync('kubectl get nodes -o json', { encoding: 'utf8', timeout: 10000 });
+      const nodesData = JSON.parse(nodesJson);
+
+      // 过滤EKS NodeGroup节点
+      const eksNodes = nodesData.items.filter(node =>
+        node.metadata.labels['alpha.eksctl.io/nodegroup-name'] &&
+        !node.metadata.labels['sagemaker.amazonaws.com/compute-type']
+      );
+
+      const eksTypeMap = new Map();
+      eksNodes.forEach(node => {
+        const instanceType = node.metadata.labels['node.kubernetes.io/instance-type'];
+        const nodeGroup = node.metadata.labels['alpha.eksctl.io/nodegroup-name'];
+
+        if (instanceType && !instanceType.startsWith('ml.')) {
+          const key = `${instanceType}-${nodeGroup}`;
+          if (!eksTypeMap.has(key)) {
+            eksTypeMap.set(key, {
+              type: instanceType,
+              nodeGroup: nodeGroup,
+              count: 0
+            });
+          }
+          eksTypeMap.get(key).count++;
+        }
+      });
+
+      result.data.eksNodeGroup = Array.from(eksTypeMap.values());
+      console.log(`Found ${result.data.eksNodeGroup.length} EKS NodeGroup instance types`);
+    } catch (error) {
+      console.warn('Error fetching EKS NodeGroup instance types:', error.message);
+    }
+
+    // 3. 获取 Karpenter NodePool 实例类型
+    try {
+      const nodePoolsJson = execSync('kubectl get nodepool -o json', { encoding: 'utf8', timeout: 10000 });
+      const nodePoolsData = JSON.parse(nodePoolsJson);
+
+      nodePoolsData.items.forEach(nodePool => {
+        const nodePoolName = nodePool.metadata.name;
+        const requirements = nodePool.spec.template.spec.requirements || [];
+
+        // 查找instance-type requirement
+        const instanceTypeReq = requirements.find(req =>
+          req.key === 'node.kubernetes.io/instance-type'
+        );
+
+        if (instanceTypeReq && instanceTypeReq.values) {
+          instanceTypeReq.values.forEach(instanceType => {
+            if (!instanceType.startsWith('ml.')) {
+              result.data.karpenter.push({
+                type: instanceType,
+                nodePool: nodePoolName,
+                available: true
+              });
+            }
+          });
+        }
+      });
+
+      console.log(`Found ${result.data.karpenter.length} Karpenter instance types`);
+    } catch (error) {
+      console.warn('Error fetching Karpenter instance types:', error.message);
+    }
+
+    console.log('Cluster available instance types result:', JSON.stringify(result, null, 2));
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error fetching cluster available instance types:', error);
+    res.status(500).json({
       success: false,
       error: error.message
     });

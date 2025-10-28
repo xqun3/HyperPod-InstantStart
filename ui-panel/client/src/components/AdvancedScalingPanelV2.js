@@ -79,7 +79,7 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
-      console.log('Advanced Scaling Config:', values);
+      console.log('KVCache-aware Routing Config:', values);
 
       // 构建配置对象
       const config = {
@@ -116,7 +116,7 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
     <div className="advanced-scaling-v2">
       <Alert
         type="info"
-        message="Advanced Scaling with SGLang Router"
+        message="KVCache-aware Routing with SGLang Router"
         description="Configure intelligent request routing and model deployment with SGLang Router. Karpenter node configuration is managed in Cluster Management section."
         showIcon
         style={{ marginBottom: 24 }}
