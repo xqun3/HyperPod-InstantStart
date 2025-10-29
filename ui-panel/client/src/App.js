@@ -7,13 +7,13 @@ import ServiceConfigPanel from './components/ServiceConfigPanel';
 import ClusterStatusV2Redux from './components/ClusterStatusV2Redux';
 import TestPanel from './components/TestPanel';
 import StatusMonitorRedux from './components/StatusMonitorRedux';
-import DeploymentManager from './components/DeploymentManagerRedux';
+// import DeploymentManager from './components/DeploymentManagerRedux'; // 备份：原部署管理组件
 import HyperPodRecipes from './components/HyperPodRecipes';
 import TrainingMonitorPanel from './components/TrainingMonitorPanelRedux';
 import TrainingHistoryPanel from './components/TrainingHistoryPanel';
 // import ModelDownloadPanel from './components/ModelDownloadPanel'; // 未使用
 // import S3StoragePanel from './components/S3StoragePanel'; // 未使用
-import HyperPodJobManager from './components/HyperPodJobManager';
+// import HyperPodJobManager from './components/HyperPodJobManager'; // 备份：原训练任务管理组件
 import ClusterManagement from './components/ClusterManagementRedux';
 import GlobalRefreshButtonRedux from './components/GlobalRefreshButtonRedux';
 // import OperationFeedback from './components/OperationFeedback'; // 已移除：右上角详细卡片
@@ -1071,7 +1071,11 @@ function App() {
                   } 
                   key="deployments"
                 >
-                  <DeploymentManager />
+                  <div style={{ padding: '16px' }}>
+                    <StatusMonitorRedux
+                      activeTab="deployments"
+                    />
+                  </div>
                 </TabPane>
                 <TabPane 
                   tab={
@@ -1083,7 +1087,9 @@ function App() {
                   key="hyperpod-jobs"
                 >
                   <div style={{ padding: '16px' }}>
-                    <HyperPodJobManager />
+                    <StatusMonitorRedux
+                      activeTab="jobs"
+                    />
                   </div>
                 </TabPane>
                 <TabPane 

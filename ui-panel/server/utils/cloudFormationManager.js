@@ -434,7 +434,7 @@ managedNodeGroups:
     //     effect: NoSchedule
       
       // 生成临时配置文件
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
+      const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
       const configFileName = `eksctl-nodegroup-${nodeGroupConfig.nodeGroupName}-${timestamp}.yaml`;
       const configFilePath = path.join('/tmp', configFileName);
       

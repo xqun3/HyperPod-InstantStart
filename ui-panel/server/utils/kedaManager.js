@@ -96,7 +96,7 @@ ${scaledObject}`;
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
       const tempFilePath = path.join(tempDir, `keda-config-${timestamp}.yaml`);
 
       fs.writeFileSync(tempFilePath, fullYaml);

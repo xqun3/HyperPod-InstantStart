@@ -149,7 +149,7 @@ spec:
       }
 
       // Save YAML file with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
       const yamlPath = path.join(deploymentDir, `sglang-router-${timestamp}.yaml`);
 
       fs.writeFileSync(yamlPath, yaml);

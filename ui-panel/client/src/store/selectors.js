@@ -106,6 +106,8 @@ export const selectAppPods = state => state.appStatus?.pods || [];
 export const selectAppServices = state => state.appStatus?.services || [];
 export const selectAppRayJobs = state => state.appStatus?.rayJobs || [];
 export const selectAppBindingServices = state => state.appStatus?.bindingServices || [];
+export const selectAppDeployments = state => state.appStatus?.deployments || [];          // 新增
+export const selectAppTrainingJobs = state => state.appStatus?.trainingJobs || [];       // 新增
 export const selectAppStatusLoading = state => state.appStatus?.loading || false;
 export const selectAppStatusError = state => state.appStatus?.error;
 export const selectAppLastUpdate = state => state.appStatus?.lastUpdate;
@@ -116,18 +118,24 @@ export const selectPodsLoading = state => state.appStatus?.podsLoading || false;
 export const selectServicesLoading = state => state.appStatus?.servicesLoading || false;
 export const selectRayJobsLoading = state => state.appStatus?.rayJobsLoading || false;
 export const selectBindingServicesLoading = state => state.appStatus?.bindingServicesLoading || false;
+export const selectDeploymentsLoading = state => state.appStatus?.deploymentsLoading || false;           // 新增
+export const selectTrainingJobsLoading = state => state.appStatus?.trainingJobsLoading || false;         // 新增
 
 // 分别获取各个组件的错误状态
 export const selectPodsError = state => state.appStatus?.podsError;
 export const selectServicesError = state => state.appStatus?.servicesError;
 export const selectRayJobsError = state => state.appStatus?.rayJobsError;
 export const selectBindingServicesError = state => state.appStatus?.bindingServicesError;
+export const selectDeploymentsError = state => state.appStatus?.deploymentsError;                       // 新增
+export const selectTrainingJobsError = state => state.appStatus?.trainingJobsError;                     // 新增
 
 // 分别获取各个组件的更新时间
 export const selectPodsLastUpdate = state => state.appStatus?.lastPodsUpdate;
 export const selectServicesLastUpdate = state => state.appStatus?.lastServicesUpdate;
 export const selectRayJobsLastUpdate = state => state.appStatus?.lastRayJobsUpdate;
 export const selectBindingServicesLastUpdate = state => state.appStatus?.lastBindingServicesUpdate;
+export const selectDeploymentsLastUpdate = state => state.appStatus?.lastDeploymentsUpdate;             // 新增
+export const selectTrainingJobsLastUpdate = state => state.appStatus?.lastTrainingJobsUpdate;           // 新增
 
 // 计算应用健康度的选择器
 export const selectAppHealthSummary = state => {
@@ -146,7 +154,15 @@ export const selectAppHealthSummary = state => {
   const businessServiceHealth = stats.totalBindingServices > 0 ?
     (stats.healthyBindingServices / stats.totalBindingServices) * 100 : 100;
 
-  const overallHealth = (podHealth + serviceHealth + rayJobHealth + businessServiceHealth) / 4;
+  // 新增：部署健康度
+  const deploymentHealth = stats.totalDeployments > 0 ?
+    (stats.activeDeployments / stats.totalDeployments) * 100 : 100;
+
+  // 新增：训练任务健康度
+  const trainingJobHealth = stats.totalTrainingJobs > 0 ?
+    ((stats.runningTrainingJobs + stats.completedTrainingJobs) / stats.totalTrainingJobs) * 100 : 100;
+
+  const overallHealth = (podHealth + serviceHealth + rayJobHealth + businessServiceHealth + deploymentHealth + trainingJobHealth) / 6;
 
   let healthLevel = 'healthy';
   if (overallHealth < 50) healthLevel = 'critical';
@@ -160,7 +176,9 @@ export const selectAppHealthSummary = state => {
       pods: Math.round(podHealth),
       services: Math.round(serviceHealth),
       rayJobs: Math.round(rayJobHealth),
-      bindingServices: Math.round(businessServiceHealth)
+      bindingServices: Math.round(businessServiceHealth),
+      deployments: Math.round(deploymentHealth),          // 新增
+      trainingJobs: Math.round(trainingJobHealth)         // 新增
     }
   };
 };
@@ -175,6 +193,22 @@ export const selectPodsByStatus = (state, status) => {
 export const selectRayJobsByStatus = (state, status) => {
   const rayJobs = selectAppRayJobs(state);
   return rayJobs.filter(job => job.status?.jobStatus === status);
+};
+
+// 选择特定状态的部署
+export const selectDeploymentsByStatus = (state, status) => {
+  const deployments = selectAppDeployments(state);
+  return deployments.filter(deployment => deployment.status === status);
+};
+
+// 选择特定状态的训练任务
+export const selectTrainingJobsByStatus = (state, status) => {
+  const trainingJobs = selectAppTrainingJobs(state);
+  return trainingJobs.filter(job => {
+    const jobStatus = job.status || (job.conditions && job.conditions.length > 0 ?
+      job.conditions[job.conditions.length - 1].type : 'Unknown');
+    return jobStatus === status;
+  });
 };
 
 // 全局刷新相关选择器

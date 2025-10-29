@@ -104,6 +104,58 @@ export const fetchBindingServices = createAsyncThunk(
   }
 );
 
+// 异步操作：获取部署状态
+export const fetchDeployments = createAsyncThunk(
+  'appStatus/fetchDeployments',
+  async (_, { rejectWithValue }) => {
+    try {
+      console.log('Fetching deployments status via Redux...');
+      const response = await fetch('/api/deployments');
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Deployments status response:', data);
+
+      return {
+        deployments: Array.isArray(data) ? data : [],
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error fetching deployments:', error);
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// 异步操作：获取训练任务状态
+export const fetchTrainingJobs = createAsyncThunk(
+  'appStatus/fetchTrainingJobs',
+  async (_, { rejectWithValue }) => {
+    try {
+      console.log('Fetching training jobs status via Redux...');
+      const response = await fetch('/api/training-jobs');
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Training jobs status response:', data);
+
+      return {
+        trainingJobs: data.success ? (data.jobs || []) : [],
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error fetching training jobs:', error);
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // 新增：使用V2 API的优化组合获取
 export const fetchAppStatusV2 = createAsyncThunk(
   'appStatus/fetchAppStatusV2',
@@ -143,13 +195,15 @@ export const refreshAllAppStatus = createAsyncThunk(
       const results = await Promise.allSettled([
         dispatch(fetchAppStatusV2()).unwrap(),
         dispatch(fetchRayJobs()).unwrap(),
-        dispatch(fetchBindingServices()).unwrap()
+        dispatch(fetchBindingServices()).unwrap(),
+        dispatch(fetchDeployments()).unwrap(),        // 新增
+        dispatch(fetchTrainingJobs()).unwrap()        // 新增
       ]);
 
       const errors = [];
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
-          const operations = ['App Status V2', 'RayJobs', 'Business Services'];
+          const operations = ['App Status V2', 'RayJobs', 'Business Services', 'Deployments', 'Training Jobs'];
           errors.push(`${operations[index]}: ${result.reason}`);
         }
       });
@@ -177,6 +231,8 @@ const appStatusSlice = createSlice({
     services: [],
     rayJobs: [],
     bindingServices: [],
+    deployments: [],           // 新增
+    trainingJobs: [],          // 新增
 
     // 加载状态管理
     loading: false,
@@ -184,6 +240,8 @@ const appStatusSlice = createSlice({
     servicesLoading: false,
     rayJobsLoading: false,
     bindingServicesLoading: false,
+    deploymentsLoading: false, // 新增
+    trainingJobsLoading: false, // 新增
 
     // 错误状态管理
     error: null,
@@ -191,6 +249,8 @@ const appStatusSlice = createSlice({
     servicesError: null,
     rayJobsError: null,
     bindingServicesError: null,
+    deploymentsError: null,    // 新增
+    trainingJobsError: null,   // 新增
 
     // 时间戳记录
     lastUpdate: null,
@@ -198,6 +258,8 @@ const appStatusSlice = createSlice({
     lastServicesUpdate: null,
     lastRayJobsUpdate: null,
     lastBindingServicesUpdate: null,
+    lastDeploymentsUpdate: null,    // 新增
+    lastTrainingJobsUpdate: null,   // 新增
 
     // 统计信息
     stats: {
@@ -212,7 +274,13 @@ const appStatusSlice = createSlice({
       completedRayJobs: 0,
       failedRayJobs: 0,
       totalBindingServices: 0,
-      healthyBindingServices: 0
+      healthyBindingServices: 0,
+      totalDeployments: 0,        // 新增
+      activeDeployments: 0,       // 新增
+      totalTrainingJobs: 0,       // 新增
+      runningTrainingJobs: 0,     // 新增
+      completedTrainingJobs: 0,   // 新增
+      failedTrainingJobs: 0       // 新增
     }
   },
   reducers: {
@@ -223,6 +291,8 @@ const appStatusSlice = createSlice({
       state.servicesError = null;
       state.rayJobsError = null;
       state.bindingServicesError = null;
+      state.deploymentsError = null;      // 新增
+      state.trainingJobsError = null;     // 新增
     },
 
     // 更新单个 Pod 状态（用于 WebSocket 实时更新）
@@ -270,6 +340,34 @@ const appStatusSlice = createSlice({
       if (serviceIndex !== -1) {
         state.bindingServices[serviceIndex] = { ...state.bindingServices[serviceIndex], ...status };
         state.lastBindingServicesUpdate = new Date().toISOString();
+        appStatusSlice.caseReducers.updateStats(state);
+      }
+    },
+
+    // 更新单个部署状态
+    updateDeploymentStatus: (state, action) => {
+      const { deploymentName, status } = action.payload;
+      const deploymentIndex = state.deployments.findIndex(deployment =>
+        deployment.metadata?.name === deploymentName || deployment.modelTag === deploymentName
+      );
+
+      if (deploymentIndex !== -1) {
+        state.deployments[deploymentIndex] = { ...state.deployments[deploymentIndex], ...status };
+        state.lastDeploymentsUpdate = new Date().toISOString();
+        appStatusSlice.caseReducers.updateStats(state);
+      }
+    },
+
+    // 更新单个训练任务状态
+    updateTrainingJobStatus: (state, action) => {
+      const { jobName, status } = action.payload;
+      const jobIndex = state.trainingJobs.findIndex(job =>
+        job.metadata?.name === jobName || job.jobName === jobName
+      );
+
+      if (jobIndex !== -1) {
+        state.trainingJobs[jobIndex] = { ...state.trainingJobs[jobIndex], ...status };
+        state.lastTrainingJobsUpdate = new Date().toISOString();
         appStatusSlice.caseReducers.updateStats(state);
       }
     },
@@ -324,11 +422,39 @@ const appStatusSlice = createSlice({
         ).length
       };
 
+      // 部署统计
+      const deploymentStats = {
+        totalDeployments: state.deployments.length,
+        activeDeployments: state.deployments.filter(deployment =>
+          deployment.status === 'Running' || deployment.replicas > 0
+        ).length
+      };
+
+      // 训练任务统计
+      const trainingJobStats = state.trainingJobs.reduce((acc, job) => {
+        const status = job.status || (job.conditions && job.conditions.length > 0 ?
+          job.conditions[job.conditions.length - 1].type : 'Unknown');
+
+        return {
+          totalTrainingJobs: acc.totalTrainingJobs + 1,
+          runningTrainingJobs: acc.runningTrainingJobs + (status === 'Running' ? 1 : 0),
+          completedTrainingJobs: acc.completedTrainingJobs + (status === 'Succeeded' || status === 'Complete' ? 1 : 0),
+          failedTrainingJobs: acc.failedTrainingJobs + (status === 'Failed' ? 1 : 0)
+        };
+      }, {
+        totalTrainingJobs: 0,
+        runningTrainingJobs: 0,
+        completedTrainingJobs: 0,
+        failedTrainingJobs: 0
+      });
+
       state.stats = {
         ...podStats,
         ...serviceStats,
         ...rayJobStats,
-        ...businessServiceStats
+        ...businessServiceStats,
+        ...deploymentStats,        // 新增
+        ...trainingJobStats        // 新增
       };
     }
   },
@@ -433,6 +559,48 @@ const appStatusSlice = createSlice({
         state.bindingServicesError = action.payload;
       })
 
+    // 处理获取部署状态
+      .addCase(fetchDeployments.pending, (state) => {
+        state.deploymentsLoading = true;
+        state.deploymentsError = null;
+      })
+      .addCase(fetchDeployments.fulfilled, (state, action) => {
+        state.deploymentsLoading = false;
+        state.deployments = action.payload.deployments;
+        state.lastDeploymentsUpdate = action.payload.timestamp;
+
+        console.log('Redux: Updated deployments:', {
+          deploymentsCount: state.deployments.length
+        });
+
+        appStatusSlice.caseReducers.updateStats(state);
+      })
+      .addCase(fetchDeployments.rejected, (state, action) => {
+        state.deploymentsLoading = false;
+        state.deploymentsError = action.payload;
+      })
+
+    // 处理获取训练任务
+      .addCase(fetchTrainingJobs.pending, (state) => {
+        state.trainingJobsLoading = true;
+        state.trainingJobsError = null;
+      })
+      .addCase(fetchTrainingJobs.fulfilled, (state, action) => {
+        state.trainingJobsLoading = false;
+        state.trainingJobs = action.payload.trainingJobs;
+        state.lastTrainingJobsUpdate = action.payload.timestamp;
+
+        console.log('Redux: Updated training jobs:', {
+          trainingJobsCount: state.trainingJobs.length
+        });
+
+        appStatusSlice.caseReducers.updateStats(state);
+      })
+      .addCase(fetchTrainingJobs.rejected, (state, action) => {
+        state.trainingJobsLoading = false;
+        state.trainingJobsError = action.payload;
+      })
+
     // 处理组合刷新操作
       .addCase(refreshAllAppStatus.pending, (state) => {
         state.loading = true;
@@ -459,6 +627,8 @@ export const {
   updateServiceStatus,
   updateRayJobStatus,
   updateBusinessServiceStatus,
+  updateDeploymentStatus,        // 新增
+  updateTrainingJobStatus,       // 新增
   updateStats
 } = appStatusSlice.actions;
 

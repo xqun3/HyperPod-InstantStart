@@ -114,7 +114,7 @@ const handleDeployAdvancedScaling = async (req, res) => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const karpenterFile = path.join(tempDir, `karpenter-${timestamp}.yaml`);
     const routerFile = path.join(tempDir, `sglang-router-${timestamp}.yaml`);
     const modelFile = path.join(tempDir, `model-deployment-${timestamp}.yaml`);

@@ -24,7 +24,7 @@ class MultiClusterLogManager {
 
   // 创建新的日志文件
   createLogFile(step) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const logFileName = `${timestamp}_${step}.log`;
     const logFilePath = path.join(this.logsDir, logFileName);
     

@@ -189,7 +189,7 @@ class MultiClusterAPIs {
       
       // 备份原文件
       if (fs.existsSync(cliInitEnvs)) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
         const backupPath = `${cliInitEnvs}.backup.${timestamp}`;
         await fs.copy(cliInitEnvs, backupPath);
         console.log(`Backed up original init_envs to: ${backupPath}`);

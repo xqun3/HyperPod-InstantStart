@@ -1027,7 +1027,7 @@ async function deployTrainingYaml(recipeType, jobName, yamlContent) {
     await fs.writeFile(tempFilePath, yamlContent);
 
     // 写入永久文件（用于记录）
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const permanentFileName = `${recipeType}_${timestamp}.yaml`;
     const permanentFilePath = path.join(trainingsDir, permanentFileName);
     await fs.writeFile(permanentFilePath, yamlContent);
@@ -4297,7 +4297,7 @@ app.post('/api/download-model-enhanced', async (req, res) => {
     
     // 保存生成的YAML文件到deployments目录
     const modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const deploymentFile = path.join(deploymentsDir, `enhanced-model-download-${modelTag}-${timestamp}.yaml`);
     await fs.writeFile(deploymentFile, jobResult.yamlContent);
     
@@ -5548,7 +5548,7 @@ app.post('/api/cluster/create-eks', async (req, res) => {
     const cidrConfig = await CidrGenerator.generateFullCidrConfiguration(awsRegion, customVpcCidr);
     
     // 立即创建集群目录和状态记录（在CloudFormation调用前）
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const stackName = `full-stack-${clusterTag}-${timestamp}`;
     
     const clusterConfig = {
@@ -6643,7 +6643,7 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
     };
     
     // 生成HyperPod配置
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
+    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const clusterTag = userConfig.clusterTag;
     const hyperPodStackName = `hyperpod-${clusterTag}-${timestamp}`;
     
