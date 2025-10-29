@@ -23,7 +23,8 @@ import {
   DockerOutlined,
   TagOutlined,
   LinkOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -244,8 +245,8 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
         dockerImage: '', // 改为空，用户必须选择
         deploymentCommand: '', // 命令也为空，等待用户选择镜像后自动填充
         port: 8000, // 添加端口默认值
-        cpuRequest: 4, // 添加CPU默认值
-        memoryRequest: 16 // 添加Memory默认值
+        cpuRequest: -1, // 修改为-1，表示不设置限制
+        memoryRequest: -1 // 修改为-1，表示不设置限制
       }}
     >
       <Row gutter={16}>
@@ -300,7 +301,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
       </Row>
 
       <Row gutter={16}>
-        <Col span={12}>
+        <Col span={8}>
           <Form.Item
             label={
               <Space>
@@ -324,7 +325,46 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
             />
           </Form.Item>
         </Col>
-        <Col span={12}>
+        <Col span={8}>
+          <Form.Item
+            label="CPU Request"
+            name="cpuRequest"
+            rules={[
+              { required: true, message: 'Please input CPU request!' },
+              { type: 'number', min: -1, max: 32, message: 'CPU must be between -1 and 32 cores (-1 = no limit)' }
+            ]}
+          >
+            <InputNumber
+              min={-1}
+              max={32}
+              addonAfter="cores"
+              style={{ width: '100%' }}
+              placeholder="-1 (no limit)"
+            />
+          </Form.Item>
+        </Col>
+        <Col span={8}>
+          <Form.Item
+            label="Memory Request"
+            name="memoryRequest"
+            rules={[
+              { required: true, message: 'Please input memory request!' },
+              { type: 'number', min: -1, max: 512, message: 'Memory must be between -1 and 512 Gi (-1 = no limit)' }
+            ]}
+          >
+            <InputNumber
+              min={-1}
+              max={512}
+              addonAfter="Gi"
+              style={{ width: '100%' }}
+              placeholder="-1 (no limit)"
+            />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Row gutter={16}>
+        <Col span={24}>
           <Form.Item
             label={
               <Space>
@@ -369,7 +409,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
           >
             <AutoComplete
               options={dockerImageOptions}
-              placeholder="Select Docker image to auto-generate command"
+              placeholder="Select Docker image to auto-generate command, or input your own image repo"
               style={{ fontFamily: 'monospace' }}
               onChange={handleDockerImageChange}
               filterOption={false}
@@ -414,59 +454,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
         />
       </Form.Item>
 
-      {/* CPU和Memory资源配置 */}
-      <Row gutter={16}>
-        <Col span={12}>
-          <Form.Item
-            label="CPU Request"
-            name="cpuRequest"
-            rules={[
-              { required: true, message: 'Please input CPU request!' },
-              { type: 'number', min: 1, max: 32, message: 'CPU must be between 1 and 32 cores' }
-            ]}
-          >
-            <InputNumber
-              min={1}
-              max={32}
-              addonAfter="cores"
-              style={{ width: '100%' }}
-              placeholder="4"
-            />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item
-            label="Memory Request"
-            name="memoryRequest"
-            rules={[
-              { required: true, message: 'Please input memory request!' },
-              { type: 'number', min: 1, max: 512, message: 'Memory must be between 1 and 512 Gi' }
-            ]}
-          >
-            <InputNumber
-              min={1}
-              max={512}
-              addonAfter="Gi"
-              style={{ width: '100%' }}
-              placeholder="16"
-            />
-          </Form.Item>
-        </Col>
-      </Row>
-
-      <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f0f9ff', borderRadius: 6 }}>
-        <div style={{ fontSize: '12px', color: '#0369a1', marginBottom: 8 }}>
-          <strong>Container Deployment Instructions:</strong>
-        </div>
-        <div style={{ fontSize: '11px', color: '#0c4a6e' }}>
-          • Supports any EntryPoint and parameters, e.g. python3 -m project.main --model HuggingfaceID<br/>
-          • Supports vLLM, SGLang and any custom containers<br/>
-          • GPU count per model replica must match parameters like tp/pp<br/>
-          • Ensure commands are executable in container environment
-        </div>
-      </div>
-
-      {/* 部署选项 */}
+      {/* Service Type配置 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Form.Item
@@ -498,7 +486,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
               </Radio>
               <Radio value="modelpool">
                 <Space>
-                  <DockerOutlined />
+                  <DatabaseOutlined />
                   Model Pool
                 </Space>
               </Radio>
@@ -509,6 +497,18 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
           {/* 预留空间用于将来的配置选项 */}
         </Col>
       </Row>
+
+      <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f0f9ff', borderRadius: 6 }}>
+        <div style={{ fontSize: '12px', color: '#0369a1', marginBottom: 8 }}>
+          <strong>Container Deployment Instructions:</strong>
+        </div>
+        <div style={{ fontSize: '11px', color: '#0c4a6e' }}>
+          • Supports any EntryPoint and parameters, e.g. python3 -m project.main --model HuggingfaceID<br/>
+          • Supports vLLM, SGLang and any custom containers<br/>
+          • GPU count per model replica must match parameters like tp/pp<br/>
+          • Ensure commands are executable in container environment
+        </div>
+      </div>
 
       {/* 部署按钮 - 全宽 */}
       <Form.Item>

@@ -4,100 +4,46 @@ import {
   Form,
   Row,
   Col,
+  Input,
   InputNumber,
   Select,
-  Input,
   Button,
   Space,
   Alert,
-  Typography,
-  Tooltip,
-  AutoComplete
+  Radio,
+  Tooltip
 } from 'antd';
 import {
   ShareAltOutlined,
   RocketOutlined,
-  InfoCircleOutlined,
-  DockerOutlined,
-  TagOutlined,
-  ThunderboltOutlined,
   GlobalOutlined,
-  CodeOutlined
+  LinkOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import './AdvancedScalingPanelV2.css';
 
 const { Option } = Select;
-const { Text, Title } = Typography;
-const { TextArea } = Input;
 
 const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
-  // SGLang Docker镜像选项
-  const sglangImageOptions = [
-    {
-      value: 'lmsysorg/sglang:latest',
-      label: 'lmsysorg/sglang:latest'
-    },
-    {
-      value: 'lmsysorg/sglang:v0.2.13',
-      label: 'lmsysorg/sglang:v0.2.13'
-    }
-  ];
-
-  // 根据镜像生成SGLang命令
-  const getSGLangDefaultCommand = (dockerImage, modelPath = '/s3/Qwen-Qwen3-0.6B', port = 8000) => {
-    return `python3 -m sglang.launch_server \\
---model-path ${modelPath} \\
---host 0.0.0.0 \\
---port ${port} \\
---trust-remote-code`;
-  };
-
-  // 处理Docker镜像选择变化
-  const handleDockerImageChange = (value) => {
-    const modelPath = form.getFieldValue('modelPath') || '/s3/Qwen-Qwen3-0.6B';
-    const port = form.getFieldValue('port') || 8000;
-    const newCommand = getSGLangDefaultCommand(value, modelPath, port);
-    form.setFieldsValue({ containerCommand: newCommand });
-  };
-
-  // 处理模型路径或端口变化
-  const handleModelConfigChange = () => {
-    const dockerImage = form.getFieldValue('dockerImage');
-    const modelPath = form.getFieldValue('modelPath');
-    const port = form.getFieldValue('port');
-
-    if (dockerImage && modelPath && port) {
-      const newCommand = getSGLangDefaultCommand(dockerImage, modelPath, port);
-      form.setFieldsValue({ containerCommand: newCommand });
-    }
-  };
 
 
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
-      console.log('KVCache-aware Routing Config:', values);
+      console.log('Routing Config:', values);
 
       // 构建配置对象
       const config = {
         type: 'advanced-scaling',
         sglangRouter: {
+          deploymentName: values.deploymentName || 'sglang-router',
           routingPolicy: values.routingPolicy || 'cache_aware',
           routerPort: values.routerPort || 30000,
-          metricsPort: values.metricsPort || 29000
-        },
-        modelDeployment: {
-          deploymentName: values.deploymentName,
-          replicas: values.replicas,
-          dockerImage: values.dockerImage,
-          modelPath: values.modelPath,
-          port: values.port,
-          containerCommand: values.containerCommand,
-          cpuRequest: values.cpuRequest,
-          memoryRequest: values.memoryRequest
+          metricsPort: values.metricsPort || 29000,
+          serviceType: values.serviceType || 'external'
         }
       };
 
@@ -105,7 +51,7 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
         await onDeploy(config);
       }
     } catch (error) {
-      console.error('Error deploying advanced scaling:', error);
+      console.error('Error deploying routing:', error);
     } finally {
       setLoading(false);
     }
@@ -116,8 +62,8 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
     <div className="advanced-scaling-v2">
       <Alert
         type="info"
-        message="KVCache-aware Routing with SGLang Router"
-        description="Configure intelligent request routing and model deployment with SGLang Router. Karpenter node configuration is managed in Cluster Management section."
+        message="Routing with SGLang Router"
+        description="Configure intelligent request routing with SGLang Router. Model deployments are managed in the Model Deployment tab."
         showIcon
         style={{ marginBottom: 24 }}
       />
@@ -127,39 +73,31 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
         layout="vertical"
         onFinish={handleSubmit}
         initialValues={{
+          deploymentName: 'sglang-router',
           routingPolicy: 'cache_aware',
           routerPort: 30000,
           metricsPort: 29000,
-          // 模型部署配置
-          deploymentName: '',
-          replicas: 3,
-          dockerImage: '',
-          modelPath: '/s3/Qwen-Qwen3-0.6B',
-          port: 8000,
-          containerCommand: '',
-          cpuRequest: 4,
-          memoryRequest: 16
+          serviceType: 'external'
         }}
       >
-        {/* 1. Model Deployment Configuration */}
+        {/* SGLang Router Configuration */}
         <Card
           title={
             <Space>
-              <RocketOutlined />
-              <span>Model Deployment Configuration</span>
+              <ShareAltOutlined />
+              <span>SGLang Router Configuration</span>
             </Space>
           }
           className="section-card"
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 24 }}
         >
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 label={
                   <Space>
-                    <TagOutlined />
                     Deployment Name
-                    <Tooltip title="Kubernetes资源的标识符">
+                    <Tooltip title="Name for the SGLang Router deployment">
                       <InfoCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -171,166 +109,13 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
                 ]}
               >
                 <Input
-                  placeholder="e.g., sglang-qwen3"
+                  placeholder="sglang-router"
                   style={{ fontFamily: 'monospace' }}
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item
-                label={
-                  <Space>
-                    <ThunderboltOutlined />
-                    Replicas
-                    <Tooltip title="Number of pod replicas to deploy">
-                      <InfoCircleOutlined />
-                    </Tooltip>
-                  </Space>
-                }
-                name="replicas"
-                rules={[
-                  { required: true, message: 'Please input replica count!' },
-                  { type: 'number', min: 1, max: 20, message: 'Replicas must be between 1 and 20' }
-                ]}
-              >
-                <InputNumber
-                  min={1}
-                  max={20}
-                  style={{ width: '100%' }}
-                  placeholder="Number of replicas"
-                />
-              </Form.Item>
-            </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={18}>
-              <Form.Item
-                label={
-                  <Space>
-                    <DockerOutlined />
-                    Docker Image
-                    <Tooltip title="Select SGLang Docker image">
-                      <InfoCircleOutlined />
-                    </Tooltip>
-                  </Space>
-                }
-                name="dockerImage"
-                rules={[{ required: true, message: 'Please select docker image!' }]}
-              >
-                <AutoComplete
-                  options={sglangImageOptions}
-                  placeholder="Select SGLang Docker image"
-                  style={{ fontFamily: 'monospace' }}
-                  onChange={handleDockerImageChange}
-                  filterOption={false}
-                  allowClear
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item
-                label={
-                  <Space>
-                    <GlobalOutlined />
-                    Port
-                  </Space>
-                }
-                name="port"
-                rules={[{ required: true, message: 'Please input port!' }]}
-              >
-                <InputNumber
-                  min={1000}
-                  max={65535}
-                  style={{ width: '100%' }}
-                  onChange={handleModelConfigChange}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item
-            label={
-              <Space>
-                Model Path
-                <Tooltip title="Path to the model files">
-                  <InfoCircleOutlined />
-                </Tooltip>
-              </Space>
-            }
-            name="modelPath"
-            rules={[{ required: true, message: 'Please input model path!' }]}
-          >
-            <Input
-              placeholder="/s3/Qwen-Qwen3-0.6B"
-              style={{ fontFamily: 'monospace' }}
-              onChange={handleModelConfigChange}
-            />
-          </Form.Item>
-
-          <Form.Item
-            label={
-              <Space>
-                <CodeOutlined />
-                Container Entry Command
-                <Tooltip title="Command to run in the container (auto-generated based on image selection)">
-                  <InfoCircleOutlined />
-                </Tooltip>
-              </Space>
-            }
-            name="containerCommand"
-            rules={[{ required: true, message: 'Please input container command!' }]}
-          >
-            <TextArea
-              rows={4}
-              placeholder="Select Docker image above to auto-generate command"
-              style={{ fontFamily: 'monospace', fontSize: '12px' }}
-            />
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="CPU Request"
-                name="cpuRequest"
-              >
-                <InputNumber
-                  min={1}
-                  max={32}
-                  addonAfter="cores"
-                  style={{ width: '100%' }}
-                  placeholder="4"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="Memory Request"
-                name="memoryRequest"
-              >
-                <InputNumber
-                  min={1}
-                  max={512}
-                  addonAfter="Gi"
-                  style={{ width: '100%' }}
-                  placeholder="16"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        {/* 2. SGLang Router Configuration */}
-        <Card
-          title={
-            <Space>
-              <ShareAltOutlined />
-              <span>SGLang Router Configuration</span>
-            </Space>
-          }
-          className="section-card"
-          style={{ marginBottom: 24 }}
-        >
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item
@@ -372,6 +157,38 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
               </Form.Item>
             </Col>
           </Row>
+
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            <Col span={12}>
+              <Form.Item
+                label={
+                  <Space>
+                    Service Type
+                    <Tooltip title="Select how to expose the SGLang Router service">
+                      <InfoCircleOutlined />
+                    </Tooltip>
+                  </Space>
+                }
+                name="serviceType"
+                rules={[{ required: true, message: 'Please select service type!' }]}
+              >
+                <Radio.Group>
+                  <Radio value="external">
+                    <Space>
+                      <GlobalOutlined />
+                      External Access
+                    </Space>
+                  </Radio>
+                  <Radio value="clusterip">
+                    <Space>
+                      <LinkOutlined />
+                      Cluster IP
+                    </Space>
+                  </Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+          </Row>
         </Card>
 
         {/* Deploy Button */}
@@ -383,7 +200,7 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
             loading={loading}
             icon={<RocketOutlined />}
           >
-            Deploy SGLang Router Stack
+            Deploy SGLang Router
           </Button>
         </div>
       </Form>

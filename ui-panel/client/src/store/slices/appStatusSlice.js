@@ -94,7 +94,7 @@ export const fetchBusinessServices = createAsyncThunk(
       console.log('Business services status response:', data);
 
       return {
-        businessServices: data.services || [],
+        businessServices: data || [],
         timestamp: new Date().toISOString()
       };
     } catch (error) {

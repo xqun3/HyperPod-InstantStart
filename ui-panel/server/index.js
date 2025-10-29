@@ -678,8 +678,8 @@ app.post('/api/deploy', async (req, res) => {
       deploymentName,  // 用户输入的部署名称
       dockerImage = 'vllm/vllm-openai:latest',
       port = 8000,  // 端口配置，默认8000
-      cpuRequest = 4,  // CPU请求，默认4核
-      memoryRequest = 16  // 内存请求，默认16Gi
+      cpuRequest = -1,  // CPU请求，默认-1（不设置限制）
+      memoryRequest = -1  // 内存请求，默认-1（不设置限制）
     } = req.body;
 
     console.log('Inference deployment request:', {
@@ -770,15 +770,9 @@ app.post('/api/deploy', async (req, res) => {
       }
       console.log(`Using service engine: ${servEngine} for command type: ${parsedCommand.commandType}`);
 
-      // 根据serviceType选择模板
-      if (serviceType === 'modelpool') {
-        templatePath = path.join(__dirname, '../templates/inference-container-model-pool-template.yaml');
-        console.log('Using model pool template (no service will be created)');
-      } else {
-        // 使用混合调度模板
-        templatePath = path.join(__dirname, '../templates/inference-container-hybrid-template.yaml');
-        console.log('Using hybrid scheduling template');
-      }
+      // 统一使用混合调度模板
+      const templatePath = path.join(__dirname, '../templates/inference-container-hybrid-template.yaml');
+      console.log('Using unified hybrid scheduling template for all deployment types');
       
       const templateContent = await fs.readFile(templatePath, 'utf8');
       
@@ -791,6 +785,30 @@ app.post('/api/deploy', async (req, res) => {
       }
       
       // 替换模板中的占位符 - 使用混合调度和Service类型
+      // 动态生成resources部分
+      const generateResourcesSection = (cpuRequest, memoryRequest, gpuCount) => {
+        const limits = [`nvidia.com/gpu: ${gpuCount}`];
+        const requests = [`nvidia.com/gpu: ${gpuCount}`];
+        
+        if (cpuRequest > 0) {
+          limits.push(`cpu: "${cpuRequest}"`);
+          requests.push(`cpu: "${cpuRequest}"`);
+        }
+        
+        if (memoryRequest > 0) {
+          limits.push(`memory: ${memoryRequest}Gi`);
+          requests.push(`memory: ${memoryRequest}Gi`);
+        }
+        
+        return `resources:
+            limits:
+              ${limits.join('\n              ')}
+            requests:
+              ${requests.join('\n              ')}`;
+      };
+
+      const resourcesSection = generateResourcesSection(cpuRequest, memoryRequest, gpuCount);
+
       newYamlContent = templateContent
         .replace(/SERVENGINE/g, servEngine)
         .replace(/MODEL_TAG/g, finalDeploymentTag)
@@ -801,9 +819,23 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/ENTRY_CMD/g, JSON.stringify(parsedCommand.fullCommand))
         .replace(/DOCKER_IMAGE/g, dockerImage)
         .replace(/PORT_NUMBER/g, port || 8000)
-        .replace(/CPU_REQUEST/g, cpuRequest.toString())
-        .replace(/MEMORY_REQUEST/g, memoryRequest.toString())
+        .replace(/RESOURCES_SECTION/g, resourcesSection)
         .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
+
+      // 在标准标签后面添加 Model Pool 标签
+      if (serviceType === 'modelpool') {
+        // 在 deployment metadata labels 的 deployment-tag 后添加
+        newYamlContent = newYamlContent.replace(
+          /(\s+deployment-tag: "[^"]+"\n)/,
+          `$1    model-id: "${finalDeploymentTag}"\n    deployment-type: "model-pool"\n`
+        );
+        
+        // 在 template metadata labels 的 model-type 后添加
+        newYamlContent = newYamlContent.replace(
+          /(\s+model-type: "[^"]+"\n)(\s+spec:)/,
+          `$1        model-id: "${finalDeploymentTag}"\n        business: "unassigned"\n        deployment-type: "model-pool"\n$2`
+        );
+      }
 
       // 使用EKSServiceHelper生成Service YAML
       if (serviceType !== 'modelpool') {
@@ -8264,6 +8296,247 @@ app.get('/api/cluster/karpenter/resources', async (req, res) => {
 
 console.log('Karpenter NodeClass/NodePool Management APIs loaded');
 console.log('Karpenter Management APIs loaded');
+
+// ================================
+// KEDA Auto Scaling APIs
+// ================================
+
+const KedaManager = require('./utils/kedaManager');
+
+// 预览 KEDA YAML 配置
+app.post('/api/keda/preview', async (req, res) => {
+  try {
+    const config = req.body;
+
+    // 验证配置
+    const validation = KedaManager.validateConfig(config);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid configuration',
+        errors: validation.errors
+      });
+    }
+
+    const yaml = KedaManager.generateFullKedaYaml(config);
+
+    res.json({
+      success: true,
+      yaml: yaml,
+      config: config
+    });
+  } catch (error) {
+    console.error('Error generating KEDA preview:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 部署 KEDA 配置
+app.post('/api/deploy-keda-scaling', async (req, res) => {
+  try {
+    const config = req.body;
+    console.log('Deploying KEDA scaling with config:', config);
+
+    // 验证配置
+    const validation = KedaManager.validateConfig(config);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid configuration',
+        errors: validation.errors
+      });
+    }
+
+    const result = await KedaManager.applyKedaConfiguration(config);
+
+    if (result.success) {
+      // 广播成功消息
+      broadcast({
+        type: 'keda_deployment',
+        status: 'success',
+        message: 'KEDA scaling configuration deployed successfully',
+        yamlPath: result.yamlPath,
+        timestamp: new Date().toISOString()
+      });
+
+      res.json({
+        success: true,
+        message: result.message,
+        yamlPath: result.yamlPath,
+        generatedYaml: result.generatedYaml
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+  } catch (error) {
+    console.error('Error deploying KEDA scaling:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取 KEDA 状态
+app.get('/api/keda/status', async (req, res) => {
+  try {
+    const status = await KedaManager.getKedaStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('Error getting KEDA status:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      kedaInstalled: false
+    });
+  }
+});
+
+// 删除 ScaledObject
+app.delete('/api/keda/scaledobject/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { namespace = 'default' } = req.query;
+
+    const result = await KedaManager.deleteScaledObject(name, namespace);
+
+    if (result.success) {
+      broadcast({
+        type: 'keda_scaledobject_deleted',
+        status: 'success',
+        message: result.message,
+        scaledObjectName: name,
+        namespace: namespace,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting ScaledObject:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取可用的 Deployments
+app.get('/api/deployments', async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+
+    // 获取所有 deployments
+    const deploymentCmd = 'kubectl get deployments --all-namespaces -o json';
+    const result = execSync(deploymentCmd, { encoding: 'utf8' });
+    const deployments = JSON.parse(result);
+
+    const formattedDeployments = deployments.items.map(deployment => ({
+      name: deployment.metadata.name,
+      namespace: deployment.metadata.namespace,
+      replicas: deployment.status.replicas || 0,
+      readyReplicas: deployment.status.readyReplicas || 0,
+      creationTime: deployment.metadata.creationTimestamp
+    }));
+
+    res.json({
+      success: true,
+      deployments: formattedDeployments
+    });
+  } catch (error) {
+    console.error('Error getting deployments:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      deployments: []
+    });
+  }
+});
+
+console.log('KEDA Auto Scaling APIs loaded');
+
+// ================================
+// Advanced Scaling (SGLang Router) API
+// ================================
+
+const RoutingManager = require('./utils/routingManager');
+
+// 部署 Advanced Scaling 配置
+app.post('/api/deploy-advanced-scaling', async (req, res) => {
+  try {
+    const config = req.body;
+    console.log('Deploying SGLang Router with config:', config);
+
+    // 验证配置
+    const validation = RoutingManager.validateConfig(config.sglangRouter);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid configuration',
+        errors: validation.errors
+      });
+    }
+
+    // 使用 RoutingManager 部署
+    const result = await RoutingManager.applyRouterConfiguration(config.sglangRouter);
+
+    if (result.success) {
+      // 广播成功消息
+      broadcast({
+        type: 'sglang_router_deployment',
+        status: 'success',
+        message: result.message,
+        yamlPath: result.yamlPath,
+        timestamp: new Date().toISOString()
+      });
+
+      res.json({
+        success: true,
+        message: result.message,
+        yamlPath: result.yamlPath,
+        generatedYaml: result.generatedYaml,
+        kubectlOutput: result.kubectlOutput
+      });
+    } else {
+      broadcast({
+        type: 'sglang_router_deployment',
+        status: 'error',
+        message: result.message,
+        timestamp: new Date().toISOString()
+      });
+
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Error deploying SGLang Router:', error);
+
+    broadcast({
+      type: 'sglang_router_deployment',
+      status: 'error',
+      message: `SGLang Router deployment failed: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+console.log('Advanced Scaling (SGLang Router) API loaded');
 
 app.listen(PORT, () => {
   console.log('🚀 ========================================');

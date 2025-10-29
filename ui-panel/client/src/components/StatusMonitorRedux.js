@@ -735,7 +735,6 @@ const StatusMonitorRedux = ({ activeTab }) => {
             rowKey={(service) => service.metadata.uid}
             size="small"
             pagination={false}
-            scroll={{ y: 200 }}
             loading={loading}
             locale={{
               emptyText: 'No services found'

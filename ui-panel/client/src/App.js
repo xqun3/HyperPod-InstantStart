@@ -20,6 +20,7 @@ import GlobalRefreshButtonRedux from './components/GlobalRefreshButtonRedux';
 import EnhancedModelManagement from './components/EnhancedModelManagement';
 // 🎨 PREVIEW ONLY - Remove this import to clean up preview
 import AdvancedScalingPanelV2 from './components/AdvancedScalingPanelV2';
+import ScalingPanel from './components/ScalingPanel';
 import globalRefreshManager from './hooks/useGlobalRefresh';
 import operationRefreshManager from './hooks/useOperationRefresh';
 // import { refreshManager } from './hooks/useAutoRefresh'; // 未使用
@@ -344,7 +345,37 @@ function App() {
               message.error(data.message);
             }
             break;
-            
+
+          case 'keda_deployment':
+            if (data.status === 'success') {
+              message.success(data.message);
+              // 🚀 触发操作刷新
+              operationRefreshManager.triggerOperationRefresh('keda-deploy', data);
+            } else {
+              message.error(data.message);
+            }
+            break;
+
+          case 'keda_scaledobject_deleted':
+            if (data.status === 'success') {
+              message.success(data.message);
+              // 🚀 触发操作刷新
+              operationRefreshManager.triggerOperationRefresh('keda-delete', data);
+            } else {
+              message.error(data.message);
+            }
+            break;
+
+          case 'sglang_router_deployment':
+            if (data.status === 'success') {
+              message.success(data.message);
+              // 🚀 触发操作刷新
+              operationRefreshManager.triggerOperationRefresh('sglang-router-deploy', data);
+            } else {
+              message.error(data.message);
+            }
+            break;
+
           default:
             console.log('❓ Unknown message type:', data.type);
             break;
@@ -651,6 +682,37 @@ function App() {
     }
   };
 
+  // 🎨 PREVIEW ONLY - KEDA Scaling deployment handler
+  const handleScalingDeploy = async (config) => {
+    try {
+      console.log('Deploying KEDA scaling configuration:', config);
+
+      const response = await fetch('/api/deploy-keda-scaling', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        message.success('KEDA scaling configuration deployed successfully!');
+        // 触发操作刷新
+        operationRefreshManager.triggerOperationRefresh('keda-scaling-deploy', {
+          timestamp: new Date().toISOString(),
+          source: 'scaling-panel'
+        });
+      } else {
+        message.error(`KEDA scaling deployment failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error deploying KEDA scaling:', error);
+      message.error('Failed to deploy KEDA scaling configuration');
+    }
+  };
+
   const handleTrainingLaunch = async (config) => {
     try {
       console.log('Launching training job with config:', config);
@@ -819,7 +881,7 @@ function App() {
             <Row gutter={[16, 16]}>
               <Col xs={24} lg={12}>
                 <Card 
-                  title="Configuration" 
+                  title="Inference Configuration" 
                   className="theme-card compute"
                   style={{ height: '50vh', overflow: 'auto' }}
                 >
@@ -853,13 +915,29 @@ function App() {
                         key: 'advanced-scaling-preview',
                         label: (
                           <Space>
-                            KVCache-aware Routing
+                            Routing
                             <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
                           </Space>
                         ),
                         children: (
                           <AdvancedScalingPanelV2
                             onDeploy={handleAdvancedScalingDeploy}
+                            deploymentStatus={deploymentStatus}
+                          />
+                        )
+                      },
+                      // 🎨 PREVIEW ONLY - KEDA Scaling tab
+                      {
+                        key: 'keda-scaling-preview',
+                        label: (
+                          <Space>
+                            Scaling
+                            <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
+                          </Space>
+                        ),
+                        children: (
+                          <ScalingPanel
+                            onDeploy={handleScalingDeploy}
                             deploymentStatus={deploymentStatus}
                           />
                         )
@@ -993,9 +1071,7 @@ function App() {
                   } 
                   key="deployments"
                 >
-                  <div style={{ padding: '16px' }}>
-                    <DeploymentManager />
-                  </div>
+                  <DeploymentManager />
                 </TabPane>
                 <TabPane 
                   tab={

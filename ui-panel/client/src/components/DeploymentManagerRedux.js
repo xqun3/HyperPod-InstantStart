@@ -361,35 +361,81 @@ const DeploymentManagerRedux = () => {
   const deploymentStats = deployments.reduce((acc, deployment) => {
     acc.total++;
     if (deployment.deploymentType === 'VLLM') acc.vllm++;
-    if (deployment.deploymentType === 'Ollama') acc.ollama++;
+    if (deployment.deploymentType === 'SGLang') acc.sglang++;
+    if (deployment.deploymentType === 'model-pool') acc.modelPool++;
     if (deployment.status === 'Ready') acc.ready++;
     if (deployment.isExternal) acc.external++;
     return acc;
-  }, { total: 0, vllm: 0, ollama: 0, ready: 0, external: 0 });
+  }, { total: 0, vllm: 0, sglang: 0, modelPool: 0, ready: 0, external: 0 });
 
   return (
-    <Card
-      title={
-        <Space>
-          <span>Deployment Management</span>
-          <Tag color="blue">{deploymentStats.total} total</Tag>
-          <Tag color="blue" icon={<CodeOutlined />}>{deploymentStats.vllm} VLLM</Tag>
-          <Tag color="green" icon={<ThunderboltOutlined />}>{deploymentStats.ollama} Ollama</Tag>
-          <Tag color="success">{deploymentStats.ready} ready</Tag>
-          <Tag color="orange" icon={<GlobalOutlined />}>{deploymentStats.external} external</Tag>
-        </Space>
-      }
-      extra={
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={() => dispatch(fetchDeployments())}
-          loading={loading}
-          size="small"
-        >
-          Refresh
-        </Button>
-      }
-    >
+    <div style={{ padding: '16px' }}>
+      {/* 刷新按钮 - 匹配 Pods/Services 风格 */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <div></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            loading={loading}
+            onClick={() => dispatch(fetchDeployments())}
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* 统计卡片 - 匹配 Pods/Services 风格 */}
+      <div style={{
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: '#f5f5f5',
+        borderRadius: 6,
+        display: 'flex',
+        justifyContent: 'space-around'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
+            {deploymentStats.total}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>Total</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#52c41a' }}>
+            {deploymentStats.ready}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>Ready</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1890ff' }}>
+            {deploymentStats.vllm}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>VLLM</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#722ed1' }}>
+            {deploymentStats.sglang}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>SGLang</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#13c2c2' }}>
+            {deploymentStats.modelPool}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>Model Pool</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#faad14' }}>
+            {deploymentStats.external}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>External</div>
+        </div>
+      </div>
       {deployments.length === 0 && !loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
           <InfoCircleOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
@@ -406,7 +452,6 @@ const DeploymentManagerRedux = () => {
           loading={loading}
           size="small"
           pagination={false}
-          scroll={{ x: 1000 }}
         />
       )}
 
@@ -416,7 +461,6 @@ const DeploymentManagerRedux = () => {
         </div>
         <div style={{ fontSize: '11px', color: '#888' }}>
           • <strong>VLLM</strong>: OpenAI-compatible API on port 8000<br/>
-          • <strong>Ollama</strong>: Native Ollama API on port 11434<br/>
           • <strong>External</strong>: Internet-facing LoadBalancer (internet-facing)<br/>
           • <strong>Internal</strong>: Internal-only LoadBalancer (internal scheme)<br/>
           • Click <strong>Delete</strong> to remove both deployment and service completely
@@ -463,7 +507,7 @@ const DeploymentManagerRedux = () => {
           />
         </div>
       </Modal>
-    </Card>
+    </div>
   );
 };
 
