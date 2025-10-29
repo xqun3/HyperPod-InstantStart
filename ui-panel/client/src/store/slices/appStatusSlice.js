@@ -79,12 +79,12 @@ export const fetchRayJobs = createAsyncThunk(
 );
 
 // 异步操作：获取业务服务状态
-export const fetchBusinessServices = createAsyncThunk(
-  'appStatus/fetchBusinessServices',
+export const fetchBindingServices = createAsyncThunk(
+  'appStatus/fetchBindingServices',
   async (_, { rejectWithValue }) => {
     try {
-      console.log('Fetching business services status via Redux...');
-      const response = await fetch('/api/business-services');
+      console.log('Fetching binding services status via Redux...');
+      const response = await fetch('/api/binding-services');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -94,7 +94,7 @@ export const fetchBusinessServices = createAsyncThunk(
       console.log('Business services status response:', data);
 
       return {
-        businessServices: data || [],
+        bindingServices: data || [],
         timestamp: new Date().toISOString()
       };
     } catch (error) {
@@ -143,7 +143,7 @@ export const refreshAllAppStatus = createAsyncThunk(
       const results = await Promise.allSettled([
         dispatch(fetchAppStatusV2()).unwrap(),
         dispatch(fetchRayJobs()).unwrap(),
-        dispatch(fetchBusinessServices()).unwrap()
+        dispatch(fetchBindingServices()).unwrap()
       ]);
 
       const errors = [];
@@ -176,28 +176,28 @@ const appStatusSlice = createSlice({
     pods: [],
     services: [],
     rayJobs: [],
-    businessServices: [],
+    bindingServices: [],
 
     // 加载状态管理
     loading: false,
     podsLoading: false,
     servicesLoading: false,
     rayJobsLoading: false,
-    businessServicesLoading: false,
+    bindingServicesLoading: false,
 
     // 错误状态管理
     error: null,
     podsError: null,
     servicesError: null,
     rayJobsError: null,
-    businessServicesError: null,
+    bindingServicesError: null,
 
     // 时间戳记录
     lastUpdate: null,
     lastPodsUpdate: null,
     lastServicesUpdate: null,
     lastRayJobsUpdate: null,
-    lastBusinessServicesUpdate: null,
+    lastBindingServicesUpdate: null,
 
     // 统计信息
     stats: {
@@ -211,8 +211,8 @@ const appStatusSlice = createSlice({
       runningRayJobs: 0,
       completedRayJobs: 0,
       failedRayJobs: 0,
-      totalBusinessServices: 0,
-      healthyBusinessServices: 0
+      totalBindingServices: 0,
+      healthyBindingServices: 0
     }
   },
   reducers: {
@@ -222,7 +222,7 @@ const appStatusSlice = createSlice({
       state.podsError = null;
       state.servicesError = null;
       state.rayJobsError = null;
-      state.businessServicesError = null;
+      state.bindingServicesError = null;
     },
 
     // 更新单个 Pod 状态（用于 WebSocket 实时更新）
@@ -265,11 +265,11 @@ const appStatusSlice = createSlice({
     // 更新业务服务状态
     updateBusinessServiceStatus: (state, action) => {
       const { serviceName, status } = action.payload;
-      const serviceIndex = state.businessServices.findIndex(service => service.name === serviceName);
+      const serviceIndex = state.bindingServices.findIndex(service => service.name === serviceName);
 
       if (serviceIndex !== -1) {
-        state.businessServices[serviceIndex] = { ...state.businessServices[serviceIndex], ...status };
-        state.lastBusinessServicesUpdate = new Date().toISOString();
+        state.bindingServices[serviceIndex] = { ...state.bindingServices[serviceIndex], ...status };
+        state.lastBindingServicesUpdate = new Date().toISOString();
         appStatusSlice.caseReducers.updateStats(state);
       }
     },
@@ -318,8 +318,8 @@ const appStatusSlice = createSlice({
 
       // 业务服务统计
       const businessServiceStats = {
-        totalBusinessServices: state.businessServices.length,
-        healthyBusinessServices: state.businessServices.filter(service =>
+        totalBindingServices: state.bindingServices.length,
+        healthyBindingServices: state.bindingServices.filter(service =>
           service.status === 'healthy' || service.health === 'ok'
         ).length
       };
@@ -417,20 +417,20 @@ const appStatusSlice = createSlice({
       })
 
     // 处理获取业务服务
-      .addCase(fetchBusinessServices.pending, (state) => {
-        state.businessServicesLoading = true;
-        state.businessServicesError = null;
+      .addCase(fetchBindingServices.pending, (state) => {
+        state.bindingServicesLoading = true;
+        state.bindingServicesError = null;
       })
-      .addCase(fetchBusinessServices.fulfilled, (state, action) => {
-        state.businessServicesLoading = false;
-        state.businessServices = action.payload.businessServices;
-        state.lastBusinessServicesUpdate = action.payload.timestamp;
+      .addCase(fetchBindingServices.fulfilled, (state, action) => {
+        state.bindingServicesLoading = false;
+        state.bindingServices = action.payload.bindingServices;
+        state.lastBindingServicesUpdate = action.payload.timestamp;
 
         appStatusSlice.caseReducers.updateStats(state);
       })
-      .addCase(fetchBusinessServices.rejected, (state, action) => {
-        state.businessServicesLoading = false;
-        state.businessServicesError = action.payload;
+      .addCase(fetchBindingServices.rejected, (state, action) => {
+        state.bindingServicesLoading = false;
+        state.bindingServicesError = action.payload;
       })
 
     // 处理组合刷新操作

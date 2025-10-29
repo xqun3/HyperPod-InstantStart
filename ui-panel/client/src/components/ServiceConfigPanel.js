@@ -7,9 +7,8 @@ import {
   Alert,
   Tooltip,
   Typography,
-  Checkbox,
-  Select,
-  Card
+  Radio,
+  Select
 } from 'antd';
 import { 
   RocketOutlined, 
@@ -105,15 +104,7 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
   };
 
   return (
-    <Card 
-      title={
-        <Space>
-          <LinkOutlined />
-          Business Service Configuration
-        </Space>
-      }
-      style={{ height: '100%' }}
-    >
+    <>
       {getStatusAlert()}
       
       <Form
@@ -121,7 +112,7 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
         layout="vertical"
         onFinish={handleSubmit}
         initialValues={{
-          isExternal: true
+          serviceType: 'external'
         }}
       >
         <Form.Item
@@ -177,40 +168,35 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
           </Select>
         </Form.Item>
 
+
         <Form.Item
           label={
             <Space>
-              Business Tag
-              <Tooltip title="Business identifier for pod assignment (e.g., production, testing, development)">
+              Service Type
+              <Tooltip title="Select the service exposure type">
                 <InfoCircleOutlined />
               </Tooltip>
             </Space>
           }
-          name="businessTag"
+          name="serviceType"
           rules={[
-            { required: true, message: 'Please input business tag!' },
-            { pattern: /^[a-z0-9-]+$/, message: 'Only lowercase letters, numbers and hyphens allowed' }
+            { required: true, message: 'Please select service type!' }
           ]}
         >
-          <Input 
-            placeholder="e.g., production, testing, development"
-            style={{ fontFamily: 'monospace' }}
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="isExternal"
-          valuePropName="checked"
-        >
-          <Checkbox>
-            <Space>
-              <GlobalOutlined />
-              <span>External Access</span>
-              <Tooltip title="Enable internet-facing LoadBalancer for external access">
-                <InfoCircleOutlined />
-              </Tooltip>
-            </Space>
-          </Checkbox>
+          <Radio.Group>
+            <Radio value="external">
+              <Space>
+                <GlobalOutlined />
+                External Access
+              </Space>
+            </Radio>
+            <Radio value="clusterip">
+              <Space>
+                <LinkOutlined />
+                Cluster IP
+              </Space>
+            </Radio>
+          </Radio.Group>
         </Form.Item>
 
         <Form.Item>
@@ -226,7 +212,7 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
           </Button>
         </Form.Item>
       </Form>
-    </Card>
+    </>
   );
 };
 

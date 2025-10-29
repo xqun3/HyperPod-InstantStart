@@ -61,7 +61,7 @@ const StatusMonitor = ({ pods, services, businessServices: propBusinessServices,
   // 获取业务Service列表
   const fetchBusinessServices = async () => {
     try {
-      const response = await fetch('/api/business-services');
+      const response = await fetch('/api/binding-services');
       const data = await response.json();
       setBusinessServices(data);
     } catch (error) {

@@ -61,6 +61,44 @@ spec:
   }
 
   /**
+   * 生成Binding Service YAML
+   * @param {string} serviceName - 服务名称
+   * @param {string} modelId - 模型ID
+   * @param {string} modelType - 模型类型 (vllm, sglang, ollama)
+   * @param {string} serviceType - 服务类型 ('external', 'clusterip')
+   * @param {number} port - 端口号
+   * @param {string} nlbAnnotations - NLB注解 (仅external类型需要)
+   * @returns {string} Service YAML字符串
+   */
+  static generateBindingService(serviceName, modelId, modelType, serviceType, port = 8000, nlbAnnotations = '') {
+    const isExternal = serviceType === 'external';
+    const serviceTypeName = isExternal ? 'LoadBalancer' : 'ClusterIP';
+    const serviceSuffix = isExternal ? '-nlb' : '-service';
+    
+    return `---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${serviceName}${serviceSuffix}
+  labels:
+    business: "${serviceName}"
+    model-id: "${modelId}"
+    model-type: "${modelType}"
+    service-type: "binding-service"${isExternal ? `
+  annotations:${nlbAnnotations}` : ''}
+spec:
+  selector:
+    model-id: "${modelId}"
+    business: "${serviceName}"
+  type: ${serviceTypeName}
+  ports:
+    - port: ${port}
+      protocol: TCP
+      targetPort: http
+      name: http`;
+  }
+
+  /**
    * 根据服务类型生成对应的Service YAML
    * @param {string} serviceType - 服务类型 ('external', 'clusterip', 'modelpool')
    * @param {string} servEngine - 服务引擎名称

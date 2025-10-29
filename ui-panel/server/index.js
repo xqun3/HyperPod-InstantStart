@@ -913,60 +913,62 @@ app.post('/api/deploy', async (req, res) => {
   }
 });
 
-// 部署业务Service
+// 部署绑定Service
 app.post('/api/deploy-service', async (req, res) => {
   try {
     const {
       serviceName,
       modelPool,
-      businessTag,
-      isExternal = true
+      serviceType = 'external'
     } = req.body;
 
-    console.log('Business service deployment request:', { 
+    console.log('Binding service deployment request:', { 
       serviceName, 
       modelPool, 
-      businessTag, 
-      isExternal 
+      serviceType
     });
 
-    // 从deployment名称中提取MODEL_TAG部分
-    // deployment名称格式: vllm-{MODEL_TAG} 或 sglang-{MODEL_TAG}
-    let modelId = modelPool;
-    if (modelPool.startsWith('vllm-')) {
-      modelId = modelPool.replace('vllm-', '');
-    } else if (modelPool.startsWith('sglang-')) {
-      modelId = modelPool.replace('sglang-', '');
-    }
+    // 获取 deployment 信息以提取 model-type 和端口
+    const deploymentOutput = await executeKubectl(`get deployment ${modelPool} -o json`);
+    const deployment = JSON.parse(deploymentOutput);
     
-    console.log(`Extracted model ID: ${modelId} from deployment: ${modelPool}`);
+    // 从 deployment 标签中获取 model-type 和 model-id
+    const labels = deployment.metadata.labels || {};
+    const modelType = labels['model-type'] || 'unknown';
+    const modelId = labels['deployment-tag'] || modelPool;
+    
+    // 从 deployment 的容器配置中获取端口
+    const containers = deployment.spec.template.spec.containers || [];
+    const mainContainer = containers[0];
+    const containerPorts = mainContainer?.ports || [];
+    const port = containerPorts.find(p => p.name === 'http')?.containerPort || 8000;
+    
+    console.log(`Extracted from deployment ${modelPool}:`, { modelType, modelId, port });
 
-    // 生成NLB注解
-    const nlbAnnotations = generateNLBAnnotations(isExternal);
-    console.log(`Generated NLB annotations (external: ${isExternal}):`, nlbAnnotations);
-
-    // 读取业务Service模板
-    const templatePath = path.join(__dirname, '../templates/business-service-template.yaml');
-    const templateContent = await fs.readFile(templatePath, 'utf8');
+    // 使用 EKSServiceHelper 生成 Service YAML
+    const EKSServiceHelper = require('./utils/eksServiceHelper');
+    const isExternal = serviceType === 'external';
+    const nlbAnnotations = isExternal ? generateNLBAnnotations(true) : '';
     
-    // 替换模板中的占位符
-    const newYamlContent = templateContent
-      .replace(/SERVICE_NAME/g, serviceName)
-      .replace(/BUSINESS_TAG/g, businessTag)
-      .replace(/MODEL_ID/g, modelId)
-      .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
+    const serviceYaml = EKSServiceHelper.generateBindingService(
+      serviceName,
+      modelId,
+      modelType,
+      serviceType,
+      port,
+      nlbAnnotations
+    );
     
-    // 保存到deployments目录
-    const deploymentsDir = path.join(__dirname, '../deployments');
+    // 保存到 deployments/inference 目录
+    const deploymentsDir = path.join(__dirname, '../deployments/inference');
     if (!fs.existsSync(deploymentsDir)) {
       fs.mkdirSync(deploymentsDir, { recursive: true });
     }
     
-    const accessType = isExternal ? 'external' : 'internal';
-    const tempYamlPath = path.join(deploymentsDir, `${serviceName}-service-${accessType}.yaml`);
-    await fs.writeFile(tempYamlPath, newYamlContent);
+    const tempYamlPath = path.join(deploymentsDir, `${serviceName}-binding-${serviceType}.yaml`);
+    await fs.writeFile(tempYamlPath, serviceYaml);
     
-    console.log(`Generated service YAML saved to: ${tempYamlPath}`);
+    console.log(`Generated binding service YAML saved to: ${tempYamlPath}`);
     
     // 执行kubectl apply
     const applyOutput = await executeKubectl(`apply -f ${tempYamlPath}`);
@@ -975,17 +977,17 @@ app.post('/api/deploy-service', async (req, res) => {
     broadcast({
       type: 'service_deployment',
       status: 'success',
-      message: `Successfully deployed business service: ${serviceName}`,
+      message: `Successfully deployed binding service: ${serviceName}`,
       output: applyOutput
     });
     
     res.json({
       success: true,
-      message: `Business service ${serviceName} deployed successfully`,
+      message: `Binding service ${serviceName} deployed successfully`,
       serviceName,
-      businessTag,
       modelId,
-      accessType
+      modelType,
+      serviceType
     });
     
   } catch (error) {
@@ -3593,17 +3595,17 @@ async function handleModelPoolScale(deploymentName, targetReplicas) {
 }
 
 // 业务Service列表API
-app.get('/api/business-services', async (req, res) => {
+app.get('/api/binding-services', async (req, res) => {
   try {
-    console.log('Fetching business services...');
-    
+    console.log('Fetching binding services...');
+
     // 获取所有Service
     const servicesOutput = await executeKubectl('get services -o json');
     const services = JSON.parse(servicesOutput);
-    
-    // 过滤业务Service
+
+    // 过滤绑定Service
     const businessServices = services.items
-      .filter(service => service.metadata.labels?.['service-type'] === 'business-service')
+      .filter(service => service.metadata.labels?.['service-type'] === 'binding-service')
       .map(service => ({
         name: service.metadata.name,
         businessTag: service.metadata.labels.business,

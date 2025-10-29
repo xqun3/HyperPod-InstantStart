@@ -8,7 +8,7 @@ import {
   fetchPods,
   fetchServices,
   fetchRayJobs,
-  fetchBusinessServices,
+  fetchBindingServices,
   refreshAllAppStatus
 } from './appStatusSlice';
 

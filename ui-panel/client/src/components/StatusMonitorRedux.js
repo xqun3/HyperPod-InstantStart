@@ -32,7 +32,7 @@ import {
   selectAppPods,
   selectAppServices,
   selectAppRayJobs,
-  selectAppBusinessServices,
+  selectAppBindingServices,
   selectAppStatusLoading,
   selectAppStatusError,
   selectAppStats
@@ -50,7 +50,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
   const pods = useSelector(selectAppPods);
   const services = useSelector(selectAppServices);
   const rayJobs = useSelector(selectAppRayJobs);
-  const businessServices = useSelector(selectAppBusinessServices);
+  const businessServices = useSelector(selectAppBindingServices);
   const loading = useSelector(selectAppStatusLoading);
   const error = useSelector(selectAppStatusError);
   const appStats = useSelector(selectAppStats);

@@ -105,7 +105,7 @@ export const selectCalculatedClusterStats = state => {
 export const selectAppPods = state => state.appStatus?.pods || [];
 export const selectAppServices = state => state.appStatus?.services || [];
 export const selectAppRayJobs = state => state.appStatus?.rayJobs || [];
-export const selectAppBusinessServices = state => state.appStatus?.businessServices || [];
+export const selectAppBindingServices = state => state.appStatus?.bindingServices || [];
 export const selectAppStatusLoading = state => state.appStatus?.loading || false;
 export const selectAppStatusError = state => state.appStatus?.error;
 export const selectAppLastUpdate = state => state.appStatus?.lastUpdate;
@@ -115,19 +115,19 @@ export const selectAppStats = state => state.appStatus?.stats;
 export const selectPodsLoading = state => state.appStatus?.podsLoading || false;
 export const selectServicesLoading = state => state.appStatus?.servicesLoading || false;
 export const selectRayJobsLoading = state => state.appStatus?.rayJobsLoading || false;
-export const selectBusinessServicesLoading = state => state.appStatus?.businessServicesLoading || false;
+export const selectBindingServicesLoading = state => state.appStatus?.bindingServicesLoading || false;
 
 // 分别获取各个组件的错误状态
 export const selectPodsError = state => state.appStatus?.podsError;
 export const selectServicesError = state => state.appStatus?.servicesError;
 export const selectRayJobsError = state => state.appStatus?.rayJobsError;
-export const selectBusinessServicesError = state => state.appStatus?.businessServicesError;
+export const selectBindingServicesError = state => state.appStatus?.bindingServicesError;
 
 // 分别获取各个组件的更新时间
 export const selectPodsLastUpdate = state => state.appStatus?.lastPodsUpdate;
 export const selectServicesLastUpdate = state => state.appStatus?.lastServicesUpdate;
 export const selectRayJobsLastUpdate = state => state.appStatus?.lastRayJobsUpdate;
-export const selectBusinessServicesLastUpdate = state => state.appStatus?.lastBusinessServicesUpdate;
+export const selectBindingServicesLastUpdate = state => state.appStatus?.lastBindingServicesUpdate;
 
 // 计算应用健康度的选择器
 export const selectAppHealthSummary = state => {
@@ -143,8 +143,8 @@ export const selectAppHealthSummary = state => {
   const rayJobHealth = stats.totalRayJobs > 0 ?
     ((stats.runningRayJobs + stats.completedRayJobs) / stats.totalRayJobs) * 100 : 100;
 
-  const businessServiceHealth = stats.totalBusinessServices > 0 ?
-    (stats.healthyBusinessServices / stats.totalBusinessServices) * 100 : 100;
+  const businessServiceHealth = stats.totalBindingServices > 0 ?
+    (stats.healthyBindingServices / stats.totalBindingServices) * 100 : 100;
 
   const overallHealth = (podHealth + serviceHealth + rayJobHealth + businessServiceHealth) / 4;
 
@@ -160,7 +160,7 @@ export const selectAppHealthSummary = state => {
       pods: Math.round(podHealth),
       services: Math.round(serviceHealth),
       rayJobs: Math.round(rayJobHealth),
-      businessServices: Math.round(businessServiceHealth)
+      bindingServices: Math.round(businessServiceHealth)
     }
   };
 };

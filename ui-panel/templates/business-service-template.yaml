@@ -6,7 +6,7 @@ metadata:
   labels:
     business: "BUSINESS_TAG"
     model-id: "MODEL_ID"
-    service-type: "business-service"
+    service-type: "binding-service"
   annotations:NLB_ANNOTATIONS
 spec:
   selector:

@@ -166,42 +166,22 @@ const TestPanel = ({ services, onRefresh }) => {
 
   // 检测模型类型
   const detectModelType = (service) => {
-    if (!service) return 'ollama';
+    if (!service) return 'unknown';
     
-    const serviceName = service.metadata.name.toLowerCase();
-    
-    // 检查服务标签来确定类型
+    // 只通过 model-type 标签检测
     const labels = service.metadata.labels || {};
+    const modelType = labels['model-type'];
     
-    // 优先通过model-type标签检测
-    if (labels['model-type'] === 'sglang') {
+    if (modelType === 'sglang') {
       return 'sglang';
-    } else if (labels['model-type'] === 'vllm') {
+    } else if (modelType === 'vllm') {
       return 'vllm';
-    } else if (labels['model-type'] === 'ollama') {
+    } else if (modelType === 'ollama') {
       return 'ollama';
     }
     
-    // 备用：通过framework标签检测
-    if (labels.framework === 'sglang') {
-      return 'sglang';
-    } else if (labels.framework === 'vllm') {
-      return 'vllm';
-    } else if (labels.framework === 'ollama') {
-      return 'ollama';
-    }
-    
-    // 通过服务名称检测
-    if (serviceName.includes('sglang')) {
-      return 'sglang';
-    } else if (serviceName.includes('vllm')) {
-      return 'vllm';
-    } else if (serviceName.includes('olm') || serviceName.includes('ollama')) {
-      return 'ollama';
-    }
-    
-    // 默认返回vllm（因为大多数部署可能是vllm兼容的）
-    return 'vllm';
+    // 如果没有 model-type 标签，返回 unknown
+    return 'unknown';
   };
 
   useEffect(() => {
