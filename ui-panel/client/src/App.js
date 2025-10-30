@@ -941,12 +941,7 @@ function App() {
                       // 🎨 PREVIEW ONLY - Remove this tab to clean up preview
                       {
                         key: 'advanced-scaling-preview',
-                        label: (
-                          <Space>
-                            Routing
-                            <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
-                          </Space>
-                        ),
+                        label: 'Advanced Routing',
                         children: (
                           <AdvancedScalingPanelV2
                             onDeploy={handleAdvancedScalingDeploy}
@@ -959,7 +954,7 @@ function App() {
                         key: 'keda-scaling-preview',
                         label: (
                           <Space>
-                            Scaling
+                            Unified Scaling
                             <Badge count="PREVIEW" style={{ backgroundColor: '#ff4d4f' }} />
                           </Space>
                         ),

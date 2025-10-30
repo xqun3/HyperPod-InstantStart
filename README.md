@@ -53,7 +53,8 @@ For detailed setup instructions, please refer to [Feishu Doc (zh_cn)](https://am
 
 | Type | Feature | Updated At | Target Date |
 |------|---------|-----------|-------------------|
-| Cluster Building | Unified Scaling | 2025-10-19 | TBD |
+| Cluster Building | Unified Scaling | 2025-10-19 | DONE |
 | Training | TorchTitan/Whisper Training Recipe Integration | 2025-10-17 | TBD |
-| Inference | Intelligent Routing Support | 2025-10-19 | TBD |
-| Inference | Cross node EP and PD Disaggregated Integration | 2025-10-19 | TBD |
+| Inference | Intelligent Routing Support | 2025-10-19 | DONE |
+| Inference | HyperPod, EKS Node Group and Karpenter unified management | 2025-10-19 | DONE |
+| Inference | Cross node EP and PD Disaggregated Inference Recipe | 2025-10-19 | TBD |

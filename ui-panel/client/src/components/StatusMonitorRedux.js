@@ -14,8 +14,7 @@ import {
   Tooltip,
   Alert,
   Input,
-  Modal,
-  Empty
+  Modal
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -516,7 +515,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
           <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{text}</span>
         </Space>
       ),
-      ellipsis: true,
+      width: 300, // 设置固定宽度替代ellipsis
     },
     {
       title: 'Status',
@@ -634,7 +633,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
           <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{text}</span>
         </Space>
       ),
-      ellipsis: true,
+      width: 300, // 设置固定宽度替代ellipsis
     },
     {
       title: 'Type',
@@ -815,7 +814,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
   // Deployment表格列定义 - 优化后去掉重复的Model Tag列
   const deploymentColumns = [
     {
-      title: 'Deployment',
+      title: 'Deployment Name',
       dataIndex: 'deploymentName',
       key: 'deploymentName',
       render: (text) => (
@@ -1486,29 +1485,21 @@ const StatusMonitorRedux = ({ activeTab }) => {
             />
           )}
 
-          {/* 匹配原始HyperPodJobManager的Empty状态和Table配置 */}
-          {trainingJobs.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="No training jobs found"
-              style={{ padding: '20px 0' }}
-            />
-          ) : (
-            <Table
-              columns={trainingJobColumns}
-              dataSource={trainingJobs}
-              rowKey="name"
-              loading={loading}
-              size="small"
-              pagination={{
-                pageSize: 5,
-                showSizeChanger: false,
-                showQuickJumper: false,
-                showTotal: (total) => `Total ${total} jobs`
-              }}
-              scroll={{ y: 200 }}
-            />
-          )}
+          {/* 始终显示Table，与RayJobs保持一致 */}
+          <Table
+            columns={trainingJobColumns}
+            dataSource={trainingJobs}
+            rowKey="name"
+            loading={loading}
+            size="small"
+            pagination={{
+              pageSize: 5,
+              showSizeChanger: false,
+              showQuickJumper: false,
+              showTotal: (total) => `Total ${total} jobs`
+            }}
+            scroll={{ y: 200 }}
+          />
         </div>
       );
     }
