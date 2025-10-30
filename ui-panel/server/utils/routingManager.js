@@ -26,10 +26,10 @@ class RoutingManager {
       metrics: metricsPort
     };
 
-    const serviceYaml = EKSServiceHelper.generateServiceYaml(
-      serviceType,
-      'sglrouter', // 固定的服务引擎类别
-      resourceName,    // 完整的资源名称作为modelTag
+    // 固定使用clusterip服务类型
+    const serviceYaml = this.generateRouterServiceYaml(
+      'clusterip',
+      resourceName,
       portConfig
     );
 
@@ -47,7 +47,15 @@ class RoutingManager {
       deploymentName = 'sglang-router',
       routingPolicy = 'cache_aware',
       routerPort = 30000,
-      metricsPort = 29000
+      metricsPort = 29000,
+      targetDeployment,
+      discoveryPort = 8000,
+      checkInterval = 120,
+      cacheThreshold = 0.5,
+      balanceAbsThreshold = 32,
+      balanceRelThreshold = 1.1,
+      evictionIntervalSecs = 30,
+      maxTreeSize = 10000
     } = config;
 
     return `---
@@ -118,20 +126,7 @@ spec:
               cpu: "4"
               memory: 8Gi
           command: ["python3", "-m", "sglang_router.launch_router"]
-          args:
-            - "--service-discovery"
-            - "--selector"
-            - "deployment-name=${deploymentName}"
-            - "--service-discovery-port"
-            - "8000"
-            - "--policy"
-            - "${routingPolicy}"
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "${routerPort}"
-            - "--prometheus-port"
-            - "${metricsPort}"
+          args: ${this.generateRouterArgs(config, deploymentName)}
           ports:
             - containerPort: ${routerPort}
               name: http
@@ -140,6 +135,129 @@ spec:
           env:
             - name: RUST_LOG
               value: "info"`;
+  }
+
+  /**
+   * 生成 Router 启动参数
+   * @param {Object} config - 配置对象
+   * @param {string} deploymentName - 部署名称
+   * @returns {string} YAML格式的args数组
+   */
+  static generateRouterArgs(config, deploymentName) {
+    const {
+      routingPolicy = 'cache_aware',
+      routerPort = 30000,
+      metricsPort = 29000,
+      targetDeployment,
+      discoveryPort = 8000,
+      checkInterval = 120,
+      cacheThreshold = 0.5,
+      balanceAbsThreshold = 32,
+      balanceRelThreshold = 1.1,
+      evictionIntervalSecs = 30,
+      maxTreeSize = 10000
+    } = config;
+
+    let args = [];
+
+    // 固定的Kubernetes服务发现模式
+    // 根据targetDeployment生成selector
+    const podSelector = targetDeployment
+      ? `deployment-tag=${targetDeployment},model-type=sglang`
+      : 'model-type=sglang';
+
+    args.push(
+      '- "--service-discovery"',
+      '- "--selector"',
+      `- "${podSelector}"`,
+      '- "--service-discovery-port"',
+      `- "${discoveryPort}"`,
+      '- "--check-interval-secs"',
+      `- "${checkInterval}"`
+    );
+
+    // 路由策略
+    args.push('- "--policy"', `- "${routingPolicy}"`);
+
+    // Cache-Aware策略专用参数
+    if (routingPolicy === 'cache_aware') {
+      args.push(
+        '- "--cache-threshold"',
+        `- "${cacheThreshold}"`,
+        '- "--balance-abs-threshold"',
+        `- "${balanceAbsThreshold}"`,
+        '- "--balance-rel-threshold"',
+        `- "${balanceRelThreshold}"`,
+        '- "--eviction-interval-secs"',
+        `- "${evictionIntervalSecs}"`,
+        '- "--max-tree-size"',
+        `- "${maxTreeSize}"`
+      );
+    }
+
+    // 基础网络配置
+    args.push(
+      '- "--host"',
+      '- "0.0.0.0"',
+      '- "--port"',
+      `- "${routerPort}"`,
+      '- "--prometheus-port"',
+      `- "${metricsPort}"`
+    );
+
+    // 返回YAML格式的数组
+    return `\n            ${args.join('\n            ')}`;
+  }
+
+  /**
+   * 生成 Router Service YAML (专门匹配Router Deployment的标签)
+   * @param {string} serviceType - 服务类型 ('external' 或 'clusterip')
+   * @param {string} resourceName - 资源名称 (完整名称包含时间戳)
+   * @param {Object} portConfig - 端口配置对象 {http: 30000, metrics: 29000}
+   * @returns {string} Service YAML 字符串
+   */
+  static generateRouterServiceYaml(serviceType, resourceName, portConfig) {
+    const portsSection = Object.entries(portConfig).map(([name, portNum]) =>
+      `    - name: ${name}
+      port: ${portNum}
+      targetPort: ${portNum}
+      protocol: TCP`
+    ).join('\n');
+
+    if (serviceType === 'external') {
+      return `---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${resourceName}-nlb
+  labels:
+    app: ${resourceName}
+    service-type: "router"
+    deployment-name: "${resourceName}"
+  annotations:
+spec:
+  ports:
+${portsSection}
+  selector:
+    app: ${resourceName}
+  type: LoadBalancer`;
+    } else {
+      return `---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${resourceName}-service
+  labels:
+    app: ${resourceName}
+    service-type: "router"
+    deployment-name: "${resourceName}"
+spec:
+  type: ClusterIP
+  selector:
+    app: ${resourceName}
+  ports:
+${portsSection}`;
+    }
   }
 
   static async applyRouterConfiguration(config) {
@@ -439,6 +557,20 @@ spec:
       errors.push('Deployment name must contain only lowercase letters, numbers and hyphens');
     }
 
+    // Target deployment validation (允许空值表示所有SGLang部署)
+    // 如果提供了targetDeployment，验证格式
+    if (config.targetDeployment && typeof config.targetDeployment !== 'string') {
+      errors.push('Target deployment must be a valid string');
+    }
+
+    // Service discovery validation
+    if (config.discoveryPort && (config.discoveryPort < 1000 || config.discoveryPort > 65535)) {
+      errors.push('Discovery port must be between 1000 and 65535');
+    }
+    if (config.checkInterval && (config.checkInterval < 30 || config.checkInterval > 600)) {
+      errors.push('Check interval must be between 30 and 600 seconds');
+    }
+
     if (config.routerPort && (config.routerPort < 1000 || config.routerPort > 65535)) {
       errors.push('Router port must be between 1000 and 65535');
     }
@@ -451,12 +583,29 @@ spec:
       errors.push('Router port and metrics port cannot be the same');
     }
 
-    if (config.serviceType && !['external', 'clusterip'].includes(config.serviceType)) {
-      errors.push('Service type must be either "external" or "clusterip"');
+    // 固定为clusterip，不需要验证serviceType
+
+    if (config.routingPolicy && !['cache_aware', 'round_robin', 'random'].includes(config.routingPolicy)) {
+      errors.push('Routing policy must be one of: cache_aware, round_robin, random');
     }
 
-    if (config.routingPolicy && !['cache_aware', 'round_robin', 'least_loaded'].includes(config.routingPolicy)) {
-      errors.push('Routing policy must be one of: cache_aware, round_robin, least_loaded');
+    // Cache-Aware policy specific validation
+    if (config.routingPolicy === 'cache_aware') {
+      if (config.cacheThreshold !== undefined && (config.cacheThreshold < 0 || config.cacheThreshold > 1)) {
+        errors.push('Cache threshold must be between 0.0 and 1.0');
+      }
+      if (config.balanceAbsThreshold !== undefined && config.balanceAbsThreshold < 1) {
+        errors.push('Balance absolute threshold must be at least 1');
+      }
+      if (config.balanceRelThreshold !== undefined && config.balanceRelThreshold < 1) {
+        errors.push('Balance relative threshold must be at least 1.0');
+      }
+      if (config.evictionIntervalSecs !== undefined && config.evictionIntervalSecs < 10) {
+        errors.push('Eviction interval must be at least 10 seconds');
+      }
+      if (config.maxTreeSize !== undefined && config.maxTreeSize < 1000) {
+        errors.push('Max tree size must be at least 1000');
+      }
     }
 
     return {
@@ -471,7 +620,15 @@ spec:
       routingPolicy: 'cache_aware',
       routerPort: 30000,
       metricsPort: 29000,
-      serviceType: 'external'
+      serviceType: 'clusterip', // 固定为clusterip
+      targetDeployment: '',
+      discoveryPort: 8000,
+      checkInterval: 120,
+      cacheThreshold: 0.5,
+      balanceAbsThreshold: 32,
+      balanceRelThreshold: 1.1,
+      evictionIntervalSecs: 30,
+      maxTreeSize: 10000
     };
   }
 

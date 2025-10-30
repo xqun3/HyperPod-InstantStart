@@ -1091,7 +1091,20 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
     { title: 'Node Group Name', dataIndex: 'name', key: 'name' },
     { title: 'Status', dataIndex: 'status', key: 'status', render: renderStatus },
     { title: 'Instance Types', dataIndex: 'instanceTypes', key: 'instanceTypes', render: types => types?.join(', ') },
-    { title: 'Capacity Type', dataIndex: 'capacityType', key: 'capacityType' },
+    { 
+      title: 'Capacity Type', 
+      dataIndex: 'capacityType', 
+      key: 'capacityType',
+      render: (capacityType) => {
+        if (!capacityType) return <Tag color="orange">Spot</Tag>;
+        const type = capacityType.toLowerCase();
+        return (
+          <Tag color={type === 'on_demand' || type === 'on-demand' ? 'green' : 'orange'}>
+            {type === 'on_demand' || type === 'on-demand' ? 'OD' : 'Spot'}
+          </Tag>
+        );
+      }
+    },
     { title: 'Min/Max/Desired', key: 'scaling', render: renderScaling },
     { title: 'Actions', key: 'actions', render: renderEKSActions }
   ];
@@ -1396,6 +1409,27 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                       )
                     },
                     {
+                      title: 'Instance Types',
+                      dataIndex: 'instanceTypes',
+                      key: 'instanceTypes',
+                      render: (instanceTypes) => (
+                        <div>
+                          {instanceTypes && instanceTypes.length > 0 ? (
+                            <div>
+                              {instanceTypes.slice(0, 3).map(type => (
+                                <Tag key={type} size="small">{type}</Tag>
+                              ))}
+                              {instanceTypes.length > 3 && (
+                                <Tag size="small">+{instanceTypes.length - 3} more</Tag>
+                              )}
+                            </div>
+                          ) : (
+                            <Text type="secondary">Any</Text>
+                          )}
+                        </div>
+                      )
+                    },
+                    {
                       title: 'Capacity Type',
                       dataIndex: 'capacityTypes',
                       key: 'capacityTypes',
@@ -1419,18 +1453,6 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                       )
                     },
                     {
-                      title: 'Weight',
-                      dataIndex: 'weight',
-                      key: 'weight',
-                      render: (text) => text || 100
-                    },
-                    {
-                      title: 'Max GPU Limit',
-                      dataIndex: 'gpuLimit',
-                      key: 'gpuLimit',
-                      render: (text) => text || 'Not Set'
-                    },
-                    {
                       title: 'EBS Volume',
                       dataIndex: 'nodeClassRef',
                       key: 'ebsVolume',
@@ -1441,25 +1463,16 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                       }
                     },
                     {
-                      title: 'Instance Types',
-                      dataIndex: 'instanceTypes',
-                      key: 'instanceTypes',
-                      render: (instanceTypes) => (
-                        <div>
-                          {instanceTypes && instanceTypes.length > 0 ? (
-                            <div>
-                              {instanceTypes.slice(0, 3).map(type => (
-                                <Tag key={type} size="small">{type}</Tag>
-                              ))}
-                              {instanceTypes.length > 3 && (
-                                <Tag size="small">+{instanceTypes.length - 3} more</Tag>
-                              )}
-                            </div>
-                          ) : (
-                            <Text type="secondary">Any</Text>
-                          )}
-                        </div>
-                      )
+                      title: 'Max GPU Limit',
+                      dataIndex: 'gpuLimit',
+                      key: 'gpuLimit',
+                      render: (text) => text || 'Not Set'
+                    },
+                    {
+                      title: 'Weight',
+                      dataIndex: 'weight',
+                      key: 'weight',
+                      render: (text) => text || 100
                     },
                     {
                       title: 'Actions',
