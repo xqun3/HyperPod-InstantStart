@@ -928,10 +928,10 @@ function App() {
           <div style={{ display: activeMainTab === 'inference' ? 'block' : 'none' }}>
             <Row gutter={[16, 16]}>
               <Col xs={24} lg={12}>
-                <Card 
-                  title="Inference Configuration" 
+                <Card
+                  title="Inference Configuration"
                   className="theme-card compute"
-                  style={{ height: '50vh', overflow: 'auto' }}
+                  style={{ height: '60vh', overflow: 'auto' }}
                 >
                   <Tabs 
                     activeKey={configTab} 
@@ -990,10 +990,10 @@ function App() {
                 </Card>
               </Col>
               <Col xs={24} lg={12}>
-                <Card 
+                <Card
                   title="Model Testing"
                   className="theme-card ml"
-                  style={{ height: '50vh', overflow: 'auto' }}
+                  style={{ height: '60vh', overflow: 'auto' }}
                 >
                   <TestPanel 
                     services={services} 
@@ -1007,10 +1007,10 @@ function App() {
           <Row gutter={[16, 16]} style={{ display: activeMainTab === 'training' ? 'flex' : 'none' }}>
             {/* Training - 左侧：训练配置 */}
             <Col xs={24} lg={12}>
-              <Card 
-                title="Training Recipes" 
+              <Card
+                title="Training Recipes"
                 className="theme-card compute"
-                style={{ height: '50vh', overflow: 'auto' }}
+                style={{ height: '60vh', overflow: 'auto' }}
               >
                 <HyperPodRecipes 
                   onLaunch={handleTrainingLaunch}
@@ -1021,10 +1021,10 @@ function App() {
             
             {/* Training - 右侧：训练监控 */}
             <Col xs={24} lg={12}>
-              <Card 
+              <Card
                 title="Training Job Monitor"
                 className="theme-card analytics"
-                style={{ height: '50vh', overflow: 'auto' }}
+                style={{ height: '60vh', overflow: 'auto' }}
               >
                 <TrainingMonitorPanel />
               </Card>
@@ -1046,10 +1046,10 @@ function App() {
         <Row gutter={[16, 16]}>
           {/* 左下：集群状态 */}
           <Col xs={24} lg={12}>
-            <Card 
-              title="Cluster Status" 
+            <Card
+              title="Cluster Status"
               className="theme-card analytics"
-              style={{ height: '45vh', overflow: 'auto' }}
+              style={{ height: '50vh', overflow: 'auto' }}
             >
               <ClusterStatusV2Redux />
             </Card>
@@ -1057,10 +1057,10 @@ function App() {
           
           {/* 右下：状态监控和部署管理 */}
           <Col xs={24} lg={12}>
-            <Card 
+            <Card
               title="App Status"
               className="theme-card database"
-              style={{ height: '45vh', overflow: 'auto' }}
+              style={{ height: '50vh', overflow: 'auto' }}
               bodyStyle={{ padding: 0 }}
             >
               <Tabs

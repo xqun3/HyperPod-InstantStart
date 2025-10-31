@@ -6,6 +6,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #f0f2f5;
+  /* 使用transform替代zoom，更自适应 */
+  transform: scale(0.75);
+  transform-origin: top left;
+  width: 133.33%; /* 1/0.75 = 1.333 */
+  height: 133.33vh; /* 补偿缩放后的空间 */
 }
 
 code {

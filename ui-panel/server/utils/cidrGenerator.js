@@ -60,8 +60,8 @@ class CidrGenerator {
         vpcCidr,
         publicSubnet1Cidr: `${o1}.${o2}.10.0/24`,
         publicSubnet2Cidr: `${o1}.${o2}.11.0/24`,
-        eksPrivateSubnet1Cidr: `${o1}.${o2}.7.0/28`,
-        eksPrivateSubnet2Cidr: `${o1}.${o2}.8.0/28`,
+        eksPrivateSubnet1Cidr: `${o1}.${o2}.7.0/24`,
+        eksPrivateSubnet2Cidr: `${o1}.${o2}.8.0/24`,
         hyperPodPrivateSubnetCidr
       };
     } catch (error) {

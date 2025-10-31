@@ -38,10 +38,10 @@ const EnhancedModelManagement = () => {
     <Row gutter={[16, 16]} style={{ height: '100%' }}>
       {/* 左侧：配置面板 */}
       <Col xs={24} lg={12}>
-        <Card 
+        <Card
           title="Model Management Configuration"
           className="theme-card storage"
-          style={{ height: 'calc(50vh - 32px)', overflow: 'auto' }}
+          style={{ height: '60vh', overflow: 'auto' }}
         >
           <Tabs 
             defaultActiveKey="enhanced-download" 
@@ -99,7 +99,7 @@ const EnhancedModelManagement = () => {
             </Space>
           }
           className="theme-card storage"
-          style={{ height: 'calc(50vh - 32px)', overflow: 'auto' }}
+          style={{ height: '60vh', overflow: 'auto' }}
         >
           <S3StoragePanel selectedStorage={selectedStorage} />
         </Card>
