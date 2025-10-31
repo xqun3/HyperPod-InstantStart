@@ -3,7 +3,7 @@
 # REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web:latest"
 REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web25:latest"
 
-LOCAL_IMAGE="ui-panel-dev2"
+LOCAL_IMAGE="ui-panel-dev"
 
 
 echo "🐳 Starting Model Deployment UI with Docker (Development Mode)..."

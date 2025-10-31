@@ -715,7 +715,16 @@ function App() {
     try {
       console.log('Deploying KEDA scaling configuration:', config);
 
-      const response = await fetch('/api/deploy-keda-scaling', {
+      // 根据配置类型选择不同的API端点
+      let apiEndpoint = '/api/deploy-keda-scaling'; // 默认旧版本
+
+      if (config.type === 'keda-scaling-unified') {
+        apiEndpoint = '/api/deploy-keda-scaling-unified';
+      }
+
+      console.log(`Using API endpoint: ${apiEndpoint} for config type: ${config.type}`);
+
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -726,14 +735,25 @@ function App() {
       const result = await response.json();
 
       if (result.success) {
-        message.success('KEDA scaling configuration deployed successfully!');
+        if (config.type === 'keda-scaling-unified') {
+          message.success(`Unified KEDA scaling deployed for service: ${config.serviceName}`);
+        } else {
+          message.success('KEDA scaling configuration deployed successfully!');
+        }
+
         // 触发操作刷新
         operationRefreshManager.triggerOperationRefresh('keda-scaling-deploy', {
           timestamp: new Date().toISOString(),
-          source: 'scaling-panel'
+          source: 'scaling-panel',
+          configType: config.type
         });
       } else {
         message.error(`KEDA scaling deployment failed: ${result.error}`);
+        if (result.errors && result.errors.length > 0) {
+          result.errors.forEach(error => {
+            message.error(error);
+          });
+        }
       }
     } catch (error) {
       console.error('❌ Error deploying KEDA scaling:', error);

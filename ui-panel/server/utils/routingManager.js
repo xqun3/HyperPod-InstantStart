@@ -675,6 +675,117 @@ ${portsSection}`;
       };
     }
   }
+
+  /**
+   * 获取所有Router Services列表（用于KEDA配置）
+   * @returns {Array} Router Services列表，包含端口信息
+   */
+  static async getRouterServices() {
+    try {
+      // 1. 获取所有Router类型的Services
+      const servicesCmd = 'kubectl get services -l service-type=router -o json';
+      const servicesResult = execSync(servicesCmd, { encoding: 'utf8' });
+      const services = JSON.parse(servicesResult);
+
+      const routerServices = [];
+
+      for (const service of services.items) {
+        try {
+          // 2. 从Service labels中获取deployment-name
+          const deploymentName = service.metadata.labels['deployment-name'];
+          if (!deploymentName) {
+            console.warn(`Service ${service.metadata.name} missing deployment-name label`);
+            continue;
+          }
+
+          // 3. 提取端口信息
+          const ports = service.spec.ports || [];
+          const httpPort = ports.find(p => p.name === 'http')?.port;
+          const metricsPort = ports.find(p => p.name === 'metrics')?.port;
+
+          if (!metricsPort) {
+            console.warn(`Service ${service.metadata.name} missing metrics port`);
+            continue;
+          }
+
+          // 4. 获取Router deployment配置，解析关联的模型deployment
+          let modelDeploymentName = null;
+          let modelSelector = null;
+
+          try {
+            // 获取Router deployment的详细配置
+            const deploymentCmd = `kubectl get deployment ${deploymentName} -o json`;
+            const deploymentResult = execSync(deploymentCmd, { encoding: 'utf8' });
+            const deployment = JSON.parse(deploymentResult);
+
+            // 解析容器参数中的 --selector
+            const containers = deployment.spec?.template?.spec?.containers || [];
+            const routerContainer = containers.find(c => c.name === 'sglang-router') || containers[0];
+
+            if (routerContainer?.args) {
+              const args = routerContainer.args;
+              const selectorIndex = args.findIndex(arg => arg === '--selector');
+
+              if (selectorIndex !== -1 && selectorIndex + 1 < args.length) {
+                modelSelector = args[selectorIndex + 1]; // 例如: app=xxx-inference
+                console.log(`Found router selector: ${modelSelector} for ${deploymentName}`);
+
+                // 根据selector查找对应的模型deployment
+                const modelCmd = `kubectl get deployments -l "${modelSelector}" -o json`;
+                const modelResult = execSync(modelCmd, { encoding: 'utf8' });
+                const modelDeployments = JSON.parse(modelResult);
+
+                if (modelDeployments.items && modelDeployments.items.length > 0) {
+                  modelDeploymentName = modelDeployments.items[0].metadata.name;
+                  console.log(`Found associated model deployment: ${modelDeploymentName}`);
+                } else {
+                  console.warn(`No model deployment found for selector: ${modelSelector}`);
+                }
+              }
+            }
+          } catch (parseError) {
+            console.warn(`Could not parse model deployment for router ${deploymentName}:`, parseError.message);
+          }
+
+          // 5. 构建Router Service信息（包含关联的模型deployment）
+          const routerService = {
+            name: service.metadata.name,
+            deploymentName: deploymentName,              // Router deployment名称
+            modelDeploymentName: modelDeploymentName,    // 关联的模型deployment名称
+            modelSelector: modelSelector,               // 模型选择器
+            namespace: service.metadata.namespace || 'default',
+            serviceType: service.spec.type,
+            httpPort: httpPort,
+            metricPort: metricsPort,
+            creationTime: service.metadata.creationTimestamp,
+            // 判断是否为external类型
+            isExternal: service.spec.type === 'LoadBalancer',
+            // 获取访问地址
+            clusterIP: service.spec.clusterIP,
+            externalIP: service.status?.loadBalancer?.ingress?.[0]?.hostname ||
+                       service.status?.loadBalancer?.ingress?.[0]?.ip || null
+          };
+
+          routerServices.push(routerService);
+
+        } catch (error) {
+          console.warn(`Error processing service ${service.metadata.name}:`, error.message);
+          continue;
+        }
+      }
+
+      console.log(`Found ${routerServices.length} Router services`);
+      return routerServices;
+
+    } catch (error) {
+      console.error('Error getting Router services:', error);
+      // 如果没有找到任何Router services，返回空数组而不是错误
+      if (error.message.includes('No resources found')) {
+        return [];
+      }
+      throw error;
+    }
+  }
 }
 
 module.exports = RoutingManager;
