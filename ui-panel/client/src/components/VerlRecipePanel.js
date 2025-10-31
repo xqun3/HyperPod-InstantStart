@@ -11,7 +11,8 @@ import {
   Alert,
   Typography,
   message,
-  Tooltip
+  Tooltip,
+  Select
 } from 'antd';
 import {
   RocketOutlined,
@@ -27,7 +28,7 @@ import {
 
 const { Text } = Typography;
 
-const VerlRecipePanel = ({ onLaunch, deploymentStatus }) => {
+const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -157,7 +158,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus }) => {
         onFinish={handleSubmit}
         initialValues={{
           jobName: 'verl-training-a1',
-          instanceType: 'ml.g5.12xlarge',
+          instanceType: '',
           entryPointPath: 'verl-project/src/qwen-3b-grpo-kuberay.sh',
           dockerImage: '633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest',
           workerReplicas: 1,
@@ -193,9 +194,23 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus }) => {
                 </Space>
               }
               name="instanceType"
-              rules={[{ required: true, message: 'Please input instance type!' }]}
+              rules={[{ required: true, message: 'Please select instance type!' }]}
             >
-              <Input placeholder="ml.g5.12xlarge" />
+              <Select
+                placeholder="Select HyperPod instance type"
+                options={hyperPodInstanceTypes}
+                loading={instanceTypesLoading}
+                showSearch
+                filterOption={(inputValue, option) =>
+                  option.label.toLowerCase().indexOf(inputValue.toLowerCase()) !== -1
+                }
+                onSelect={(value, option) => {
+                  // 如果选择的是从集群获取的选项，提取实例类型；否则使用原值
+                  const instanceType = option.instanceType || value.split('-')[0];
+                  form.setFieldValue('instanceType', instanceType);
+                }}
+                style={{ width: '100%' }}
+              />
             </Form.Item>
           </Col>
         </Row>

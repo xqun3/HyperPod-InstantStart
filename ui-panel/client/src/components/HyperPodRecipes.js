@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Tabs, Space } from 'antd';
-import { 
-  ExperimentOutlined, 
+import {
+  ExperimentOutlined,
   RocketOutlined,
   FireOutlined,
   CodeOutlined,
@@ -12,12 +12,16 @@ import VerlRecipePanel from './VerlRecipePanel';
 import TorchRecipePanel from './TorchRecipePanel';
 import ScriptRecipePanel from './ScriptRecipePanel';
 import SageMakerJobPanel from './SageMakerJobPanel';
+import { useHyperPodInstanceTypes } from '../utils/hyperPodInstanceTypes';
 
 const { TabPane } = Tabs;
 
 const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
   const [activeTab, setActiveTab] = useState('torch');
   const showScriptRecipe = process.env.REACT_APP_SHOW_SCRIPT_RECIPE === 'true';
+
+  // 🚀 预先获取所有HyperPod实例类型，避免Tab切换时的延迟
+  const { instanceTypes: hyperPodInstanceTypes, loading: instanceTypesLoading } = useHyperPodInstanceTypes();
 
   const handleTabChange = (key) => {
     setActiveTab(key);
@@ -45,9 +49,11 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
             style={{ height: '100%', overflow: 'hidden' }}
           >
             <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
-              <ScriptRecipePanel 
+              <ScriptRecipePanel
                 onLaunch={onLaunch}
                 deploymentStatus={deploymentStatus}
+                hyperPodInstanceTypes={hyperPodInstanceTypes}
+                instanceTypesLoading={instanceTypesLoading}
               />
             </div>
           </TabPane>
@@ -64,9 +70,11 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
           style={{ height: '100%', overflow: 'hidden' }}
         >
           <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
-            <TorchRecipePanel 
+            <TorchRecipePanel
               onLaunch={onLaunch}
               deploymentStatus={deploymentStatus}
+              hyperPodInstanceTypes={hyperPodInstanceTypes}
+              instanceTypesLoading={instanceTypesLoading}
             />
           </div>
         </TabPane>
@@ -82,9 +90,11 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
           style={{ height: '100%', overflow: 'hidden' }}
         >
           <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
-            <TrainingConfigPanel 
+            <TrainingConfigPanel
               onLaunch={onLaunch}
               deploymentStatus={deploymentStatus}
+              hyperPodInstanceTypes={hyperPodInstanceTypes}
+              instanceTypesLoading={instanceTypesLoading}
             />
           </div>
         </TabPane>
@@ -100,7 +110,12 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
           style={{ height: '100%', overflow: 'hidden' }}
         >
           <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
-            <VerlRecipePanel onLaunch={onLaunch} deploymentStatus={deploymentStatus} />
+            <VerlRecipePanel
+              onLaunch={onLaunch}
+              deploymentStatus={deploymentStatus}
+              hyperPodInstanceTypes={hyperPodInstanceTypes}
+              instanceTypesLoading={instanceTypesLoading}
+            />
           </div>
         </TabPane>
 
