@@ -7561,7 +7561,7 @@ app.get('/api/aws/instance-types', async (req, res) => {
     }
 
     // No cache at all
-    return res.status(404).json({
+    return res.status(200).json({
       success: false,
       error: 'Instance types not cached yet. Please click refresh to fetch from AWS.',
       needsRefresh: true

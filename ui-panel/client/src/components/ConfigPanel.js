@@ -24,7 +24,8 @@ import {
   TagOutlined,
   LinkOutlined,
   ThunderboltOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -138,13 +139,13 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
       <OptGroup label="EC2">
         {/* EKS NodeGroup 实例 */}
         {instanceTypes.eksNodeGroup.map(type => (
-          <Option key={`eks-${type.type}`} value={type.type}>
+          <Option key={`eks-${type.type}-${type.nodeGroup}`} value={type.type}>
             {type.type} (NodeGroup: {type.nodeGroup}) [{type.count} nodes]
           </Option>
         ))}
-        {/* Karpenter 实例 */}
+        {/* Karpenter 实例 - 使用唯一的key和value来避免相同机型选择冲突 */}
         {instanceTypes.karpenter.map((type, index) => (
-          <Option key={`kar-${type.type}-${index}`} value={type.type}>
+          <Option key={`kar-${type.type}-${type.nodePool}-${index}`} value={`${type.type}#${type.nodePool}`}>
             {type.type} (Karpenter: {type.nodePool})
           </Option>
         ))}
@@ -173,6 +174,25 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
 
   // 移除标签切换处理 - 不再需要
 
+  // 处理实例类型选择，将Karpenter特殊格式转换为纯实例类型，并去重
+  const processInstanceTypes = (instanceTypes) => {
+    if (!instanceTypes || !Array.isArray(instanceTypes)) {
+      return instanceTypes;
+    }
+
+    // 处理格式转换
+    const processedTypes = instanceTypes.map(type => {
+      // 如果是Karpenter的特殊格式（type#nodePool），提取纯实例类型
+      if (type.includes('#')) {
+        return type.split('#')[0];
+      }
+      return type;
+    });
+
+    // 去重：确保没有重复的实例类型传递给后端
+    return [...new Set(processedTypes)];
+  };
+
   const handleSubmit = async (values) => {
     console.log('handleSubmit called with values:', values);
 
@@ -180,6 +200,8 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
     try {
       const deploymentConfig = {
         ...values,
+        // 处理实例类型，确保后端接收到纯实例类型数组
+        instanceTypes: processInstanceTypes(values.instanceTypes),
         deploymentType: 'container'  // 固定为container类型
       };
 
@@ -379,15 +401,23 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
               { required: true, message: 'Please select at least one instance type!' }
             ]}
           >
-            <Select
-              mode="multiple"
-              placeholder="Select instance types"
-              loading={instanceTypesLoading}
-              style={{ fontFamily: 'monospace' }}
-              allowClear
-            >
-              {instanceTypeOptions}
-            </Select>
+            <Space.Compact style={{ display: 'flex', width: '100%' }}>
+              <Select
+                mode="multiple"
+                placeholder="Select instance types"
+                loading={instanceTypesLoading}
+                style={{ fontFamily: 'monospace', flex: 1 }}
+                allowClear
+              >
+                {instanceTypeOptions}
+              </Select>
+              <Button
+                icon={<ReloadOutlined />}
+                loading={instanceTypesLoading}
+                onClick={fetchInstanceTypes}
+                title="Refresh instance types"
+              />
+            </Space.Compact>
           </Form.Item>
         </Col>
       </Row>

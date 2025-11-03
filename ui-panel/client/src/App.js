@@ -66,8 +66,14 @@ function App() {
 
   const connectWebSocket = () => {
     console.log('Attempting to connect to WebSocket...');
-    
-    const websocket = new WebSocket('ws://localhost:3098');
+
+    // 动态构建WebSocket URL，使用当前访问的主机名
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname;
+    const wsUrl = `${protocol}//${hostname}:3098`;
+
+    console.log(`Connecting to WebSocket: ${wsUrl}`);
+    const websocket = new WebSocket(wsUrl);
     
     // 设置连接超时
     const connectionTimeout = setTimeout(() => {
