@@ -620,7 +620,7 @@ function App() {
     }
   }, []); // 空依赖数组
 
-  const handleDeploy = async (config) => {
+  const handleDeploy = useCallback(async (config) => {
     console.log('🚀 handleDeploy called with config:', config);
     try {
       console.log('🚀 Deploying with config:', config);
@@ -653,7 +653,7 @@ function App() {
       console.error('❌ Error deploying:', error);
       message.error('Failed to deploy model');
     }
-  };
+  }, []); // useCallback dependency array
 
   const handleServiceDeploy = async (config) => {
     console.log('🚀 handleServiceDeploy called with config:', config);

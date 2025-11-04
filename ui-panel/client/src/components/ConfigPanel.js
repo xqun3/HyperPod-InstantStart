@@ -122,7 +122,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
   // 组件挂载时获取实例类型
   useEffect(() => {
     fetchInstanceTypes();
-  }, [fetchInstanceTypes]);
+  }, []); // 只在组件挂载时执行一次，避免全局刷新触发重新加载
 
   // 移除不再使用的过滤函数
 
@@ -177,7 +177,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
   // 处理实例类型选择，将Karpenter特殊格式转换为纯实例类型，并去重
   const processInstanceTypes = (instanceTypes) => {
     if (!instanceTypes || !Array.isArray(instanceTypes)) {
-      return instanceTypes;
+      return []; // 返回空数组而不是原值
     }
 
     // 处理格式转换
@@ -394,30 +394,40 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
                 <Tooltip title="Select one or more instance types for hybrid scheduling">
                   <InfoCircleOutlined />
                 </Tooltip>
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={instanceTypesLoading}
+                  onClick={fetchInstanceTypes}
+                  title="Refresh instance types"
+                  size="small"
+                />
               </Space>
             }
             name="instanceTypes"
             rules={[
-              { required: true, message: 'Please select at least one instance type!' }
+              {
+                required: true,
+                message: 'Please select at least one instance type!',
+                validator: (_, value) => {
+                  const processed = processInstanceTypes(value);
+                  if (!processed || processed.length === 0) {
+                    return Promise.reject(new Error('Please select at least one instance type!'));
+                  }
+                  return Promise.resolve();
+                }
+              }
             ]}
           >
-            <Space.Compact style={{ display: 'flex', width: '100%' }}>
-              <Select
-                mode="multiple"
-                placeholder="Select instance types"
-                loading={instanceTypesLoading}
-                style={{ fontFamily: 'monospace', flex: 1 }}
-                allowClear
-              >
-                {instanceTypeOptions}
-              </Select>
-              <Button
-                icon={<ReloadOutlined />}
-                loading={instanceTypesLoading}
-                onClick={fetchInstanceTypes}
-                title="Refresh instance types"
-              />
-            </Space.Compact>
+            <Select
+              mode="multiple"
+              placeholder="Select instance types"
+              loading={instanceTypesLoading}
+              style={{ fontFamily: 'monospace', width: '100%' }}
+              allowClear
+              notFoundContent={instanceTypesLoading ? 'Loading...' : 'No instance types available'}
+            >
+              {instanceTypeOptions}
+            </Select>
           </Form.Item>
         </Col>
       </Row>
