@@ -145,6 +145,14 @@ function executeKubectl(command, timeout = 30000) { // 默认30秒超时
   });
 }
 
+// 判断是否需要ThreadsPerCore=2（有TrainingPlan或使用p4/p5/p6实例）
+function shouldUseThreadsPerCore2(instanceType, trainingPlanArn) {
+  if (trainingPlanArn) return true;
+  if (!instanceType) return false;
+  const type = instanceType.toLowerCase();
+  return type.startsWith('ml.p4') || type.startsWith('ml.p5') || type.startsWith('ml.p6');
+}
+
 // 简化的模型标签生成函数（用于模型下载）
 function generateModelTag(modelId) {
   if (!modelId) return 'model';
@@ -5502,7 +5510,7 @@ app.post('/api/cluster/hyperpod/add-instance-group', async (req, res) => {
       InstanceType: userConfig.instanceType,
       LifeCycleConfig: clusterData.InstanceGroups[0]?.LifeCycleConfig,
       ExecutionRole: clusterData.InstanceGroups[0]?.ExecutionRole,
-      ThreadsPerCore: userConfig.trainingPlanArn ? 2 : 1,
+      ThreadsPerCore: shouldUseThreadsPerCore2(userConfig.instanceType, userConfig.trainingPlanArn) ? 2 : 1,
       InstanceStorageConfigs: [
         {
           EbsVolumeConfig: {
@@ -6884,8 +6892,8 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
       AcceleratedInstanceCount: userConfig.AcceleratedInstanceCount,
       AcceleratedEBSVolumeSize: userConfig.AcceleratedEBSVolumeSize,
       AcceleratedTrainingPlanArn: userConfig.AcceleratedTrainingPlanArn || '',
-      // 自动设置threads per core：有training plan时为2，否则为1
-      AcceleratedThreadsPerCore: userConfig.AcceleratedTrainingPlanArn ? 2 : 1,
+      // 自动设置threads per core：有training plan或使用p4/p5/p6实例时为2，否则为1
+      AcceleratedThreadsPerCore: shouldUseThreadsPerCore2(userConfig.AcceleratedInstanceType, userConfig.AcceleratedTrainingPlanArn) ? 2 : 1,
       EnableInstanceStressCheck: 'false',
       EnableInstanceConnectivityCheck: 'false'
     };
