@@ -7,6 +7,7 @@ const YAML = require('yaml');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { parse } = require('shell-quote');
 
 // 引入工具模块
 const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
@@ -188,8 +189,19 @@ function parseVllmCommand(deploymentCommandString) {
     .replace(/\s+/g, ' ')      // 合并多个空格
     .trim();
   
-  // 分割命令为数组
-  const parts = cleanCommand.split(' ').filter(part => part.trim());
+  // 使用Shell-Quote进行健壮的命令解析，正确处理引号内的JSON参数
+  const parsed = parse(cleanCommand);
+  const parts = parsed.map(token => {
+    // shell-quote可能返回对象，我们需要转换为字符串
+    if (typeof token === 'string') {
+      return token;
+    } else if (token.op) {
+      // 处理操作符 (如重定向)
+      return token.op;
+    } else {
+      return String(token);
+    }
+  }).filter(part => part.trim());
   
   // 检查命令是否为空
   if (parts.length === 0) {

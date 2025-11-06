@@ -132,22 +132,42 @@ const TestPanel = ({ services, onRefresh }) => {
   const handleRefresh = async () => {
     try {
       setFetchingModelId(true);
-      
+
+      // 保存当前选中服务的名称
+      const currentServiceName = selectedService?.metadata.name;
+
       // 如果父组件提供了刷新函数，先调用它来刷新服务列表
       if (onRefresh) {
         console.log('Calling parent refresh function...');
         await onRefresh();
       }
-      
-      // 如果有选中的服务，重新获取其模型ID并更新表单
-      if (selectedService) {
-        console.log('Refreshing model ID for selected service:', selectedService.metadata.name);
-        const detectedType = detectModelType(selectedService);
-        await updateFormDefaults(detectedType, selectedService);
-        message.success('Services and model information refreshed');
+
+      // 刷新完成后，检查之前选中的服务是否还存在
+      // 注意：这里的检查会在下一次render中的useEffect中进行
+      // 所以我们只需要处理存在的服务的模型ID刷新
+
+      if (currentServiceName) {
+        // 等待一个tick让services更新完成
+        setTimeout(() => {
+          // 在modelServices中找到同名服务
+          const updatedService = modelServices.find(
+            service => service.metadata.name === currentServiceName
+          );
+
+          if (updatedService) {
+            console.log('Refreshing model ID for existing service:', currentServiceName);
+            const detectedType = detectModelType(updatedService);
+            updateFormDefaults(detectedType, updatedService);
+            message.success('Services and model information refreshed');
+          } else {
+            // 服务不存在的情况会由useEffect处理
+            message.success('Services refreshed');
+          }
+        }, 100);
       } else {
         message.success('Services refreshed');
       }
+
     } catch (error) {
       console.error('Error refreshing:', error);
       message.error('Failed to refresh');
@@ -185,16 +205,45 @@ const TestPanel = ({ services, onRefresh }) => {
   };
 
   useEffect(() => {
+    // 检查当前选中的服务是否还存在
+    if (selectedService) {
+      const serviceStillExists = modelServices.find(
+        service => service.metadata.name === selectedService.metadata.name
+      );
+
+      if (!serviceStillExists) {
+        console.log(`Selected service ${selectedService.metadata.name} no longer exists, clearing selection`);
+        setSelectedService(null);
+        setModelType('ollama');
+        form.resetFields();
+        setCurlCommand('');
+        setResponse('');
+        message.info(`Service "${selectedService.metadata.name}" was deleted. Please select another service.`);
+        return;
+      }
+    }
+
+    // 如果没有选中服务且有可用服务，选择第一个
     if (modelServices.length > 0 && !selectedService) {
       const firstService = modelServices[0];
       setSelectedService(firstService);
       const detectedType = detectModelType(firstService);
       setModelType(detectedType);
-      
+
       // 根据模型类型设置默认值（异步）
       updateFormDefaults(detectedType, firstService);
     }
-  }, [modelServices, selectedService]);
+
+    // 如果没有可用服务且当前有选中服务，清空选择
+    if (modelServices.length === 0 && selectedService) {
+      console.log('No model services available, clearing selection');
+      setSelectedService(null);
+      setModelType('ollama');
+      form.resetFields();
+      setCurlCommand('');
+      setResponse('');
+    }
+  }, [modelServices, selectedService, form]);
 
   // 更新表单默认值
   const updateFormDefaults = async (type, service) => {
@@ -405,9 +454,17 @@ const TestPanel = ({ services, onRefresh }) => {
           {modelServices.length === 0 ? (
             <Alert
               message="No model services found"
-              description="Deploy a model first to see available services"
+              description={
+                <div>
+                  <p>Deploy a model first to see available services.</p>
+                  <p style={{ marginBottom: 0, fontSize: '12px', color: '#666' }}>
+                    Services will appear here automatically after deployment.
+                  </p>
+                </div>
+              }
               type="info"
               showIcon
+              style={{ textAlign: 'left' }}
             />
           ) : (
             <Select
@@ -418,9 +475,31 @@ const TestPanel = ({ services, onRefresh }) => {
             >
               {modelServices.map(service => {
                 const serviceType = detectModelType(service);
+                const status = getServiceStatus(service);
+                const statusColor = getStatusColor(status);
+
                 return (
                   <Option key={service.metadata.name} value={service.metadata.name}>
-                    {service.metadata.name}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{service.metadata.name}</span>
+                      <Space size="small">
+                        <Text
+                          style={{
+                            fontSize: '11px',
+                            color: '#666',
+                            textTransform: 'uppercase'
+                          }}
+                        >
+                          {serviceType}
+                        </Text>
+                        <Text
+                          type={statusColor}
+                          style={{ fontSize: '10px' }}
+                        >
+                          ●
+                        </Text>
+                      </Space>
+                    </div>
                   </Option>
                 );
               })}
