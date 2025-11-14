@@ -9,9 +9,6 @@ const https = require('https');
 const http = require('http');
 const { parse } = require('shell-quote');
 
-// Load user.env configuration (consistent with cloudFormationManager.js)
-require('dotenv').config({ path: path.join(__dirname, '../client/user.env') });
-
 // 引入工具模块
 const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
 const { getCurrentRegion } = require('./utils/awsHelpers');
@@ -67,43 +64,6 @@ function broadcast(data) {
       client.send(JSON.stringify(data));
     }
   });
-}
-
-/**
- * Save temporary YAML file for kubectl apply
- * @param {string} namePrefix - Prefix for the temporary file name
- * @param {string} content - The YAML content
- * @returns {Promise<string>} - The path to the temporary file
- */
-async function saveTempYaml(namePrefix, content) {
-  const tmpConfDir = '/tmp/hyperpod-tmpconf';
-  if (!fs.existsSync(tmpConfDir)) {
-    fs.mkdirSync(tmpConfDir, { recursive: true });
-  }
-
-  const tempFilePath = `${tmpConfDir}/${namePrefix}-${Date.now()}`;
-  await fs.writeFile(tempFilePath, content);
-  return tempFilePath;
-}
-
-/**
- * Save YAML file based on REACT_APP_DEPLY_TRACE environment variable
- * @param {string} filePath - The file path to save
- * @param {string} content - The YAML content
- * @returns {Promise<void>}
- */
-async function saveYamlIfTraceEnabled(filePath, content) {
-  const shouldTrace = process.env.REACT_APP_DEPLY_TRACE === 'true';
-
-  if (shouldTrace) {
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    await fs.writeFile(filePath, content);
-  }
 }
 
 // 优化错误消息的函数
@@ -916,19 +876,23 @@ app.post('/api/deploy', async (req, res) => {
       }
     }
     
-    // Always create temporary file for kubectl apply
-    const tempFilePath = await saveTempYaml(`deploy-${finalDeploymentTag}`, newYamlContent);
-
-    // Optionally save to deployments/inference folder for archival purposes
+    // 保存到项目目录中的deployments/inference文件夹
     const deploymentsDir = path.join(__dirname, '../deployments/inference');
+    if (!fs.existsSync(deploymentsDir)) {
+      fs.mkdirSync(deploymentsDir, { recursive: true });
+    }
+    
     const accessType = isExternal ? 'external' : 'internal';
     const poolType = deployAsPool ? 'pool' : 'standard';
+    // 使用实际的引擎类型：container使用解析出的servEngine
     const actualEngineType = servEngine;
-    const archiveYamlPath = path.join(deploymentsDir, `${finalDeploymentTag}-${actualEngineType}-${poolType}-${accessType}.yaml`);
-    await saveYamlIfTraceEnabled(archiveYamlPath, newYamlContent);
-
-    // Execute kubectl apply
-    const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`);
+    const tempYamlPath = path.join(deploymentsDir, `${finalDeploymentTag}-${actualEngineType}-${poolType}-${accessType}.yaml`);
+    await fs.writeFile(tempYamlPath, newYamlContent);
+    
+    console.log(`Generated YAML saved to: ${tempYamlPath}`);
+    
+    // 执行kubectl apply
+    const applyOutput = await executeKubectl(`apply -f ${tempYamlPath}`);
     
     // 广播部署状态更新
     const deploymentMessage = deployAsPool 
@@ -946,7 +910,7 @@ app.post('/api/deploy', async (req, res) => {
       success: true,
       message: 'Deployment successful',
       output: applyOutput,
-      yamlPath: archiveYamlPath,
+      yamlPath: tempYamlPath,
       generatedYaml: newYamlContent,
       deploymentType: servEngine,
       deploymentTag: finalDeploymentTag,
@@ -1015,16 +979,19 @@ app.post('/api/deploy-service', async (req, res) => {
       nlbAnnotations
     );
     
-    // Always create temporary file for kubectl apply
-    const tempFilePath = await saveTempYaml(`binding-${serviceName}`, serviceYaml);
-
-    // Optionally save to deployments/inference folder for archival purposes
+    // 保存到 deployments/inference 目录
     const deploymentsDir = path.join(__dirname, '../deployments/inference');
-    const archiveYamlPath = path.join(deploymentsDir, `${serviceName}-binding-${serviceType}.yaml`);
-    await saveYamlIfTraceEnabled(archiveYamlPath, serviceYaml);
-
+    if (!fs.existsSync(deploymentsDir)) {
+      fs.mkdirSync(deploymentsDir, { recursive: true });
+    }
+    
+    const tempYamlPath = path.join(deploymentsDir, `${serviceName}-binding-${serviceType}.yaml`);
+    await fs.writeFile(tempYamlPath, serviceYaml);
+    
+    console.log(`Generated binding service YAML saved to: ${tempYamlPath}`);
+    
     // 执行kubectl apply
-    const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`);
+    const applyOutput = await executeKubectl(`apply -f ${tempYamlPath}`);
     
     // 广播部署状态更新
     broadcast({
@@ -1062,21 +1029,36 @@ app.post('/api/deploy-service', async (req, res) => {
 // 统一的训练YAML部署函数
 async function deployTrainingYaml(recipeType, jobName, yamlContent) {
   try {
-    // Always create temporary file for kubectl apply
-    const tempFilePath = await saveTempYaml(`${recipeType}-${jobName}`, yamlContent);
+    // 确保temp目录存在
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
 
-    // Optionally save to deployments/trainings folder for archival purposes
+    // 确保deployments/trainings目录存在
     const trainingsDir = path.join(__dirname, '../deployments/trainings');
+    if (!fs.existsSync(trainingsDir)) {
+      fs.mkdirSync(trainingsDir, { recursive: true });
+    }
+
+    // 写入临时文件（用于kubectl apply）
+    const tempFileName = `${recipeType}-${jobName}-${Date.now()}.yaml`;
+    const tempFilePath = path.join(tempDir, tempFileName);
+    await fs.writeFile(tempFilePath, yamlContent);
+
+    // 写入永久文件（用于记录）
     const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const permanentFileName = `${recipeType}_${timestamp}.yaml`;
     const permanentFilePath = path.join(trainingsDir, permanentFileName);
-    await saveYamlIfTraceEnabled(permanentFilePath, yamlContent);
+    await fs.writeFile(permanentFilePath, yamlContent);
 
-    // Apply YAML configuration
+    console.log(`${recipeType} training YAML saved to: ${permanentFilePath}`);
+
+    // 应用YAML配置
     const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`);
     console.log(`${recipeType} training kubectl apply output:`, applyOutput);
 
-    // Clean up temporary file
+    // 清理临时文件
     fs.unlinkSync(tempFilePath);
 
     // 发送WebSocket广播
@@ -1210,18 +1192,37 @@ ${indentedConfig}`;
 
     // 生成时间戳
     const timestamp = Date.now();
+    
+    // 生成临时文件名（用于kubectl apply）
+    const tempFileName = `torch-training-${trainingJobName}-${timestamp}.yaml`;
+    const tempFilePath = path.join(__dirname, '../temp', tempFileName);
 
-    // Always create temporary file for kubectl apply
-    const tempFilePath = await saveTempYaml(`torch-training-${trainingJobName}-${timestamp}`, newYamlContent);
-
-    // Optionally save to deployments/trainings folder for archival purposes
-    const trainingDeploymentDir = path.join(__dirname, '../deployments/trainings');
+    // 生成部署文件名（保存到deployments/trainings/目录）
     const deploymentFileName = `torch_${timestamp}.yaml`;
-    const deploymentFilePath = path.join(trainingDeploymentDir, deploymentFileName);
-    await saveYamlIfTraceEnabled(deploymentFilePath, newYamlContent);
+    const deploymentFilePath = path.join(__dirname, '../deployments/trainings', deploymentFileName);
 
-    // Apply YAML configuration - training jobs may need longer timeout
-    const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`, 60000); // 60 seconds timeout
+    // 确保temp目录存在
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // 确保deployments/trainings目录存在
+    const trainingDeploymentDir = path.join(__dirname, '../deployments/trainings');
+    if (!fs.existsSync(trainingDeploymentDir)) {
+      fs.mkdirSync(trainingDeploymentDir, { recursive: true });
+    }
+
+    // 写入临时文件（用于kubectl apply）
+    await fs.writeFile(tempFilePath, newYamlContent);
+    console.log(`Torch training YAML written to temp file: ${tempFilePath}`);
+
+    // 写入部署文件（保存到deployments/trainings/目录）
+    await fs.writeFile(deploymentFilePath, newYamlContent);
+    console.log(`Torch training YAML saved to deployments: ${deploymentFilePath}`);
+
+    // 应用YAML配置 - 训练任务可能需要更长时间
+    const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`, 60000); // 60秒超时
     console.log('Torch training job apply output:', applyOutput);
 
     // 清理临时文件
@@ -4488,15 +4489,23 @@ app.post('/api/download-model-enhanced', async (req, res) => {
       return res.json({ success: false, error: jobResult.error });
     }
 
-    // Always create temporary file for kubectl apply
-    const tempFile = await saveTempYaml(`enhanced-download-job`, jobResult.yamlContent);
-
-    // Optionally save to deployments folder for archival purposes
+    // 确保deployments目录存在
     const deploymentsDir = path.join(__dirname, '..', 'deployments');
+    if (!fs.existsSync(deploymentsDir)) {
+      fs.mkdirSync(deploymentsDir, { recursive: true });
+    }
+    
+    // 保存生成的YAML文件到deployments目录
     const modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
     const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
     const deploymentFile = path.join(deploymentsDir, `enhanced-model-download-${modelTag}-${timestamp}.yaml`);
-    await saveYamlIfTraceEnabled(deploymentFile, jobResult.yamlContent);
+    await fs.writeFile(deploymentFile, jobResult.yamlContent);
+    
+    console.log(`📁 Saved deployment template: ${deploymentFile}`);
+
+    // 应用Job到Kubernetes
+    const tempFile = `/tmp/enhanced-download-job-${Date.now()}.yaml`;
+    fs.writeFileSync(tempFile, jobResult.yamlContent);
 
     exec(`kubectl apply -f ${tempFile}`, (error, stdout, stderr) => {
       fs.removeSync(tempFile);

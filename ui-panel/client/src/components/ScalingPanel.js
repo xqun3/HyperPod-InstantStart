@@ -591,31 +591,29 @@ const ScalingPanel = ({ onDeploy, deploymentStatus }) => {
 
         {/* Action Buttons */}
         <div style={{ marginTop: '16px' }}>
-          {/* Preview YAML 按钮行 - 根据环境变量控制显示 */}
-          {process.env.REACT_APP_SCALE_PREVW === 'true' && (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              marginBottom: '12px',
-              height: '32px'
-            }}>
-              <Button
-                type="text"
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={handlePreview}
-                style={{
-                  color: '#666',
-                  fontSize: '12px',
-                  height: '28px',
-                  padding: '0 8px'
-                }}
-                title="Preview YAML Configuration"
-              >
-                Preview YAML
-              </Button>
-            </div>
-          )}
+          {/* Preview YAML 按钮行 */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginBottom: '12px',
+            height: '32px'
+          }}>
+            <Button
+              type="text"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={handlePreview}
+              style={{
+                color: '#666',
+                fontSize: '12px',
+                height: '28px',
+                padding: '0 8px'
+              }}
+              title="Preview YAML Configuration"
+            >
+              Preview YAML
+            </Button>
+          </div>
 
           {/* Deploy 按钮 - 全宽度 */}
           <Button
@@ -631,17 +629,16 @@ const ScalingPanel = ({ onDeploy, deploymentStatus }) => {
         </div>
       </Form>
 
-      {/* YAML Preview Modal - 根据环境变量控制显示 */}
-      {process.env.REACT_APP_SCALE_PREVW === 'true' && (
-        <Modal
-          title={
-            <Space>
-              <EyeOutlined />
-              KEDA Configuration Preview
-            </Space>
-          }
-          open={previewVisible}
-          onCancel={() => setPreviewVisible(false)}
+      {/* YAML Preview Modal */}
+      <Modal
+        title={
+          <Space>
+            <EyeOutlined />
+            KEDA Configuration Preview
+          </Space>
+        }
+        open={previewVisible}
+        onCancel={() => setPreviewVisible(false)}
         width={800}
         footer={[
           <Button key="close" onClick={() => setPreviewVisible(false)}>
@@ -666,7 +663,6 @@ const ScalingPanel = ({ onDeploy, deploymentStatus }) => {
           readOnly
         />
       </Modal>
-      )}
     </div>
   );
 };

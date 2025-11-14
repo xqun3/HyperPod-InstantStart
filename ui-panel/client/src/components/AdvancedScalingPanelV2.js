@@ -196,37 +196,38 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
                     <Tooltip title="Select SGLang deployment to route requests to (only ClusterIP services are supported)">
                       <InfoCircleOutlined />
                     </Tooltip>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<ReloadOutlined />}
+                      loading={refreshing}
+                      onClick={fetchDeployments}
+                      style={{ marginLeft: 8 }}
+                    >
+                      Refresh
+                    </Button>
                   </Space>
                 }
                 name="targetDeployment"
                 rules={[{ required: true, message: 'Please select target deployment!' }]}
               >
-                <Space.Compact style={{ width: '100%' }}>
-                  <Select
-                    placeholder={refreshing ? "Loading deployments..." : "Select SGLang deployment"}
-                    onChange={(value) => setSelectedDeployment(value)}
-                    loading={refreshing}
-                    notFoundContent={refreshing ? <Spin size="small" /> : "No SGLang deployments found"}
-                    style={{ flex: 1 }}
-                  >
-                    {availableDeployments.map(deployment => (
-                      <Option key={deployment.deploymentTag} value={deployment.deploymentTag}>
-                        <Space>
-                          <span>{deployment.deploymentTag}</span>
-                          <span style={{ color: '#666' }}>
-                            (Port: {deployment.port}, {deployment.status})
-                          </span>
-                        </Space>
-                      </Option>
-                    ))}
-                  </Select>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    loading={refreshing}
-                    onClick={fetchDeployments}
-                    title="Refresh SGLang deployments"
-                  />
-                </Space.Compact>
+                <Select
+                  placeholder={refreshing ? "Loading deployments..." : "Select SGLang deployment"}
+                  onChange={(value) => setSelectedDeployment(value)}
+                  loading={refreshing}
+                  notFoundContent={refreshing ? <Spin size="small" /> : "No SGLang deployments found"}
+                >
+                  {availableDeployments.map(deployment => (
+                    <Option key={deployment.deploymentTag} value={deployment.deploymentTag}>
+                      <Space>
+                        <span>{deployment.deploymentTag}</span>
+                        <span style={{ color: '#666' }}>
+                          (Port: {deployment.port}, {deployment.status})
+                        </span>
+                      </Space>
+                    </Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>

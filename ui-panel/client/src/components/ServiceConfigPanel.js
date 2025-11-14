@@ -10,15 +10,14 @@ import {
   Radio,
   Select
 } from 'antd';
-import {
-  RocketOutlined,
+import { 
+  RocketOutlined, 
   InfoCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   GlobalOutlined,
   ThunderboltOutlined,
-  LinkOutlined,
-  ReloadOutlined
+  LinkOutlined
 } from '@ant-design/icons';
 
 const { Option } = Select;
@@ -27,35 +26,31 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [modelPools, setModelPools] = useState([]);
-  const [modelPoolsLoading, setModelPoolsLoading] = useState(false);
 
   // 获取可用的模型池
   const fetchModelPools = async () => {
-    setModelPoolsLoading(true);
     try {
       console.log('🔍 Fetching model pools...');
       const response = await fetch('/api/deployments');
       const data = await response.json();
-
+      
       console.log('📦 All deployments received:', data);
-
+      
       // 过滤出模型池类型的部署
-      const pools = data.filter(deployment =>
+      const pools = data.filter(deployment => 
         deployment.deploymentType === 'model-pool' ||
         (deployment.labels && deployment.labels['deployment-type'] === 'model-pool')
       );
-
+      
       console.log('🎯 Filtered model pools:', pools.length, pools.map(p => ({
         name: p.deploymentName,
         type: p.deploymentType,
         labels: p.labels
       })));
-
+      
       setModelPools(pools);
     } catch (error) {
       console.error('❌ Error fetching model pools:', error);
-    } finally {
-      setModelPoolsLoading(false);
     }
   };
 
@@ -155,35 +150,22 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
             { required: true, message: 'Please select a model pool!' }
           ]}
         >
-          <Space.Compact style={{ width: '100%' }}>
-            <Select
-              placeholder={modelPools.length === 0 ? "No model pools found" : "Select model pool"}
-              loading={modelPoolsLoading}
-              notFoundContent={modelPoolsLoading ? "Loading..." : "No model pools available"}
-              style={{ flex: 1 }}
-              onChange={(value) => {
-                // Ensure form value is properly set when using Space.Compact wrapper
-                form.setFieldsValue({ modelPool: value });
-              }}
-              onDropdownVisibleChange={(open) => {
-                if (open) {
-                  console.log('🔽 Dropdown opened, available pools:', modelPools);
-                }
-              }}
-            >
-              {modelPools.map(pool => (
-                <Option key={pool.deploymentName} value={pool.deploymentName}>
-                  {pool.deploymentName} ({pool.deploymentType}) - {pool.status}
-                </Option>
-              ))}
-            </Select>
-            <Button
-              icon={<ReloadOutlined />}
-              loading={modelPoolsLoading}
-              onClick={fetchModelPools}
-              title="Refresh model pools"
-            />
-          </Space.Compact>
+          <Select 
+            placeholder={modelPools.length === 0 ? "No model pools found" : "Select model pool"}
+            loading={modelPools.length === 0}
+            notFoundContent={modelPools.length === 0 ? "No model pools available" : "No matching pools"}
+            onDropdownVisibleChange={(open) => {
+              if (open) {
+                console.log('🔽 Dropdown opened, available pools:', modelPools);
+              }
+            }}
+          >
+            {modelPools.map(pool => (
+              <Option key={pool.deploymentName} value={pool.deploymentName}>
+                {pool.deploymentName} ({pool.deploymentType}) - {pool.status}
+              </Option>
+            ))}
+          </Select>
         </Form.Item>
 
 

@@ -2,46 +2,6 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Load user.env configuration
-require('dotenv').config({ path: path.join(__dirname, '../../client/user.env') });
-
-/**
- * Save temporary YAML file for kubectl apply
- * @param {string} namePrefix - Prefix for the temporary file name
- * @param {string} content - The YAML content
- * @returns {Promise<string>} - The path to the temporary file
- */
-async function saveTempYaml(namePrefix, content) {
-  const tmpConfDir = '/tmp/hyperpod-tmpconf';
-  if (!fs.existsSync(tmpConfDir)) {
-    fs.mkdirSync(tmpConfDir, { recursive: true });
-  }
-
-  const tempFilePath = `${tmpConfDir}/${namePrefix}-${Date.now()}`;
-  await fs.promises.writeFile(tempFilePath, content);
-  return tempFilePath;
-}
-
-/**
- * Save YAML file based on REACT_APP_DEPLY_TRACE environment variable
- * @param {string} filePath - The file path to save
- * @param {string} content - The YAML content
- * @returns {Promise<void>}
- */
-async function saveYamlIfTraceEnabled(filePath, content) {
-  const shouldTrace = process.env.REACT_APP_DEPLY_TRACE === 'true';
-
-  if (shouldTrace) {
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    await fs.promises.writeFile(filePath, content);
-  }
-}
-
 class KedaManager {
 
 
@@ -266,17 +226,20 @@ spec:
 
       const fullYaml = this.generateUnifiedScalingYaml(config);
 
-      // Always create temporary file for kubectl apply
-      const tempFilePath = await saveTempYaml(`keda-scaling-${config.serviceName}`, fullYaml);
-
-      // Optionally save to deployments/inference folder for archival purposes
+      // 保存到 deployments/inference 目录，与其他推理组件保持一致
       const deploymentDir = path.join(__dirname, '../../deployments/inference');
+      if (!fs.existsSync(deploymentDir)) {
+        fs.mkdirSync(deploymentDir, { recursive: true });
+      }
+
       const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
       const configFilePath = path.join(deploymentDir, `keda-scaling-${config.serviceName}-${timestamp}.yaml`);
-      await saveYamlIfTraceEnabled(configFilePath, fullYaml);
 
-      // Apply to Kubernetes
-      const applyCommand = `kubectl apply -f ${tempFilePath}`;
+      fs.writeFileSync(configFilePath, fullYaml);
+      console.log(`Unified KEDA configuration saved to: ${configFilePath}`);
+
+      // 应用到 Kubernetes
+      const applyCommand = `kubectl apply -f ${configFilePath}`;
       const result = execSync(applyCommand, { encoding: 'utf8' });
 
       // 异步触发 Prometheus server rollout status 检查

@@ -3,46 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const EKSServiceHelper = require('./eksServiceHelper');
 
-// Load user.env configuration
-require('dotenv').config({ path: path.join(__dirname, '../../client/user.env') });
-
-/**
- * Save temporary YAML file for kubectl apply
- * @param {string} namePrefix - Prefix for the temporary file name
- * @param {string} content - The YAML content
- * @returns {Promise<string>} - The path to the temporary file
- */
-async function saveTempYaml(namePrefix, content) {
-  const tmpConfDir = '/tmp/hyperpod-tmpconf';
-  if (!fs.existsSync(tmpConfDir)) {
-    fs.mkdirSync(tmpConfDir, { recursive: true });
-  }
-
-  const tempFilePath = `${tmpConfDir}/${namePrefix}-${Date.now()}`;
-  await fs.promises.writeFile(tempFilePath, content);
-  return tempFilePath;
-}
-
-/**
- * Save YAML file based on REACT_APP_DEPLY_TRACE environment variable
- * @param {string} filePath - The file path to save
- * @param {string} content - The YAML content
- * @returns {Promise<void>}
- */
-async function saveYamlIfTraceEnabled(filePath, content) {
-  const shouldTrace = process.env.REACT_APP_DEPLY_TRACE === 'true';
-
-  if (shouldTrace) {
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    await fs.promises.writeFile(filePath, content);
-  }
-}
-
 class RoutingManager {
   static generateRouterYaml(config) {
     const {
@@ -322,17 +282,21 @@ ${portsSection}`;
     try {
       const yaml = this.generateRouterYaml(config);
 
-      // Always create temporary file for kubectl apply
-      const tempFilePath = await saveTempYaml('sglang-router', yaml);
-
-      // Optionally save to deployments/inference folder for archival purposes
+      // Create deployments/inference directory if it doesn't exist
       const deploymentDir = path.join(__dirname, '../../deployments/inference');
+      if (!fs.existsSync(deploymentDir)) {
+        fs.mkdirSync(deploymentDir, { recursive: true });
+      }
+
+      // Save YAML file with timestamp
       const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
       const yamlPath = path.join(deploymentDir, `sglang-router-${timestamp}.yaml`);
-      await saveYamlIfTraceEnabled(yamlPath, yaml);
+
+      fs.writeFileSync(yamlPath, yaml);
+      console.log(`SGLang Router YAML saved to: ${yamlPath}`);
 
       // Apply to Kubernetes
-      const applyCommand = `kubectl apply -f ${tempFilePath}`;
+      const applyCommand = `kubectl apply -f ${yamlPath}`;
       const result = execSync(applyCommand, { encoding: 'utf8' });
 
       return {
