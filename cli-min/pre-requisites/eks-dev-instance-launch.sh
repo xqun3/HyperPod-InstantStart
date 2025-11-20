@@ -10,3 +10,5 @@ aws cloudformation create-stack \
               ParameterKey=EBSVolumeSize,ParameterValue=200 \
               ParameterKey=KeyPairName,ParameterValue=pdxkeypair \
   --capabilities CAPABILITY_NAMED_IAM
+
+# ParameterKey=ExistingS3BucketName,ParameterValue=$EXISTING_S3_BUCKET \

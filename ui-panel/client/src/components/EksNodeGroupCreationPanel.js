@@ -89,10 +89,22 @@ const EksNodeGroupCreationPanel = ({ onCreated }) => {
     }
   };
 
-  // 获取可用子网：只显示HyperPod使用的私有子网
+  // 开关：是否只显示 HyperPod 使用的子网
+  const ONLY_SHOW_HYPERPOD_SUBNETS = false;
+
+  // 获取可用子网
   const getAvailableSubnets = () => {
-    const hyperPodPrivateSubnets = subnets.privateSubnets.filter(s => s.isHyperPodSubnet);
-    return hyperPodPrivateSubnets.map(s => ({ ...s, type: 'Private (HyperPod)' }));
+    if (ONLY_SHOW_HYPERPOD_SUBNETS) {
+      // 只显示 HyperPod 使用的私有子网
+      const hyperPodPrivateSubnets = subnets.privateSubnets.filter(s => s.isHyperPodSubnet);
+      return hyperPodPrivateSubnets.map(s => ({ ...s, type: 'Private (HyperPod)' }));
+    } else {
+      // 显示所有私有子网
+      return subnets.privateSubnets.map(s => ({
+        ...s,
+        type: s.isHyperPodSubnet ? 'Private (HyperPod)' : 'Private'
+      }));
+    }
   };
 
   const availableSubnets = getAvailableSubnets();
@@ -161,7 +173,13 @@ const EksNodeGroupCreationPanel = ({ onCreated }) => {
           name="subnetId"
           label="Subnet"
           rules={[{ required: true, message: 'Please select subnet!' }]}
-          extra={availableSubnets.length === 0 ? "Note: No HyperPod private subnets available" : "Select HyperPod private subnet"}
+          extra={
+            availableSubnets.length === 0 
+              ? "Note: No private subnets available" 
+              : ONLY_SHOW_HYPERPOD_SUBNETS 
+                ? "Select HyperPod private subnet" 
+                : "Select private subnet (HyperPod subnets are marked)"
+          }
         >
           <Select placeholder="Select subnet">
             {availableSubnets.map(subnet => (
