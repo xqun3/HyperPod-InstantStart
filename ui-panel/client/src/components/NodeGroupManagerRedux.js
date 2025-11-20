@@ -1264,10 +1264,10 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             size="small"
             icon={<PlusOutlined />}
             onClick={() => setCreateEksNodeGroupModalVisible(true)}
-            disabled={hyperPodGroups.length === 0}
+            disabled={!effectiveDependenciesConfigured}
             title={
-              hyperPodGroups.length === 0
-                ? "HyperPod cluster must exist to create node groups"
+              !effectiveDependenciesConfigured
+                ? "Dependencies must be configured first"
                 : "Create Node Group"
             }
           >
