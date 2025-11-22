@@ -61,7 +61,7 @@ HYBRID_NODE_SELECTOR_TERMS
             - name: shm
               mountPath: /dev/shm
           env:HF_TOKEN_ENV
-            - name: TRANSFORMERS_CACHE
+            - name: HF_HOME
               value: "/root/.cache/huggingface"
           securityContext:
             capabilities:

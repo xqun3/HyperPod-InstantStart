@@ -50,6 +50,9 @@ import {
 } from '../store/selectors';
 import { CONFIG } from '../config/constants';
 
+// 新的事件总线
+import resourceEventBus from '../utils/resourceEventBus';
+
 const { TabPane } = Tabs;
 const { Text } = Typography;
 const { Option } = Select;
@@ -78,6 +81,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
 
   // 🔄 Badge同步状态 - 确保Badge数字与表格数据完全同步
   const [localRefreshTrigger, setLocalRefreshTrigger] = useState(0);
+  const [badgeCounts, setBadgeCounts] = useState({ pods: 0, services: 0 });
 
   // Scale Modal 状态 - 继承原部署管理功能
   const [scaleModalVisible, setScaleModalVisible] = useState(false);
@@ -86,18 +90,44 @@ const StatusMonitorRedux = ({ activeTab }) => {
 
   // 初始化时获取数据（只执行一次）
   useEffect(() => {
-    dispatch(refreshAllAppStatus());
+    // 只在首次挂载时刷新，避免每次切换 Tab 都触发
+    const hasData = pods.length > 0 || services.length > 0;
+    if (!hasData) {
+      dispatch(refreshAllAppStatus());
+    }
+
+    // 订阅资源变化事件
+    const refreshCallback = async (eventType) => {
+      console.log('[AppStatus] Refreshing for event:', eventType);
+      await dispatch(refreshAllAppStatus());
+      // 强制触发 Badge 更新
+      setLocalRefreshTrigger(prev => prev + 1);
+    };
+    
+    resourceEventBus.subscribe('app-status', refreshCallback);
+
+    // 清理订阅
+    return () => {
+      resourceEventBus.unsubscribe('app-status');
+    };
   }, [dispatch]); // 只依赖dispatch，避免无限循环
 
   // Badge同步监听：当数据更新时强制重新渲染
   useEffect(() => {
+    console.log('[StatusMonitor] Data changed - Pods:', pods.length, 'Services:', services.length, 'Deployments:', deployments.length);
+    console.log('[StatusMonitor] Pods data:', pods.map(p => p.metadata?.name || 'unknown'));
+    console.log('[StatusMonitor] Services data:', services.map(s => s.metadata?.name || 'unknown'));
+    console.log('[StatusMonitor] Updating badgeCounts to:', { pods: pods.length, services: services.length });
+    setBadgeCounts({ pods: pods.length, services: services.length });
     setLocalRefreshTrigger(prev => prev + 1);
   }, [pods.length, services.length, deployments.length, loading]);
 
   // 手动刷新
   const handleRefresh = useCallback(async () => {
     try {
+      console.log('[StatusMonitor] Manual refresh triggered');
       await dispatch(refreshAllAppStatus()).unwrap();
+      console.log('[StatusMonitor] Refresh completed - Pods:', pods.length, 'Services:', services.length);
       // 🔄 强制Badge重新渲染，确保与表格数据同步
       setLocalRefreshTrigger(prev => prev + 1);
       message.success('App status refreshed successfully');
@@ -105,7 +135,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
       console.error('Error refreshing app status:', error);
       message.error('Failed to refresh app status: ' + (error.message || error));
     }
-  }, [dispatch]);
+  }, [dispatch, pods.length, services.length]);
 
   // 处理Service删除
   const handleServiceDelete = async (serviceName) => {
@@ -1518,9 +1548,9 @@ const StatusMonitorRedux = ({ activeTab }) => {
               <ContainerOutlined />
               Pods
               <Badge
-                key={`pods-${pods.length}-${localRefreshTrigger}`}
-                count={pods.length}
+                count={badgeCounts.pods}
                 style={{ backgroundColor: '#1890ff' }}
+                showZero
               />
             </Space>
           }
@@ -1554,9 +1584,9 @@ const StatusMonitorRedux = ({ activeTab }) => {
             <ApiOutlined />
             Services
             <Badge
-              key={`services-${services.length}-${localRefreshTrigger}`}
-              count={services.length}
+              count={badgeCounts.services}
               style={{ backgroundColor: '#52c41a' }}
+              showZero
             />
           </Space>
         }

@@ -14,7 +14,17 @@ import { getRefreshConfig, getComponentPriority, getOperationRefreshConfig } fro
 
 class GlobalRefreshManager {
   constructor() {
+    // ⚠️ DEPRECATED: 此管理器正在被 resourceEventBus 替代
+    // 通过环境变量控制是否禁用
+    this.disabled = process.env.REACT_APP_DISABLE_GLOBAL_REFRESH === 'true';
+    
+    // 必须初始化基础属性，即使禁用也要避免报错
     this.subscribers = new Map();
+    
+    if (this.disabled) {
+      console.warn('⚠️ GlobalRefreshManager is DISABLED. Using resourceEventBus instead.');
+      return; // 如果禁用，不初始化其他内容
+    }
     this.isRefreshing = false;
     this.lastRefreshTime = null;
     this.autoRefreshEnabled = false; // 默认关闭自动刷新
@@ -49,6 +59,11 @@ class GlobalRefreshManager {
    * @param {Object} options - 选项配置
    */
   subscribe(componentId, refreshCallback, options = {}) {
+    // 如果管理器被禁用，静默返回
+    if (this.disabled) {
+      return componentId;
+    }
+
     const priority = options.priority || getComponentPriority(componentId);
     
     this.subscribers.set(componentId, {
@@ -60,7 +75,7 @@ class GlobalRefreshManager {
       options: options
     });
 
-    if (this.debugConfig.enableRefreshTracing) {
+    if (this.debugConfig && this.debugConfig.enableRefreshTracing) {
       console.log(`Component '${componentId}' subscribed to global refresh (priority: ${priority})`);
     }
     return componentId;
@@ -99,6 +114,12 @@ class GlobalRefreshManager {
    * @param {Object} options - 刷新选项
    */
   async triggerGlobalRefresh(options = {}) {
+    // 如果管理器被禁用，直接返回
+    if (this.disabled) {
+      console.log('⚠️ GlobalRefreshManager is disabled, skipping refresh');
+      return { success: false, reason: 'disabled' };
+    }
+
     if (this.isRefreshing && !options.force) {
       if (this.debugConfig.enableRefreshTracing) {
         console.log('Global refresh already in progress, skipping...');

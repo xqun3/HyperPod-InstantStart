@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout, Row, Col, Card, message, Tabs, Space, Badge, Button } from 'antd';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, CloudServerOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons';
 import { refreshAllAppStatus } from './store/slices/appStatusSlice';
+import { selectAppPods, selectAppServices } from './store/selectors';
 import ThemeProvider from './components/ThemeProvider';
 import ConfigPanel from './components/ConfigPanel';
 import ServiceConfigPanel from './components/ServiceConfigPanel';
@@ -25,10 +26,9 @@ import AdvancedScalingPanelV2 from './components/AdvancedScalingPanelV2';
 import ScalingPanel from './components/ScalingPanel';
 import globalRefreshManager from './hooks/useGlobalRefresh';
 import operationRefreshManager from './hooks/useOperationRefresh';
+import resourceEventBus from './utils/resourceEventBus';
 // import { refreshManager } from './hooks/useAutoRefresh'; // 未使用
 import { getActiveTheme } from './config/themeConfig';
-import './utils/testOperationRefresh'; // 导入测试工具
-import './utils/refreshConfigViewer'; // 导入刷新配置查看工具
 import './App.css';
 import './styles/dynamic-theme.css';
 
@@ -38,6 +38,10 @@ const { TabPane } = Tabs;
 
 function App() {
   const dispatch = useDispatch();
+
+  // 从 Redux 获取 pods 和 services 用于 Badge 显示
+  const reduxPods = useSelector(selectAppPods);
+  const reduxServices = useSelector(selectAppServices);
 
   const [clusterData, setClusterData] = useState([]);
   const [pods, setPods] = useState([]);
@@ -637,12 +641,18 @@ function App() {
       console.log('📊 Response JSON:', result);
       
       if (result.success) {
-        // 🚀 触发操作刷新 - 立即刷新相关组件
+        // 🚀 触发操作刷新 - 立即刷新相关组件（旧机制，保留兼容）
         operationRefreshManager.triggerOperationRefresh('model-deploy', {
           modelId: config.modelId,
           deploymentType: config.deploymentType,
           timestamp: new Date().toISOString(),
           source: 'config-panel'
+        });
+
+        // 触发新的事件总线（新机制）
+        resourceEventBus.emit('model-deploy', {
+          modelId: config.modelId,
+          deploymentType: config.deploymentType
         });
         
         console.log('✅ Model deployment initiated and refresh triggered');
@@ -670,11 +680,17 @@ function App() {
       
       if (result.success) {
         message.success('Business service deployed successfully!');
-        // 触发操作刷新
+        // 触发操作刷新（旧机制，保留兼容）
         operationRefreshManager.triggerOperationRefresh('service-deploy', {
           serviceName: config.serviceName,
           timestamp: new Date().toISOString(),
           source: 'service-config-panel'
+        });
+
+        // 触发新的事件总线（新机制）
+        // Service Binding 不需要 GPU，只刷新 App Status
+        resourceEventBus.emit('app-status-only', {
+          serviceName: config.serviceName
         });
       } else {
         message.error(`Service deployment failed: ${result.error}`);
@@ -702,11 +718,15 @@ function App() {
 
       if (result.success) {
         message.success('Advanced scaling stack deployed successfully!');
-        // 触发操作刷新
+        // 触发操作刷新（旧机制）
         operationRefreshManager.triggerOperationRefresh('advanced-scaling-deploy', {
           timestamp: new Date().toISOString(),
           source: 'advanced-scaling-panel'
         });
+        
+        // 触发新的事件总线（新机制）
+        // Advanced Routing 不使用 GPU，只刷新 App Status
+        resourceEventBus.emit('app-status-only');
       } else {
         message.error(`Advanced scaling deployment failed: ${result.error}`);
       }
@@ -747,10 +767,17 @@ function App() {
           message.success('KEDA scaling configuration deployed successfully!');
         }
 
-        // 触发操作刷新
+        // 触发操作刷新（旧机制）
         operationRefreshManager.triggerOperationRefresh('keda-scaling-deploy', {
           timestamp: new Date().toISOString(),
           source: 'scaling-panel',
+          configType: config.type
+        });
+        
+        // 触发新的事件总线（新机制）
+        // Unified Scaling 不使用 GPU，只刷新 App Status
+        resourceEventBus.emit('app-status-only', {
+          serviceName: config.serviceName,
           configType: config.type
         });
       } else {
@@ -801,6 +828,12 @@ function App() {
         fetchClusterStatus();
         // 刷新pods和services
         fetchPodsAndServices();
+        
+        // 触发新的事件总线（新机制）
+        // Training 需要 GPU，触发 Cluster Status 和 App Status 刷新
+        resourceEventBus.emit('training-launch', {
+          recipeType: config.recipeType
+        });
       } else {
         message.error(`Training launch failed: ${result.error}`);
       }
@@ -845,23 +878,38 @@ function App() {
             <span className="theme-header-subtitle">
               Unified Platform
             </span>
+            <span style={{
+              fontSize: '11px',
+              color: '#d9d9d9',
+              marginLeft: '12px',
+              fontWeight: 'normal'
+            }}>
+              Version: {process.env.REACT_APP_VERSION || 'dev'}
+            </span>
           </h1>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <GlobalRefreshButtonRedux
+            {/* 已禁用：使用新的 resourceEventBus 刷新机制 (2025-11-22) */}
+            {/* <GlobalRefreshButtonRedux
               showAutoRefresh={true}
               autoRefreshOptions={{
                 defaultEnabled: true,
                 defaultInterval: 30000
               }}
               size="small"
-            />
+            /> */}
             <div style={{
               fontSize: '12px',
               lineHeight: '1',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              gap: '6px'
             }}>
+              <span style={{ color: '#d9d9d9' }}>
+                {connectionStatus === 'connected' ? 'Connected' : 
+                 connectionStatus === 'connecting' ? 'Connecting' :
+                 connectionStatus === 'disconnected' ? 'Disconnected' : 'Error'}
+              </span>
               {getConnectionStatusIndicator()}
             </div>
           </div>
@@ -1093,7 +1141,7 @@ function App() {
                       <ContainerOutlined />
                       Pods
                       <Badge 
-                        count={pods.length} 
+                        count={reduxPods.length} 
                         style={{ backgroundColor: '#1890ff' }}
                       />
                     </Space>
@@ -1112,7 +1160,7 @@ function App() {
                       <ApiOutlined />
                       Services
                       <Badge 
-                        count={services.length} 
+                        count={reduxServices.length} 
                         style={{ backgroundColor: '#52c41a' }}
                       />
                     </Space>

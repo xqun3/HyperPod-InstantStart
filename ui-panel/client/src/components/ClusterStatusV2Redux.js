@@ -34,6 +34,9 @@ import {
   selectClusterLastUpdate
 } from '../store/selectors';
 
+// 新的事件总线
+import resourceEventBus from '../utils/resourceEventBus';
+
 const ClusterStatusV2Redux = () => {
   const dispatch = useDispatch();
 
@@ -49,6 +52,25 @@ const ClusterStatusV2Redux = () => {
   // 初始化时获取数据（只执行一次）
   useEffect(() => {
     dispatch(refreshClusterData());
+
+    // 订阅资源变化事件
+    const refreshCallback = (eventType) => {
+      // 只响应需要 GPU 的操作，忽略 'app-status-only' 事件
+      if (eventType === 'app-status-only') {
+        console.log('[ClusterStatus] Ignoring app-status-only event');
+        return;
+      }
+      
+      console.log('[ClusterStatus] Refreshing for event:', eventType);
+      dispatch(refreshClusterData());
+    };
+    
+    resourceEventBus.subscribe('cluster-status', refreshCallback);
+
+    // 清理订阅
+    return () => {
+      resourceEventBus.unsubscribe('cluster-status');
+    };
   }, [dispatch]); // 只依赖dispatch，避免无限循环
 
 

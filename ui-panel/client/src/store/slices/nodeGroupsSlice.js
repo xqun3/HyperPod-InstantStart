@@ -82,12 +82,16 @@ export const addInstanceGroup = createAsyncThunk(
 // 异步操作：扩展节点组
 export const scaleNodeGroup = createAsyncThunk(
   'nodeGroups/scaleNodeGroup',
-  async ({ name, count }, { rejectWithValue }) => {
+  async ({ name, count, minSize, maxSize }, { rejectWithValue }) => {
     try {
       const response = await fetch(`/api/cluster/nodegroups/${name}/scale`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ desiredSize: count }),
+        body: JSON.stringify({ 
+          desiredSize: count,
+          minSize: minSize,
+          maxSize: maxSize
+        }),
       });
 
       if (!response.ok) {

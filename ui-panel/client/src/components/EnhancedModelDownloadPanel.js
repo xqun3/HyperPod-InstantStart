@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Space, Collapse, message, Typography, Select, InputNumber, Row, Col } from 'antd';
 import { DownloadOutlined, KeyOutlined, RobotOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons';
 import operationRefreshManager from '../hooks/useOperationRefresh';
+import resourceEventBus from '../utils/resourceEventBus';
 
 const { Panel } = Collapse;
 const { Text } = Typography;
@@ -69,12 +70,18 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
       if (result.success) {
         message.success(`Model download job created: ${result.jobName}`);
         
-        // 触发操作刷新
+        // 触发操作刷新（旧机制，保留兼容）
         operationRefreshManager.triggerOperationRefresh('model-download', {
           modelId: values.modelId,
           jobName: result.jobName,
           timestamp: new Date().toISOString(),
           source: 'enhanced-model-download-panel'
+        });
+
+        // 触发新的事件总线（新机制）
+        resourceEventBus.emit('model-download', {
+          modelId: values.modelId,
+          jobName: result.jobName
         });
         
         console.log('✅ Model download initiated and refresh triggered');
