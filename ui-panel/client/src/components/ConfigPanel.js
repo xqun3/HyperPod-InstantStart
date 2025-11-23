@@ -394,13 +394,6 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
                 <Tooltip title="Select one or more instance types for hybrid scheduling">
                   <InfoCircleOutlined />
                 </Tooltip>
-                <Button
-                  icon={<ReloadOutlined />}
-                  loading={instanceTypesLoading}
-                  onClick={fetchInstanceTypes}
-                  title="Refresh instance types"
-                  size="small"
-                />
               </Space>
             }
             name="instanceTypes"
@@ -418,16 +411,24 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
               }
             ]}
           >
-            <Select
-              mode="multiple"
-              placeholder="Select instance types"
-              loading={instanceTypesLoading}
-              style={{ fontFamily: 'monospace', width: '100%' }}
-              allowClear
-              notFoundContent={instanceTypesLoading ? 'Loading...' : 'No instance types available'}
-            >
-              {instanceTypeOptions}
-            </Select>
+            <Space.Compact style={{ width: '100%' }}>
+              <Select
+                mode="multiple"
+                placeholder="Select instance types"
+                loading={instanceTypesLoading}
+                style={{ fontFamily: 'monospace', flex: 1 }}
+                allowClear
+                notFoundContent={instanceTypesLoading ? 'Loading...' : 'No instance types available'}
+              >
+                {instanceTypeOptions}
+              </Select>
+              <Button
+                icon={<ReloadOutlined />}
+                loading={instanceTypesLoading}
+                onClick={fetchInstanceTypes}
+                title="Refresh instance types"
+              />
+            </Space.Compact>
           </Form.Item>
         </Col>
       </Row>

@@ -17,7 +17,8 @@ import {
   ExclamationCircleOutlined,
   GlobalOutlined,
   ThunderboltOutlined,
-  LinkOutlined
+  LinkOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 
 const { Option } = Select;
@@ -26,9 +27,11 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [modelPools, setModelPools] = useState([]);
+  const [modelPoolsLoading, setModelPoolsLoading] = useState(false);
 
   // 获取可用的模型池
   const fetchModelPools = async () => {
+    setModelPoolsLoading(true);
     try {
       console.log('🔍 Fetching model pools...');
       const response = await fetch('/api/deployments');
@@ -51,6 +54,8 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
       setModelPools(pools);
     } catch (error) {
       console.error('❌ Error fetching model pools:', error);
+    } finally {
+      setModelPoolsLoading(false);
     }
   };
 
@@ -150,22 +155,27 @@ const ServiceConfigPanel = ({ onDeploy, deploymentStatus }) => {
             { required: true, message: 'Please select a model pool!' }
           ]}
         >
-          <Select 
-            placeholder={modelPools.length === 0 ? "No model pools found" : "Select model pool"}
-            loading={modelPools.length === 0}
-            notFoundContent={modelPools.length === 0 ? "No model pools available" : "No matching pools"}
-            onDropdownVisibleChange={(open) => {
-              if (open) {
-                console.log('🔽 Dropdown opened, available pools:', modelPools);
-              }
-            }}
-          >
-            {modelPools.map(pool => (
-              <Option key={pool.deploymentName} value={pool.deploymentName}>
-                {pool.deploymentName} ({pool.deploymentType}) - {pool.status}
-              </Option>
-            ))}
-          </Select>
+          <Space.Compact style={{ width: '100%' }}>
+            <Select 
+              placeholder={modelPools.length === 0 ? "No model pools found" : "Select model pool"}
+              loading={modelPoolsLoading}
+              notFoundContent={modelPoolsLoading ? "Loading..." : "No model pools available"}
+              onFocus={fetchModelPools}
+              style={{ flex: 1 }}
+            >
+              {modelPools.map(pool => (
+                <Option key={pool.deploymentName} value={pool.deploymentName}>
+                  {pool.deploymentName} ({pool.deploymentType}) - {pool.status}
+                </Option>
+              ))}
+            </Select>
+            <Button
+              icon={<ReloadOutlined />}
+              loading={modelPoolsLoading}
+              onClick={fetchModelPools}
+              title="Refresh model pools"
+            />
+          </Space.Compact>
         </Form.Item>
 
 
