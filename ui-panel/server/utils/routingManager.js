@@ -125,7 +125,7 @@ spec:
             limits:
               cpu: "4"
               memory: 8Gi
-          command: ["python3", "-m", "sglang_router.launch_router"]
+          command: ["sglang-router"]
           args: ${this.generateRouterArgs(config, deploymentName)}
           ports:
             - containerPort: ${routerPort}
@@ -184,7 +184,7 @@ spec:
         `- "${balanceAbsThreshold}"`,
         '- "--balance-rel-threshold"',
         `- "${balanceRelThreshold}"`,
-        '- "--eviction-interval-secs"',
+        '- "--eviction-interval"',
         `- "${evictionIntervalSecs}"`,
         '- "--max-tree-size"',
         `- "${maxTreeSize}"`

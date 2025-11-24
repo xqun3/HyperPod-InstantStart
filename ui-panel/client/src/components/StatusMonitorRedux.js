@@ -1368,7 +1368,6 @@ const StatusMonitorRedux = ({ activeTab }) => {
             rowKey={(pod) => pod.metadata.uid}
             size="small"
             pagination={false}
-            scroll={{ y: 200 }}
             loading={loading}
             locale={{
               emptyText: 'No pods found'
@@ -1528,7 +1527,6 @@ const StatusMonitorRedux = ({ activeTab }) => {
               showQuickJumper: false,
               showTotal: (total) => `Total ${total} jobs`
             }}
-            scroll={{ y: 200 }}
           />
         </div>
       );
