@@ -154,14 +154,8 @@ function App() {
             break;
             
           case 'training_launch':
-            // 处理训练任务部署状态
-            if (data.status === 'success') {
-              message.success(data.message);
-              // 🚀 触发操作刷新
-              operationRefreshManager.triggerOperationRefresh('training-start', data);
-            } else {
-              message.error(data.message);
-            }
+            // 只触发刷新，不显示通知（避免重复通知）
+            operationRefreshManager.triggerOperationRefresh('training-start', data);
             break;
 
           case 'nodegroup_creation_started':
@@ -287,14 +281,8 @@ function App() {
             break;
             
           case 'rayjob_deleted':
-            // 处理RayJob删除状态
-            if (data.status === 'success') {
-              message.success(data.message);
-              // 🚀 触发操作刷新 - 使用rayjob-delete操作
-              operationRefreshManager.triggerOperationRefresh('rayjob-delete', data);
-            } else {
-              message.error(data.message);
-            }
+            // 只触发刷新，不显示通知（通知由 StatusMonitorRedux 处理）
+            operationRefreshManager.triggerOperationRefresh('rayjob-delete', data);
             break;
             
           case 'pod_assigned':
@@ -309,14 +297,8 @@ function App() {
             break;
             
           case 'training_job_deleted':
-            // 处理训练任务删除状态
-            if (data.status === 'success') {
-              message.success(data.message);
-              // 🚀 触发操作刷新 - 使用training-delete操作
-              operationRefreshManager.triggerOperationRefresh('training-delete', data);
-            } else {
-              message.error(data.message);
-            }
+            // 只触发刷新，不显示通知（通知由 TrainingMonitorPanelRedux 处理）
+            operationRefreshManager.triggerOperationRefresh('training-delete', data);
             break;
             
           case 'model_download':
@@ -830,6 +812,9 @@ function App() {
         fetchClusterStatus();
         // 刷新pods和services
         fetchPodsAndServices();
+        
+        // 显示成功通知
+        message.success(result.message || 'Training job launched successfully');
         
         // 触发新的事件总线（新机制）
         // Training 需要 GPU，触发 Cluster Status 和 App Status 刷新

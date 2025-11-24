@@ -15,7 +15,7 @@ RUN pip install ms-swift -U
 # RUN apt-get update && apt-get install gettext-base
 # RUN apt-get update && apt-get install -y gettext-base && rm -rf /var/lib/apt/lists/*
 
-RUN pip install PyYAML
+RUN pip install PyYAML msgspec
 
 # COPY lmf_process_train_yaml.py ./lmf_process_train_yaml.py
 # COPY lmf_recipe_dist_run.sh ./lmf_recipe_dist_run.sh

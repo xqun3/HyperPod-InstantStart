@@ -181,7 +181,7 @@ const TrainingMonitorPanelRedux = () => {
         break;
       case 'training_job_deleted':
         if (data.status === 'success') {
-          message.success(data.message);
+          // 不显示通知，由 StatusMonitorRedux 处理（删除按钮在那里）
           dispatch(fetchTrainingJobs());
           if (selectedJob === data.jobName) {
             dispatch(setActiveJob(null));

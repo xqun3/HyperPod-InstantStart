@@ -1637,6 +1637,7 @@ app.post('/api/launch-msswift-training', async (req, res) => {
       replicas = 1,
       efaCount = 0,
       msswiftRecipeRunPath,
+      msswiftCommandType,
       msswiftRecipeYamlFile,
       mlflowTrackingUri = '',
       logMonitoringConfig
@@ -1653,6 +1654,13 @@ app.post('/api/launch-msswift-training', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'MS-Swift Recipe Run Path is required'
+      });
+    }
+
+    if (!msswiftCommandType) {
+      return res.status(400).json({
+        success: false,
+        error: 'MS-Swift Command Type is required'
       });
     }
 
@@ -1690,6 +1698,8 @@ ${indentedConfig}`;
       .replace(/REPLICAS_COUNT/g, replicas.toString())
       .replace(/EFA_PER_NODE/g, efaCount.toString())
       .replace(/MSSWIFT_RECIPE_RUNPATH_PH/g, msswiftRecipeRunPath)
+      .replace(/MSSWIFT_COMMAND_TYPE_PH/g, msswiftCommandType)
+      .replace(/MSSWIFT_RECIPE_YAMLFILE_PH/g, msswiftRecipeYamlFile)
       .replace(/MSSWIFT_RECIPE_YAMLFILE_PH/g, msswiftRecipeYamlFile)
       .replace(/SM_MLFLOW_ARN/g, mlflowTrackingUri)
       .replace(/SERVICE_ACCOUNT_CONFIG/g, serviceAccountConfig)
@@ -1899,6 +1909,37 @@ app.get('/api/msswift-config/load', async (req, res) => {
     });
   } catch (error) {
     console.error('Error loading MS-Swift config:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 获取MS-Swift命令列表
+app.get('/api/msswift-commands', async (req, res) => {
+  try {
+    const configPath = path.join(__dirname, '../config/msswift-commands.json');
+    
+    if (!fs.existsSync(configPath)) {
+      return res.json({
+        success: true,
+        commands: {
+          "megatron rlhf": "swift.cli._megatron.rlhf",
+          "swift sft": "swift.cli.sft"
+        }
+      });
+    }
+    
+    const configContent = await fs.readFile(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    res.json({
+      success: true,
+      commands: config.commands
+    });
+  } catch (error) {
+    console.error('Error loading MS-Swift commands:', error);
     res.status(500).json({
       success: false,
       error: error.message

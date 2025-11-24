@@ -52,6 +52,8 @@ spec:
                 value: INSTANCE_TYPE
               - name: MSSWIFT_RECIPE_RUN_PATH
                 value: MSSWIFT_RECIPE_RUNPATH_PH
+              - name: MSSWIFT_COMMAND_TYPE
+                value: MSSWIFT_COMMAND_TYPE_PH
               - name: MSSWIFT_RECIPE_YAML_FILE
                 value: MSSWIFT_RECIPE_YAMLFILE_PH
               command: ["bash", "/docker_workspace/msswift_recipe_dist_run.sh"]

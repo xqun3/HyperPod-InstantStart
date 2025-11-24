@@ -1,0 +1,10 @@
+{
+  "commands": {
+    "swift pt": "swift.cli.pt",
+    "swift sft": "swift.cli.sft",
+    "swift dpo": "swift.cli.rlhf",
+    "megatron pt": "swift.cli._megatron.pt",
+    "megatron sft": "swift.cli._megatron.sft",
+    "megatron rlhf": "swift.cli._megatron.rlhf"
+  }
+}

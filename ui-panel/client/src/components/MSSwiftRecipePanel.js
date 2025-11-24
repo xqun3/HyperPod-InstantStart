@@ -24,7 +24,8 @@ import {
   ThunderboltOutlined,
   CodeOutlined,
   DatabaseOutlined,
-  CloudServerOutlined
+  CloudServerOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -36,14 +37,35 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showLogMonitoring, setShowLogMonitoring] = useState(false);
+  const [commandOptions, setCommandOptions] = useState([]);
+  const [commandsMap, setCommandsMap] = useState({});
   const hasLoadedConfig = useRef(false);
 
   useEffect(() => {
     if (!hasLoadedConfig.current) {
       hasLoadedConfig.current = true;
       loadSavedConfig();
+      loadCommandOptions();
     }
   }, []);
+
+  const loadCommandOptions = async () => {
+    try {
+      const response = await fetch('/api/msswift-commands');
+      const result = await response.json();
+      
+      if (result.success) {
+        setCommandsMap(result.commands);
+        const options = Object.keys(result.commands).map(key => ({
+          label: key,
+          value: key
+        }));
+        setCommandOptions(options);
+      }
+    } catch (error) {
+      console.error('Error loading MS-Swift commands:', error);
+    }
+  };
 
   const loadSavedConfig = async () => {
     try {
@@ -105,7 +127,14 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
         body: JSON.stringify(values),
       });
       
-      await onLaunch({ ...values, recipeType: 'msswift' });
+      // 将 key 转换为 value 用于 YAML 填充
+      const commandValue = commandsMap[values.msswiftCommandType] || values.msswiftCommandType;
+      
+      await onLaunch({ 
+        ...values, 
+        msswiftCommandType: commandValue,
+        recipeType: 'msswift' 
+      });
     } finally {
       setLoading(false);
     }
@@ -275,12 +304,15 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
 
         {/* MS-Swift配置 */}
         <Row gutter={16}>
-          <Col span={12}>
+          <Col span={8}>
             <Form.Item
               label={
                 <Space>
                   <CodeOutlined />
-                  <Text strong>MS-Swift Recipe Run Path</Text>
+                  <Text strong>MS-Swift Project</Text>
+                  <Tooltip title="MS-Swift repo exists in this path">
+                    <QuestionCircleOutlined style={{ color: '#1890ff' }} />
+                  </Tooltip>
                 </Space>
               }
               name="msswiftRecipeRunPath"
@@ -289,7 +321,28 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
               <Input placeholder="/s3/train-recipes/ms-swift-project/" />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col span={8}>
+            <Form.Item
+              label={
+                <Space>
+                  <CodeOutlined />
+                  <Text strong>MS-Swift Command Type</Text>
+                </Space>
+              }
+              name="msswiftCommandType"
+              rules={[{ required: true, message: 'Please select command type!' }]}
+            >
+              <Select
+                placeholder="Select command type"
+                options={commandOptions}
+                showSearch
+                filterOption={(input, option) =>
+                  option.label.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                }
+              />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
             <Form.Item
               label={
                 <Space>
