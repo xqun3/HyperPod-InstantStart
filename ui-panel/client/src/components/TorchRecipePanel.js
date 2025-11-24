@@ -107,23 +107,8 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
         body: JSON.stringify(values),
       });
       
-      // 启动torch训练任务 - 直接调用torch训练API
-      const response = await fetch('/api/launch-torch-training', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(values),
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // 训练任务启动成功，不需要再调用onLaunch
-        console.log('Torch training job launched successfully:', result.message);
-      } else {
-        throw new Error(result.error || 'Failed to launch torch training');
-      }
+      // 通过 onLaunch 统一提交（与其他 Recipe 保持一致）
+      await onLaunch({ ...values, recipeType: 'torch' });
     } catch (error) {
       console.error('Error launching torch training:', error);
       throw error;

@@ -107,22 +107,8 @@ const ScriptRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, 
         body: JSON.stringify(values),
       });
       
-      // 启动script训练任务
-      const response = await fetch('/api/launch-script-training', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(values),
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        console.log('Script training job launched successfully:', result.message);
-      } else {
-        throw new Error(result.error || 'Failed to launch script training');
-      }
+      // 通过 onLaunch 统一提交（与其他 Recipe 保持一致）
+      await onLaunch({ ...values, recipeType: 'script' });
     } catch (error) {
       console.error('Error launching script training:', error);
       throw error;
