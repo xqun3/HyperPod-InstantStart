@@ -31,14 +31,13 @@ const { TextArea } = Input;
 const { Panel } = Collapse;
 const { Text } = Typography;
 
-const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading }) => {
+const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showLogMonitoring, setShowLogMonitoring] = useState(false);
-  const hasLoadedConfig = useRef(false); // 使用useRef防止重复加载
+  const hasLoadedConfig = useRef(false);
 
-  // 加载保存的配置
   useEffect(() => {
     if (!hasLoadedConfig.current) {
       hasLoadedConfig.current = true;
@@ -48,7 +47,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
 
   const loadSavedConfig = async () => {
     try {
-      const response = await fetch('/api/llamafactory-config/load');
+      const response = await fetch('/api/msswift-config/load');
       const result = await response.json();
       
       if (result.success) {
@@ -72,7 +71,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
       setSaving(true);
       const values = await form.validateFields();
       
-      const response = await fetch('/api/llamafactory-config/save', {
+      const response = await fetch('/api/msswift-config/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,8 +97,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
   const handleSubmit = async (values) => {
     setLoading(true);
     try {
-      // 自动保存配置
-      await fetch('/api/training-config/save', {
+      await fetch('/api/msswift-config/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,8 +105,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
         body: JSON.stringify(values),
       });
       
-      // 启动训练任务
-      await onLaunch(values);
+      await onLaunch({ ...values, recipeType: 'msswift' });
     } finally {
       setLoading(false);
     }
@@ -138,7 +135,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
       title={
         <Space>
           <ExperimentOutlined />
-          LlamaFactory Recipe
+          MS-Swift Recipe
         </Space>
       }
       extra={
@@ -184,7 +181,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
                 { pattern: /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, message: 'Invalid job name format' }
               ]}
             >
-              <Input placeholder="torchrecipe-1" />
+              <Input placeholder="msswift-1" />
             </Form.Item>
           </Col>
           <Col span={12}>
@@ -207,7 +204,6 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
                   option.label.toLowerCase().indexOf(inputValue.toLowerCase()) !== -1
                 }
                 onSelect={(value, option) => {
-                  // 如果选择的是从集群获取的选项，提取实例类型；否则使用原值
                   const instanceType = option.instanceType || value.split('-')[0];
                   form.setFieldValue('instanceType', instanceType);
                 }}
@@ -217,7 +213,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
           </Col>
         </Row>
 
-        {/* Docker Image - 单独一行 */}
+        {/* Docker Image */}
         <Form.Item
           label={
             <Space>
@@ -277,20 +273,20 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
           </Col>
         </Row>
 
-        {/* LlamaFactory配置 */}
+        {/* MS-Swift配置 */}
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
               label={
                 <Space>
                   <CodeOutlined />
-                  <Text strong>LlamaFactory Recipe Run Path</Text>
+                  <Text strong>MS-Swift Recipe Run Path</Text>
                 </Space>
               }
-              name="lmfRecipeRunPath"
-              rules={[{ required: true, message: 'Please input LlamaFactory recipe run path!' }]}
+              name="msswiftRecipeRunPath"
+              rules={[{ required: true, message: 'Please input MS-Swift recipe run path!' }]}
             >
-              <Input placeholder="/s3/training_code/model-training-with-hyperpod-training-operator/llama-factory-project/" />
+              <Input placeholder="/s3/train-recipes/ms-swift-project/" />
             </Form.Item>
           </Col>
           <Col span={12}>
@@ -298,10 +294,10 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
               label={
                 <Space>
                   <CodeOutlined />
-                  <Text strong>LlamaFactory Config YAML File Name</Text>
+                  <Text strong>MS-Swift Config YAML File Name</Text>
                 </Space>
               }
-              name="lmfRecipeYamlFile"
+              name="msswiftRecipeYamlFile"
               rules={[
                 { required: true, message: 'Please input YAML file name!' },
                 { pattern: /\.yaml$/, message: 'File must have .yaml extension' }
@@ -332,7 +328,7 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
           <Input placeholder="" />
         </Form.Item>
 
-        {/* 高级配置 - 可折叠 */}
+        {/* 高级配置 */}
         <Collapse 
           ghost
           onChange={(keys) => setShowLogMonitoring(keys.includes('logMonitoring'))}
@@ -391,4 +387,4 @@ const TrainingConfigPanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes
   );
 };
 
-export default TrainingConfigPanel;
+export default MSSwiftRecipePanel;

@@ -1,0 +1,92 @@
+apiVersion: sagemaker.amazonaws.com/v1
+kind: HyperPodPyTorchJob
+metadata:
+  labels:
+    app.kubernetes.io/name: HyperPod
+    app.kubernetes.io/managed-by: kustomize
+    app: TRAINING_JOB_NAME
+  name: TRAINING_JOB_NAME
+spec:
+  nprocPerNode: "NPROC_PER_NODE"
+  replicaSpecs:
+    - name: pods
+      replicas: REPLICAS_COUNT
+      template:
+        spec:
+          SERVICE_ACCOUNT_CONFIG
+          nodeSelector:
+            beta.kubernetes.io/instance-type: INSTANCE_TYPE
+          containers:
+            - name: pytorch
+              image: DOCKER_IMAGE
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 8080
+              resources:
+                requests:
+                  nvidia.com/gpu: NPROC_PER_NODE
+                  vpc.amazonaws.com/efa: EFA_PER_NODE
+                limits:
+                  nvidia.com/gpu: NPROC_PER_NODE
+                  vpc.amazonaws.com/efa: EFA_PER_NODE
+              env:
+              - name: LOGLEVEL
+                value: "INFO"
+              - name: FI_PROVIDER
+                value: "efa"
+              - name: NCCL_DEBUG
+                value: "DEBUG"
+              - name: NCCL_SOCKET_IFNAME
+                value: "eth0"
+              - name: MLFLOW_TRACKING_URI
+                value: SM_MLFLOW_ARN
+              - name: MLFLOW_EXPERIMENT_NAME
+                value: TRAINING_JOB_NAME
+              - name: MLFLOW_TAG_NPROCPERNODE
+                value: "NPROC_PER_NODE"
+              - name: MLFLOW_TAG_REPLICAS
+                value: "REPLICAS_COUNT"
+              - name: MLFLOW_TAG_EFAPERNODE
+                value: "EFA_PER_NODE"
+              - name: MLFLOW_TAG_INSTANCETYPE
+                value: INSTANCE_TYPE
+              - name: MSSWIFT_RECIPE_RUN_PATH
+                value: MSSWIFT_RECIPE_RUNPATH_PH
+              - name: MSSWIFT_RECIPE_YAML_FILE
+                value: MSSWIFT_RECIPE_YAMLFILE_PH
+              command: ["bash", "/docker_workspace/msswift_recipe_dist_run.sh"]
+              volumeMounts:
+                - name: persistent-storage-s3
+                  mountPath: /s3
+                  readOnly: false
+                - name: shmem
+                  mountPath: /dev/shm
+                - name: local
+                  mountPath: /local
+                - name: inst-nvme
+                  mountPath: /ckpt-path
+                - name: local-cache
+                  mountPath: /root/.cache
+          volumes:
+            - name: shmem
+              hostPath: 
+                path: /dev/shm
+            - name: local
+              hostPath:
+                path: /mnt/k8s-disks/0
+            - name: local-cache
+              hostPath:
+                path: /opt/dlami/nvme/.cache
+            - name: inst-nvme
+              hostPath:
+                path: /opt/dlami/nvme/checkpoints/
+            - name: persistent-storage-s3
+              persistentVolumeClaim:
+                claimName: s3-claim
+  runPolicy:
+    jobMaxRetryCount: 5
+    restartPolicy:
+      numRestartBeforeFullJobRestart: 3
+      evalPeriodSeconds: 21600
+      maxFullJobRestarts: 1
+    cleanPodPolicy: "All"LOG_MONITORING_CONFIG

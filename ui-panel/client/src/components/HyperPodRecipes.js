@@ -5,9 +5,11 @@ import {
   RocketOutlined,
   FireOutlined,
   CodeOutlined,
-  CloudOutlined
+  CloudOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import TrainingConfigPanel from './TrainingConfigPanel';
+import MSSwiftRecipePanel from './MSSwiftRecipePanel';
 import VerlRecipePanel from './VerlRecipePanel';
 import TorchRecipePanel from './TorchRecipePanel';
 import ScriptRecipePanel from './ScriptRecipePanel';
@@ -91,6 +93,26 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
         >
           <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
             <TrainingConfigPanel
+              onLaunch={onLaunch}
+              deploymentStatus={deploymentStatus}
+              hyperPodInstanceTypes={hyperPodInstanceTypes}
+              instanceTypesLoading={instanceTypesLoading}
+            />
+          </div>
+        </TabPane>
+
+        <TabPane
+          tab={
+            <Space>
+              <ThunderboltOutlined />
+              MS-Swift Recipe
+            </Space>
+          }
+          key="msswift"
+          style={{ height: '100%', overflow: 'hidden' }}
+        >
+          <div style={{ height: '100%', overflow: 'auto', paddingRight: '8px' }}>
+            <MSSwiftRecipePanel
               onLaunch={onLaunch}
               deploymentStatus={deploymentStatus}
               hyperPodInstanceTypes={hyperPodInstanceTypes}

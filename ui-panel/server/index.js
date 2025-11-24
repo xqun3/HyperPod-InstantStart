@@ -1624,6 +1624,142 @@ ${indentedConfig}`;
   }
 });
 
+// 启动MS-Swift训练
+app.post('/api/launch-msswift-training', async (req, res) => {
+  try {
+    console.log('MS-Swift training launch request:', JSON.stringify(req.body, null, 2));
+    
+    const {
+      trainingJobName,
+      dockerImage = 'pytorch/pytorch:latest',
+      instanceType = 'ml.g5.12xlarge',
+      nprocPerNode = 1,
+      replicas = 1,
+      efaCount = 0,
+      msswiftRecipeRunPath,
+      msswiftRecipeYamlFile,
+      mlflowTrackingUri = '',
+      logMonitoringConfig
+    } = req.body;
+
+    if (!trainingJobName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Training job name is required'
+      });
+    }
+
+    if (!msswiftRecipeRunPath) {
+      return res.status(400).json({
+        success: false,
+        error: 'MS-Swift Recipe Run Path is required'
+      });
+    }
+
+    if (!msswiftRecipeYamlFile) {
+      return res.status(400).json({
+        success: false,
+        error: 'MS-Swift Config YAML File Name is required'
+      });
+    }
+
+    const templatePath = path.join(__dirname, '../templates/hyperpod-training-msswift-template.yaml');
+    const templateContent = await fs.readFile(templatePath, 'utf8');
+    
+    let logMonitoringConfigYaml = '';
+    if (logMonitoringConfig && logMonitoringConfig.trim() !== '') {
+      const indentedConfig = logMonitoringConfig
+        .split('\n')
+        .map(line => line.trim() ? `    ${line}` : line)
+        .join('\n');
+      logMonitoringConfigYaml = `
+    logMonitoringConfiguration: 
+${indentedConfig}`;
+    }
+
+    let serviceAccountConfig = '';
+    if (mlflowTrackingUri && mlflowTrackingUri.trim() !== '') {
+      serviceAccountConfig = 'serviceAccountName: mlflow-service-account';
+    }
+
+    const newYamlContent = templateContent
+      .replace(/TRAINING_JOB_NAME/g, trainingJobName)
+      .replace(/DOCKER_IMAGE/g, dockerImage)
+      .replace(/INSTANCE_TYPE/g, instanceType)
+      .replace(/NPROC_PER_NODE/g, nprocPerNode.toString())
+      .replace(/REPLICAS_COUNT/g, replicas.toString())
+      .replace(/EFA_PER_NODE/g, efaCount.toString())
+      .replace(/MSSWIFT_RECIPE_RUNPATH_PH/g, msswiftRecipeRunPath)
+      .replace(/MSSWIFT_RECIPE_YAMLFILE_PH/g, msswiftRecipeYamlFile)
+      .replace(/SM_MLFLOW_ARN/g, mlflowTrackingUri)
+      .replace(/SERVICE_ACCOUNT_CONFIG/g, serviceAccountConfig)
+      .replace(/LOG_MONITORING_CONFIG/g, logMonitoringConfigYaml);
+
+    const timestamp = Date.now();
+    
+    const tempFileName = `training-${trainingJobName}-${timestamp}.yaml`;
+    const tempFilePath = path.join(__dirname, '../temp', tempFileName);
+
+    const deploymentFileName = `msswift_${timestamp}.yaml`;
+    const deploymentFilePath = path.join(__dirname, '../deployments/trainings', deploymentFileName);
+
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const trainingDeploymentDir = path.join(__dirname, '../deployments/trainings');
+    if (!fs.existsSync(trainingDeploymentDir)) {
+      fs.mkdirSync(trainingDeploymentDir, { recursive: true });
+    }
+
+    await fs.writeFile(tempFilePath, newYamlContent);
+    console.log(`MS-Swift training YAML written to temp file: ${tempFilePath}`);
+
+    await fs.writeFile(deploymentFilePath, newYamlContent);
+    console.log(`MS-Swift training YAML saved to deployments: ${deploymentFilePath}`);
+
+    const applyOutput = await executeKubectl(`apply -f ${tempFilePath}`, 60000);
+    console.log('MS-Swift training job apply output:', applyOutput);
+
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+      console.log(`Temp file deleted: ${tempFilePath}`);
+    }
+
+    broadcast({
+      type: 'training_launch',
+      status: 'success',
+      message: `MS-Swift training job ${trainingJobName} launched successfully`
+    });
+
+    res.json({
+      success: true,
+      message: `MS-Swift training job ${trainingJobName} launched successfully`,
+      jobName: trainingJobName,
+      savedTemplate: deploymentFileName,
+      savedTemplatePath: deploymentFilePath,
+      output: applyOutput
+    });
+
+  } catch (error) {
+    console.error('MS-Swift training launch error:', error);
+    
+    const errorMessage = error.message || error.toString() || 'Unknown error occurred';
+    
+    broadcast({
+      type: 'training_launch',
+      status: 'error',
+      message: `MS-Swift training launch failed: ${errorMessage}`
+    });
+    
+    res.status(500).json({
+      success: false,
+      error: errorMessage
+    });
+  }
+});
+
 // 保存LlamaFactory配置
 app.post('/api/llamafactory-config/save', async (req, res) => {
   try {
@@ -1691,6 +1827,78 @@ app.get('/api/llamafactory-config/load', async (req, res) => {
     });
   } catch (error) {
     console.error('Error loading training config:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 保存MS-Swift配置
+app.post('/api/msswift-config/save', async (req, res) => {
+  try {
+    const config = req.body;
+    const configPath = path.join(__dirname, '../config/msswift-config.json');
+    
+    const configDir = path.join(__dirname, '../config');
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    console.log('MS-Swift config saved:', config);
+    
+    res.json({
+      success: true,
+      message: 'MS-Swift configuration saved successfully'
+    });
+  } catch (error) {
+    console.error('Error saving MS-Swift config:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 加载MS-Swift配置
+app.get('/api/msswift-config/load', async (req, res) => {
+  try {
+    const configPath = path.join(__dirname, '../config/msswift-config.json');
+    
+    if (!fs.existsSync(configPath)) {
+      const defaultConfig = {
+        trainingJobName: 'msswift-1',
+        dockerImage: '633205212955.dkr.ecr.us-west-2.amazonaws.com/sm-training-op-torch26-smhp-op-v2:latest',
+        instanceType: 'ml.g6.12xlarge',
+        nprocPerNode: 4,
+        replicas: 1,
+        efaCount: 1,
+        msswiftRecipeRunPath: '/s3/train-recipes/ms-swift-project/',
+        msswiftRecipeYamlFile: 'yaml_template.yaml',
+        mlflowTrackingUri: '',
+        logMonitoringConfig: ''
+      };
+      
+      return res.json({
+        success: true,
+        config: defaultConfig,
+        isDefault: true
+      });
+    }
+    
+    const configContent = await fs.readFile(configPath, 'utf8');
+    const config = JSON.parse(configContent);
+    
+    console.log('MS-Swift config loaded:', config);
+    
+    res.json({
+      success: true,
+      config: config,
+      isDefault: false
+    });
+  } catch (error) {
+    console.error('Error loading MS-Swift config:', error);
     res.status(500).json({
       success: false,
       error: error.message

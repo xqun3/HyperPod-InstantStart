@@ -1,4 +1,4 @@
-algorithm_name=hyperpod-instantstart-torchtitan
+algorithm_name=hyperpod-instantstart-ms-swift
 
 region=$(aws configure get region)
 account=$(aws sts get-caller-identity --query Account --output text)
@@ -13,8 +13,7 @@ echo "create repository:" "${algorithm_name}"
 aws ecr create-repository --region $region  --repository-name "${algorithm_name}" > /dev/null
 fi
 
-
-docker build -t ${algorithm_name} -f Dockerfile.torchtitan .
+docker build -t ${algorithm_name} -f Dockerfile.ms-swift .
 
 fullname="${account}.dkr.ecr.${region}.amazonaws.com/${algorithm_name}:latest"
 docker tag ${algorithm_name} ${fullname}

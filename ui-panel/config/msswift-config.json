@@ -1,0 +1,11 @@
+{
+  "trainingJobName": "msswift-1",
+  "instanceType": "ml.g6.12xlarge",
+  "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/hyperpod-instantstart-ms-swift:latest",
+  "efaCount": 1,
+  "nprocPerNode": 2,
+  "replicas": 1,
+  "msswiftRecipeRunPath": "/s3/train-recipes/ms-swift-project/",
+  "msswiftRecipeYamlFile": "yaml_template.yaml",
+  "mlflowTrackingUri": ""
+}

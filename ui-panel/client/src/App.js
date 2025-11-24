@@ -807,6 +807,8 @@ function App() {
         apiEndpoint = '/api/launch-torch-training';
       } else if (config.recipeType === 'script') {
         apiEndpoint = '/api/launch-script-training';
+      } else if (config.recipeType === 'msswift') {
+        apiEndpoint = '/api/launch-msswift-training';
       }
       
       console.log(`Using API endpoint: ${apiEndpoint} for recipe type: ${config.recipeType}`);
