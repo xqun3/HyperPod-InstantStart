@@ -396,32 +396,37 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
                 </Tooltip>
               </Space>
             }
-            name="instanceTypes"
-            rules={[
-              {
-                required: true,
-                message: 'Please select at least one instance type!',
-                validator: (_, value) => {
-                  const processed = processInstanceTypes(value);
-                  if (!processed || processed.length === 0) {
-                    return Promise.reject(new Error('Please select at least one instance type!'));
-                  }
-                  return Promise.resolve();
-                }
-              }
-            ]}
+            required
           >
             <Space.Compact style={{ width: '100%' }}>
-              <Select
-                mode="multiple"
-                placeholder="Select instance types"
-                loading={instanceTypesLoading}
-                style={{ fontFamily: 'monospace', flex: 1 }}
-                allowClear
-                notFoundContent={instanceTypesLoading ? 'Loading...' : 'No instance types available'}
+              <Form.Item
+                name="instanceTypes"
+                noStyle
+                rules={[
+                  {
+                    required: true,
+                    message: 'Please select at least one instance type!',
+                    validator: (_, value) => {
+                      const processed = processInstanceTypes(value);
+                      if (!processed || processed.length === 0) {
+                        return Promise.reject(new Error('Please select at least one instance type!'));
+                      }
+                      return Promise.resolve();
+                    }
+                  }
+                ]}
               >
-                {instanceTypeOptions}
-              </Select>
+                <Select
+                  mode="multiple"
+                  placeholder="Select instance types"
+                  loading={instanceTypesLoading}
+                  style={{ fontFamily: 'monospace', flex: 1 }}
+                  allowClear
+                  notFoundContent={instanceTypesLoading ? 'Loading...' : 'No instance types available'}
+                >
+                  {instanceTypeOptions}
+                </Select>
+              </Form.Item>
               <Button
                 icon={<ReloadOutlined />}
                 loading={instanceTypesLoading}

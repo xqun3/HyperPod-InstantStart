@@ -198,28 +198,33 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
                     </Tooltip>
                   </Space>
                 }
-                name="targetDeployment"
-                rules={[{ required: true, message: 'Please select target deployment!' }]}
+                required
               >
                 <Space.Compact style={{ width: '100%' }}>
-                  <Select
-                    placeholder={refreshing ? "Loading deployments..." : "Select SGLang deployment"}
-                    onChange={(value) => setSelectedDeployment(value)}
-                    loading={refreshing}
-                    notFoundContent={refreshing ? <Spin size="small" /> : "No SGLang deployments found"}
-                    style={{ flex: 1 }}
+                  <Form.Item
+                    name="targetDeployment"
+                    noStyle
+                    rules={[{ required: true, message: 'Please select target deployment!' }]}
                   >
-                    {availableDeployments.map(deployment => (
-                      <Option key={deployment.deploymentTag} value={deployment.deploymentTag}>
-                        <Space>
-                          <span>{deployment.deploymentTag}</span>
-                          <span style={{ color: '#666' }}>
-                            (Port: {deployment.port}, {deployment.status})
-                          </span>
-                        </Space>
-                      </Option>
-                    ))}
-                  </Select>
+                    <Select
+                      placeholder={refreshing ? "Loading deployments..." : "Select SGLang deployment"}
+                      onChange={(value) => setSelectedDeployment(value)}
+                      loading={refreshing}
+                      notFoundContent={refreshing ? <Spin size="small" /> : "No SGLang deployments found"}
+                      style={{ flex: 1 }}
+                    >
+                      {availableDeployments.map(deployment => (
+                        <Option key={deployment.deploymentTag} value={deployment.deploymentTag}>
+                          <Space>
+                            <span>{deployment.deploymentTag}</span>
+                            <span style={{ color: '#666' }}>
+                              (Port: {deployment.port}, {deployment.status})
+                            </span>
+                          </Space>
+                        </Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
                   <Button
                     icon={<ReloadOutlined />}
                     loading={refreshing}

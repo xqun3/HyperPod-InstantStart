@@ -278,24 +278,29 @@ const ScalingPanel = ({ onDeploy, deploymentStatus }) => {
                 </Tooltip>
               </Space>
             }
-            name="serviceName"
-            rules={[{ required: true, message: 'Please select router service!' }]}
+            required
           >
             <Space.Compact style={{ width: '100%' }}>
-              <Select
-                showSearch
-                placeholder="Select router service"
-                loading={routerServicesLoading}
-                onChange={handleRouterServiceSelect}
-                onFocus={fetchRouterServices}
-                style={{ flex: 1 }}
+              <Form.Item
+                name="serviceName"
+                noStyle
+                rules={[{ required: true, message: 'Please select router service!' }]}
               >
-                {routerServices.map(service => (
-                  <Option key={service.name} value={service.name}>
-                    {service.name} (Metrics Port: {service.metricPort})
-                  </Option>
-                ))}
-              </Select>
+                <Select
+                  showSearch
+                  placeholder="Select router service"
+                  loading={routerServicesLoading}
+                  onChange={handleRouterServiceSelect}
+                  onFocus={fetchRouterServices}
+                  style={{ flex: 1 }}
+                >
+                  {routerServices.map(service => (
+                    <Option key={service.name} value={service.name}>
+                      {service.name} (Metrics Port: {service.metricPort})
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
               <Button
                 icon={<ReloadOutlined />}
                 loading={routerServicesLoading}
