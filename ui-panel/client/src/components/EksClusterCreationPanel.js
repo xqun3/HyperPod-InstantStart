@@ -11,7 +11,9 @@ import {
   message,
   Steps,
   Row,
-  Col
+  Col,
+  Collapse,
+  Spin
 } from 'antd';
 import {
   CloudServerOutlined,
@@ -27,6 +29,8 @@ const EksClusterCreationPanel = () => {
   const [loading, setLoading] = useState(false);
   const [creationStatus, setCreationStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [cidrLoading, setCidrLoading] = useState(false);
+  const [cidrConfig, setCidrConfig] = useState(null);
 
   // 恢复创建状态
   const restoreCreationStatus = async () => {
@@ -186,6 +190,43 @@ const EksClusterCreationPanel = () => {
     }
   };
 
+  // 生成完整的 CIDR 配置
+  const generateCidrConfig = async (region) => {
+    if (!region) return;
+    
+    setCidrLoading(true);
+    try {
+      const response = await fetch('/api/cluster/generate-cidr-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setCidrConfig(result);
+        // 自动填充表单
+        form.setFieldsValue({
+          vpcCidr: result.vpcCidr,
+          publicSubnet1Cidr: result.publicSubnet1Cidr,
+          publicSubnet2Cidr: result.publicSubnet2Cidr,
+          eksPrivateSubnet1Cidr: result.eksPrivateSubnet1Cidr,
+          eksPrivateSubnet2Cidr: result.eksPrivateSubnet2Cidr,
+          hyperPodPrivateSubnetCidr: result.hyperPodPrivateSubnetCidr
+        });
+        message.success('CIDR configuration generated successfully');
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Failed to generate CIDR config:', error);
+      message.error(`Failed to generate CIDR: ${error.message}`);
+    } finally {
+      setCidrLoading(false);
+    }
+  };
+
   // 创建集群
   const handleCreateCluster = async () => {
     try {
@@ -195,17 +236,25 @@ const EksClusterCreationPanel = () => {
       setLoading(true);
       console.log('Creating cluster with values:', values);
       
-      // 同步获取有效的CIDR
-      console.log('Generating CIDR for region:', values.awsRegion);
-      const vpcCidr = await getValidCidr(values.awsRegion);
-      console.log('Generated CIDR:', vpcCidr);
+      // 构建 CIDR 配置对象（从表单获取）
+      const cidrConfigPayload = {
+        vpcCidr: values.vpcCidr,
+        publicSubnet1Cidr: values.publicSubnet1Cidr,
+        publicSubnet2Cidr: values.publicSubnet2Cidr,
+        eksPrivateSubnet1Cidr: values.eksPrivateSubnet1Cidr,
+        eksPrivateSubnet2Cidr: values.eksPrivateSubnet2Cidr,
+        hyperPodPrivateSubnetCidr: values.hyperPodPrivateSubnetCidr
+      };
+      
+      console.log('Using CIDR config:', cidrConfigPayload);
       
       const response = await fetch('/api/cluster/create-eks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...values,
-          customVpcCidr: vpcCidr
+          clusterTag: values.clusterTag,
+          awsRegion: values.awsRegion,
+          cidrConfig: cidrConfigPayload  // 传递完整的 CIDR 配置
         })
       });
       
@@ -242,13 +291,18 @@ const EksClusterCreationPanel = () => {
         form.setFieldsValue({
           awsRegion: result.region
         });
+        // 自动生成 CIDR 配置
+        await generateCidrConfig(result.region);
       }
     } catch (error) {
       console.error('Failed to fetch current region:', error);
       // 如果获取失败，使用默认值
+      const defaultRegion = 'us-west-1';
       form.setFieldsValue({
-        awsRegion: 'us-west-1'
+        awsRegion: defaultRegion
       });
+      // 自动生成 CIDR 配置
+      await generateCidrConfig(defaultRegion);
     }
   };
 
@@ -307,8 +361,8 @@ const EksClusterCreationPanel = () => {
   };
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Row gutter={24}>
+    <div>
+      <Row gutter={16}>
         {/* 左侧：创建表单 */}
         <Col span={10}>
           <Card
@@ -355,6 +409,77 @@ const EksClusterCreationPanel = () => {
                 </Col>
               </Row>
 
+              {/* CIDR 配置面板（折叠） */}
+              <Collapse
+                style={{ marginTop: 16 }}
+                items={[{
+                  key: 'cidr',
+                  label: 'CIDR Config (Optional)',
+                  children: (
+                    <Spin spinning={cidrLoading} tip="Generating CIDR configuration...">
+                      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <Form.Item 
+                          label="VPC CIDR" 
+                          name="vpcCidr"
+                          rules={[{ required: true, message: 'VPC CIDR is required' }]}
+                        >
+                          <Input placeholder="10.90.0.0/16" />
+                        </Form.Item>
+                        
+                        <Row gutter={16}>
+                          <Col span={12}>
+                            <Form.Item 
+                              label="Public Subnet 1" 
+                              name="publicSubnet1Cidr"
+                              rules={[{ required: true, message: 'Required' }]}
+                            >
+                              <Input placeholder="10.90.10.0/24" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item 
+                              label="Public Subnet 2" 
+                              name="publicSubnet2Cidr"
+                              rules={[{ required: true, message: 'Required' }]}
+                            >
+                              <Input placeholder="10.90.11.0/24" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                        
+                        <Row gutter={16}>
+                          <Col span={12}>
+                            <Form.Item 
+                              label="EKS Private Subnet 1" 
+                              name="eksPrivateSubnet1Cidr"
+                              rules={[{ required: true, message: 'Required' }]}
+                            >
+                              <Input placeholder="10.90.7.0/24" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item 
+                              label="EKS Private Subnet 2" 
+                              name="eksPrivateSubnet2Cidr"
+                              rules={[{ required: true, message: 'Required' }]}
+                            >
+                              <Input placeholder="10.90.8.0/24" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                        
+                        <Form.Item 
+                          label="HyperPod Private Subnet" 
+                          name="hyperPodPrivateSubnetCidr"
+                          rules={[{ required: true, message: 'Required' }]}
+                        >
+                          <Input placeholder="10.91.0.0/16" />
+                        </Form.Item>
+                      </Space>
+                    </Spin>
+                  )
+                }]}
+              />
 
 
               {/* 创建按钮 */}

@@ -221,21 +221,10 @@ const S3StorageManager = ({ onStorageChange }) => {
               <Col span={8}>
                 <Form.Item
                   name="region"
-                  label={
-                    <Space>
-                      AWS Region
-                      <Button 
-                        type="text" 
-                        size="small" 
-                        icon={<ReloadOutlined />}
-                        onClick={fetchCurrentRegion}
-                        title="Get current AWS region"
-                      />
-                    </Space>
-                  }
+                  label="AWS Region"
                   rules={[{ required: true, message: 'Please input AWS region' }]}
                 >
-                  <Input placeholder="Default: us-west-2" disabled />
+                  <Input placeholder="us-west-2" disabled />
                 </Form.Item>
               </Col>
             </Row>

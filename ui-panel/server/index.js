@@ -6000,15 +6000,24 @@ console.log('CIDR generation APIs loaded');
 // EKS集群创建相关API
 app.post('/api/cluster/create-eks', async (req, res) => {
   try {
-    const { clusterTag, awsRegion, customVpcCidr } = req.body;
+    const { clusterTag, awsRegion, customVpcCidr, cidrConfig: userCidrConfig } = req.body;
     
     // 验证必填字段
     if (!clusterTag || !awsRegion) {
       return res.status(400).json({ error: 'Missing required fields: clusterTag and awsRegion' });
     }
     
-    // 生成CIDR配置
-    const cidrConfig = await CidrGenerator.generateFullCidrConfiguration(awsRegion, customVpcCidr);
+    // 使用用户提供的 CIDR 配置，或自动生成
+    let cidrConfig;
+    if (userCidrConfig && userCidrConfig.vpcCidr) {
+      // 用户提供了完整的 CIDR 配置，直接使用
+      console.log('Using user-provided CIDR configuration:', userCidrConfig);
+      cidrConfig = userCidrConfig;
+    } else {
+      // 自动生成 CIDR 配置（向后兼容）
+      console.log('Auto-generating CIDR configuration for region:', awsRegion);
+      cidrConfig = await CidrGenerator.generateFullCidrConfiguration(awsRegion, customVpcCidr);
+    }
     
     // 立即创建集群目录和状态记录（在CloudFormation调用前）
     const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
@@ -7139,20 +7148,32 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
       });
     }
     
-    // 生成CIDR配置
-    const cidrResponse = await fetch('http://localhost:3001/api/cluster/generate-cidr-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        region: region
-      })
-    });
-    const cidrConfig = await cidrResponse.json();
+    // 从 metadata 读取已保存的 CIDR 配置
+    const metadataDir = clusterManager.getClusterMetadataDir(activeCluster);
+    const cidrConfigPath = path.join(metadataDir, 'cidr_configuration.json');
     
-    console.log('Generated CIDR config:', cidrConfig);
+    let hyperPodPrivateSubnetCidr;
     
-    if (!cidrConfig.hyperPodPrivateSubnetCidr) {
-      throw new Error('Failed to generate private subnet CIDR');
+    if (fs.existsSync(cidrConfigPath)) {
+      // 优先使用已保存的 CIDR 配置
+      const savedCidrConfig = JSON.parse(fs.readFileSync(cidrConfigPath, 'utf8'));
+      hyperPodPrivateSubnetCidr = savedCidrConfig.hyperPodPrivateSubnetCidr;
+      console.log('Using saved HyperPod CIDR from metadata:', hyperPodPrivateSubnetCidr);
+    } else {
+      // 如果 metadata 不存在，重新生成（向后兼容）
+      console.log('CIDR metadata not found, generating new CIDR config');
+      const cidrResponse = await fetch('http://localhost:3001/api/cluster/generate-cidr-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region: region })
+      });
+      const cidrConfig = await cidrResponse.json();
+      hyperPodPrivateSubnetCidr = cidrConfig.hyperPodPrivateSubnetCidr;
+      console.log('Generated new HyperPod CIDR:', hyperPodPrivateSubnetCidr);
+    }
+    
+    if (!hyperPodPrivateSubnetCidr) {
+      throw new Error('Failed to get HyperPod private subnet CIDR');
     }
     
     // 记录创建状态
@@ -7169,7 +7190,7 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
     const hyperPodConfig = {
       ResourceNamePrefix: clusterTag,
       AvailabilityZoneId: availabilityZoneId,
-      PrivateSubnet1CIDR: cidrConfig.hyperPodPrivateSubnetCidr,
+      PrivateSubnet1CIDR: hyperPodPrivateSubnetCidr,
       HyperPodClusterName: hyperPodClusterName,
       NodeRecovery: 'None',
       UseContinuousNodeProvisioningMode: 'false',

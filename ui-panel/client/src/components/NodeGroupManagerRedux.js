@@ -1256,6 +1256,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
           loading={loading}
           size="small"
           pagination={false}
+          locale={{ emptyText: 'No HyperPod and Instance groups' }}
+          style={{ minHeight: hyperPodGroups.length === 0 ? '60px' : 'auto' }}
         />
       </Card>
 
@@ -1390,14 +1392,13 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         )}
 
         {/* 已安装状态 - Karpenter 资源管理 */}
-        {karpenterStatus?.installed && !karpenterResourcesLoading && (
+        {karpenterStatus && !karpenterResourcesLoading && (
           <div>
             {/* Karpenter NodePool 展示区域（包含 NodeClass 信息作为列）*/}
             <div style={{ marginTop: 16 }}>
-              {karpenterResources.nodePools.length > 0 ? (
-                <Table
-                  dataSource={karpenterResources.nodePools}
-                  columns={[
+              <Table
+                dataSource={karpenterStatus.installed ? karpenterResources.nodePools : []}
+                columns={[
                     {
                       title: 'Node Pool',
                       dataIndex: 'name',
@@ -1497,22 +1498,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   rowKey="name"
                   size="small"
                   pagination={false}
-                  locale={{
-                    emptyText: 'No NodePools found'
-                  }}
+                  locale={{ emptyText: 'No EC2 Karpenter Resources' }}
+                  style={{ minHeight: karpenterResources.nodePools.length === 0 ? '60px' : 'auto' }}
                 />
-              ) : (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '20px',
-                  backgroundColor: '#fafafa',
-                  borderRadius: '6px'
-                }}>
-                  <Text type="secondary">
-                    No NodePools found. Create a NodePool to enable auto-scaling.
-                  </Text>
-                </div>
-              )}
             </div>
           </div>
         )}
