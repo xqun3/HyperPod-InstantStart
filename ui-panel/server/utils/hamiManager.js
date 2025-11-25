@@ -31,6 +31,22 @@ class HAMiManager {
   }
 
   /**
+   * 重启 S3 CSI controller（确保与 HAMi 兼容）
+   */
+  static restartS3CsiController() {
+    try {
+      this.writeLog('Restarting S3 CSI controller for HAMi compatibility...');
+      const cmd = `kubectl delete pod -n kube-system -l app=s3-csi-controller`;
+      execSync(cmd, { encoding: 'utf8' });
+      this.writeLog('S3 CSI controller restarted successfully');
+      return { success: true };
+    } catch (error) {
+      this.writeLog(`Warning: Failed to restart S3 CSI controller: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * 安装/更新 HAMi
    */
   static async installHAMi(config) {
@@ -78,6 +94,11 @@ class HAMiManager {
     const result = execSync(helmCmd, { encoding: 'utf8', timeout: 300000 });
     this.writeLog(`Helm output: ${result}`);
     this.writeLog('HAMi installation completed successfully');
+    
+    // 步骤4: 重启 S3 CSI controller
+    this.writeLog('Step 4: Restarting S3 CSI controller...');
+    this.restartS3CsiController();
+    
     this.writeLog('='.repeat(80));
 
     return {
@@ -180,6 +201,11 @@ class HAMiManager {
       }
 
       this.writeLog(`Node ${nodeName} reset completed successfully`);
+      
+      // 重启 S3 CSI controller
+      this.writeLog('Restarting S3 CSI controller after reset...');
+      this.restartS3CsiController();
+      
       this.writeLog('='.repeat(80));
 
       return {
