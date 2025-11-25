@@ -616,33 +616,33 @@ app.get('/api/v2/app-status', handleAppStatusV2);
 app.post('/api/v2/app-status/clear-cache', handleClearAppCache);
 app.get('/api/v2/app-status/cache-status', handleAppCacheStatus);
 
-// 获取Pod状态
-app.get('/api/pods', async (req, res) => {
-  try {
-    console.log('Fetching pods...');
-    const output = await executeKubectl('get pods -o json');
-    const pods = JSON.parse(output);
-    console.log('Pods fetched:', pods.items.length, 'pods');
-    res.json(pods.items);
-  } catch (error) {
-    console.error('Pods fetch error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// V1 API - 已废弃，使用 V2 API 替代 (2025-11-25)
+// app.get('/api/pods', async (req, res) => {
+//   try {
+//     console.log('Fetching pods...');
+//     const output = await executeKubectl('get pods -o json');
+//     const pods = JSON.parse(output);
+//     console.log('Pods fetched:', pods.items.length, 'pods');
+//     res.json(pods.items);
+//   } catch (error) {
+//     console.error('Pods fetch error:', error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
-// 获取Service状态
-app.get('/api/services', async (req, res) => {
-  try {
-    console.log('Fetching services...');
-    const output = await executeKubectl('get services -o json');
-    const services = JSON.parse(output);
-    console.log('Services fetched:', services.items.length, 'services');
-    res.json(services.items);
-  } catch (error) {
-    console.error('Services fetch error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// V1 API - 已废弃，使用 V2 API 替代 (2025-11-25)
+// app.get('/api/services', async (req, res) => {
+//   try {
+//     console.log('Fetching services...');
+//     const output = await executeKubectl('get services -o json');
+//     const services = JSON.parse(output);
+//     console.log('Services fetched:', services.items.length, 'services');
+//     res.json(services.items);
+//   } catch (error) {
+//     console.error('Services fetch error:', error);
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 // 代理HTTP请求到模型服务
 app.post('/api/proxy-request', async (req, res) => {

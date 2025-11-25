@@ -5,8 +5,9 @@ export const CONFIG = {
   
   // API 端点
   API_ENDPOINTS: {
-    PODS: '/api/pods',
-    SERVICES: '/api/services',
+    // V1 API - 已废弃，使用 V2 API 替代 (2025-11-25)
+    // PODS: '/api/pods',
+    // SERVICES: '/api/services',
     DEPLOYMENTS: '/api/deployments',
     DEPLOYMENT_DETAILS: '/api/deployment-details',
     DEPLOY: '/api/deploy',

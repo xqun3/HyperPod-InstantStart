@@ -537,7 +537,8 @@ function App() {
   }, []); // 空依赖数组，因为函数内部没有依赖外部变量
 
   // 配置：是否使用 V2 API（可以通过环境变量或配置文件控制）
-  const USE_V2_API = true; // 默认使用 V2 API
+  // V1 API 已废弃，统一使用 V2 API (2025-11-25)
+  // const USE_V2_API = true;
 
   // 获取业务Service列表
   const fetchBusinessServices = async () => {
@@ -554,46 +555,47 @@ function App() {
   const fetchPodsAndServices = useCallback(async () => {
     try {
       setRefreshing(true);
-      console.log(`Fetching pods and services using ${USE_V2_API ? 'V2' : 'V1'} API...`);
+      console.log('Fetching pods and services using V2 API...');
       
-      if (USE_V2_API) {
-        // 使用 V2 优化 API
-        const response = await fetch('/api/v2/app-status');
-        const data = await response.json();
-        
-        console.log('App Status V2 response:', {
-          pods: data.pods?.length || 0,
-          services: data.services?.length || 0,
-          fetchTime: data.fetchTime,
-          cached: data.cached
-        });
-        
-        // V2 API 返回处理过的数据，需要提取原始数据给现有组件使用
-        setPods(data.rawPods || data.pods || []);
-        setServices(data.rawServices || data.services || []);
-        
-        // 可以选择性地显示性能信息
-        if (data.fetchTime && !data.cached) {
-          console.log(`Fresh data fetched in ${data.fetchTime}ms`);
-        } else if (data.cached) {
-          console.log('Using cached data');
-        }
-      } else {
-        // 使用原有 V1 API
-        const [podsResponse, servicesResponse] = await Promise.all([
-          fetch('/api/pods'),
-          fetch('/api/services')
-        ]);
-        
-        const podsData = await podsResponse.json();
-        const servicesData = await servicesResponse.json();
-        
-        console.log('Pods response:', podsData.length, 'pods');
-        console.log('Services response:', servicesData.length, 'services');
-        
-        setPods(podsData);
-        setServices(servicesData);
+      // 使用 V2 优化 API
+      const response = await fetch('/api/v2/app-status');
+      const data = await response.json();
+      
+      console.log('App Status V2 response:', {
+        pods: data.pods?.length || 0,
+        services: data.services?.length || 0,
+        fetchTime: data.fetchTime,
+        cached: data.cached
+      });
+      
+      // V2 API 返回处理过的数据，需要提取原始数据给现有组件使用
+      setPods(data.rawPods || data.pods || []);
+      setServices(data.rawServices || data.services || []);
+      
+      // 可以选择性地显示性能信息
+      if (data.fetchTime && !data.cached) {
+        console.log(`Fresh data fetched in ${data.fetchTime}ms`);
+      } else if (data.cached) {
+        console.log('Using cached data');
       }
+      
+      // V1 API - 已废弃 (2025-11-25)
+      // } else {
+      //   // 使用原有 V1 API
+      //   const [podsResponse, servicesResponse] = await Promise.all([
+      //     fetch('/api/pods'),
+      //     fetch('/api/services')
+      //   ]);
+      //   
+      //   const podsData = await podsResponse.json();
+      //   const servicesData = await servicesResponse.json();
+      //   
+      //   console.log('Pods response:', podsData.length, 'pods');
+      //   console.log('Services response:', servicesData.length, 'services');
+      //   
+      //   setPods(podsData);
+      //   setServices(servicesData);
+      // }
       
       // 同时获取业务Service列表
       await fetchBusinessServices();

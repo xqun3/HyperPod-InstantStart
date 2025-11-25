@@ -244,15 +244,10 @@ class AppStatusV2 {
   }
 
   /**
-   * 预处理 Service 数据
+   * 预处理 Service 数据 - 直接返回原始数据，保留完整的 loadBalancer 信息
    */
   processServices(services) {
-    return services.map(service => ({
-      ...service,
-      endpoints: this.extractServiceEndpoints(service),
-      age: this.calculateAge(service.metadata?.creationTimestamp),
-      type: service.spec?.type || 'ClusterIP'
-    }));
+    return services;
   }
 
   /**
@@ -318,23 +313,24 @@ class AppStatusV2 {
 
   /**
    * 提取 Service 端点信息
+   * 注释原因：processServices 已简化为直接返回原始数据，此函数暂时不再使用 (2025-11-25)
    */
-  extractServiceEndpoints(service) {
-    const ports = service.spec?.ports || [];
-    const clusterIP = service.spec?.clusterIP;
-    const type = service.spec?.type;
-    
-    return {
-      clusterIP,
-      type,
-      ports: ports.map(port => ({
-        name: port.name,
-        port: port.port,
-        targetPort: port.targetPort,
-        protocol: port.protocol || 'TCP'
-      }))
-    };
-  }
+  // extractServiceEndpoints(service) {
+  //   const ports = service.spec?.ports || [];
+  //   const clusterIP = service.spec?.clusterIP;
+  //   const type = service.spec?.type;
+  //   
+  //   return {
+  //     clusterIP,
+  //     type,
+  //     ports: ports.map(port => ({
+  //       name: port.name,
+  //       port: port.port,
+  //       targetPort: port.targetPort,
+  //       protocol: port.protocol || 'TCP'
+  //     }))
+  //   };
+  // }
 
   /**
    * 计算重启次数
