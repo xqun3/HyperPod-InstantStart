@@ -76,9 +76,9 @@ class ClusterStatusV2 {
           10000
         ).catch(() => '0'),
         
-        // 获取该节点上Running状态Pod的详细信息（避免Pending Pod导致GPU使用率虚高）
+        // 获取该节点上所有已调度的 Pod（不限制 phase）
         this.executeKubectlWithTimeout(
-          `get pods --field-selector spec.nodeName=${nodeName},status.phase=Running -o json`,
+          `get pods --field-selector spec.nodeName=${nodeName} -o json`,
           15000
         ).catch(() => '{"items":[]}')
       ]);
@@ -86,26 +86,28 @@ class ClusterStatusV2 {
       const totalGPU = parseInt(capacityInfo) || 0;
       const allocatableGPU = parseInt(allocatableInfo) || 0;
       
-      // 计算已使用的GPU - 只统计Running状态Pod的GPU请求
+      // 计算已使用的GPU - 统计所有已调度且未完成的 Pod
       let usedGPU = 0;
       let pendingGPU = 0;
       
       try {
         const podsData = JSON.parse(podsInfo);
         if (podsData.items && Array.isArray(podsData.items)) {
-          // 统计Running Pod的GPU请求
-          usedGPU = podsData.items.reduce((sum, pod) => {
-            if (pod.spec?.containers) {
-              return sum + pod.spec.containers.reduce((containerSum, container) => {
-                const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
-                return containerSum + (parseInt(gpuRequest) || 0);
-              }, 0);
-            }
-            return sum;
-          }, 0);
+          // 统计已调度且未完成的 Pod（排除 Succeeded 和 Failed）
+          usedGPU = podsData.items
+            .filter(pod => !['Succeeded', 'Failed'].includes(pod.status?.phase))
+            .reduce((sum, pod) => {
+              if (pod.spec?.containers) {
+                return sum + pod.spec.containers.reduce((containerSum, container) => {
+                  const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
+                  return containerSum + (parseInt(gpuRequest) || 0);
+                }, 0);
+              }
+              return sum;
+            }, 0);
         }
         
-        // 可选：同时获取所有Pending Pod数量用于调试（Pending Pod没有nodeName）
+        // 统计未调度的 Pending Pod（没有 nodeName 的）
         const allPendingPodsInfo = await this.executeKubectlWithTimeout(
           `get pods --field-selector status.phase=Pending -o json`,
           10000
@@ -113,16 +115,18 @@ class ClusterStatusV2 {
         
         const allPendingPodsData = JSON.parse(allPendingPodsInfo);
         if (allPendingPodsData.items && Array.isArray(allPendingPodsData.items)) {
-          // 计算所有Pending Pod的GPU请求总数（不按节点分配）
-          pendingGPU = allPendingPodsData.items.reduce((sum, pod) => {
-            if (pod.spec?.containers) {
-              return sum + pod.spec.containers.reduce((containerSum, container) => {
-                const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
-                return containerSum + (parseInt(gpuRequest) || 0);
-              }, 0);
-            }
-            return sum;
-          }, 0);
+          // 只统计未调度的 Pending Pod（没有 spec.nodeName 的）
+          pendingGPU = allPendingPodsData.items
+            .filter(pod => !pod.spec?.nodeName)  // 只统计未调度的
+            .reduce((sum, pod) => {
+              if (pod.spec?.containers) {
+                return sum + pod.spec.containers.reduce((containerSum, container) => {
+                  const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
+                  return containerSum + (parseInt(gpuRequest) || 0);
+                }, 0);
+              }
+              return sum;
+            }, 0);
         }
       } catch (parseError) {
         console.warn(`Failed to parse pods JSON for node ${nodeName}:`, parseError.message);

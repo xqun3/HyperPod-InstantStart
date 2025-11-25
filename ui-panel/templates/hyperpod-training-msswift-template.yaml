@@ -12,6 +12,9 @@ spec:
     - name: pods
       replicas: REPLICAS_COUNT
       template:
+        metadata:
+          labels:
+            hami.io/webhook: ignore
         spec:
           SERVICE_ACCOUNT_CONFIG
           nodeSelector:

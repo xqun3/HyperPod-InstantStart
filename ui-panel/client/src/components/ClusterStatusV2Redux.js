@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   Table,
@@ -13,14 +13,18 @@ import {
   message,
   Tooltip,
   Spin,
-  Alert
+  Alert,
+  Modal,
+  Form,
+  Select
 } from 'antd';
 import {
   ReloadOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   ClusterOutlined,
-  WarningOutlined
+  WarningOutlined,
+  PartitionOutlined
 } from '@ant-design/icons';
 
 // Redux imports
@@ -48,6 +52,12 @@ const ClusterStatusV2Redux = () => {
   const clusterStats = useSelector(selectCalculatedClusterStats);
   const lastUpdate = useSelector(selectClusterLastUpdate);
 
+  // HAMi Partition 状态
+  const [partitionModalVisible, setPartitionModalVisible] = useState(false);
+  const [partitionForm] = Form.useForm();
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [selectedNode, setSelectedNode] = useState(null);
 
   // 初始化时获取数据（只执行一次）
   useEffect(() => {
@@ -84,6 +94,78 @@ const ClusterStatusV2Redux = () => {
       message.error('Failed to refresh cluster status: ' + (error.message || error));
     }
   }, [dispatch]);
+
+  // HAMi Partition 处理函数
+  const handlePartitionClick = (node) => {
+    setSelectedNode(node);
+    setPartitionModalVisible(true);
+  };
+
+  const handlePartitionSubmit = async () => {
+    try {
+      const values = await partitionForm.validateFields();
+      setApplyLoading(true);
+      
+      const response = await fetch('/api/cluster/hami/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...values,
+          nodeName: selectedNode?.nodeName
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        message.success('HAMi partition configured successfully');
+        setPartitionModalVisible(false);
+        setSelectedNode(null);
+        partitionForm.resetFields();
+      } else {
+        message.error(result.message || 'Failed to configure HAMi partition');
+      }
+    } catch (error) {
+      console.error('HAMi partition error:', error);
+      message.error('Failed to configure HAMi partition');
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+
+  const handleResetHAMi = async () => {
+    if (!selectedNode) return;
+    
+    try {
+      setResetLoading(true);
+      
+      const response = await fetch('/api/cluster/hami/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeName: selectedNode.nodeName
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        message.success(`Node ${selectedNode.nodeName} reset successfully`);
+        setPartitionModalVisible(false);
+        setSelectedNode(null);
+        partitionForm.resetFields();
+        // 刷新集群状态
+        setTimeout(() => {
+          dispatch(refreshClusterData());
+        }, 3000);
+      } else {
+        message.error(result.message || 'Failed to reset node');
+      }
+    } catch (error) {
+      console.error('HAMi reset error:', error);
+      message.error('Failed to reset node');
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   // 表格列定义 - 与原版相同
   const columns = [
@@ -192,6 +274,7 @@ const ClusterStatusV2Redux = () => {
     {
       title: 'GPU Usage',
       key: 'gpuUsage',
+      width: '20%',
       render: (_, record) => {
         const { totalGPU = 0, usedGPU = 0, availableGPU = 0, allocatableGPU = 0, pendingGPU = 0 } = record;
         const percentage = totalGPU > 0 ? (usedGPU / totalGPU) * 100 : 0;
@@ -230,6 +313,7 @@ const ClusterStatusV2Redux = () => {
     {
       title: 'Status',
       key: 'status',
+      width: '10%',
       render: (_, record) => {
         const { totalGPU = 0, availableGPU = 0, error, nodeReady } = record;
 
@@ -263,6 +347,33 @@ const ClusterStatusV2Redux = () => {
           <Tag color="green" icon={<CheckCircleOutlined />}>
             Available
           </Tag>
+        );
+      },
+    },
+    {
+      title: 'HAMi',
+      key: 'hami',
+      align: 'center',
+      width: '6%',
+      render: (_, record) => {
+        const labels = record.labels || {};
+        const totalGPU = record.totalGPU || 0;
+        
+        // 只对 GPU 节点显示（排除 CPU 节点和 Karpenter 控制节点）
+        const isGPUNode = totalGPU > 0 && 
+                          !record.nodeName.includes('karpenter-controller');
+        
+        if (!isGPUNode) return <span style={{ color: '#d9d9d9' }}>-</span>;
+        
+        return (
+          <Tooltip title="Configure GPU Partition">
+            <Button 
+              type="text"
+              size="small" 
+              icon={<PartitionOutlined />}
+              onClick={() => handlePartitionClick(record)}
+            />
+          </Tooltip>
         );
       },
     },
@@ -397,6 +508,96 @@ const ClusterStatusV2Redux = () => {
             return '';
           }}
         />
+
+        {/* HAMi Partition Modal */}
+        <Modal
+          title="Configure HAMi GPU Partition"
+          open={partitionModalVisible}
+          onCancel={() => {
+            setPartitionModalVisible(false);
+            setSelectedNode(null);
+          }}
+          footer={[
+            <Button 
+              key="reset" 
+              danger
+              onClick={handleResetHAMi}
+              loading={resetLoading}
+            >
+              Reset
+            </Button>,
+            <Button 
+              key="cancel" 
+              onClick={() => {
+                setPartitionModalVisible(false);
+                setSelectedNode(null);
+              }}
+            >
+              Cancel
+            </Button>,
+            <Button 
+              key="submit" 
+              type="primary" 
+              onClick={handlePartitionSubmit}
+              loading={applyLoading}
+            >
+              Apply
+            </Button>
+          ]}
+          width={500}
+        >
+          <Form form={partitionForm} layout="vertical">
+            <Form.Item label="Node Name">
+              <span style={{ 
+                color: '#8c8c8c', 
+                fontFamily: 'monospace',
+                fontSize: '13px'
+              }}>
+                {selectedNode?.nodeName || '-'}
+              </span>
+            </Form.Item>
+
+            <Form.Item 
+              name="splitCount" 
+              label="Max Split Count"
+              initialValue={10}
+              rules={[{ required: true, message: 'Please select split count' }]}
+              tooltip="Number of virtual GPUs per physical GPU"
+            >
+              <Select>
+                {[2,3,4,5,6,7,8,9,10].map(n => (
+                  <Select.Option key={n} value={n}>{n}</Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item 
+              name="nodePolicy" 
+              label="Node Scheduler Policy"
+              initialValue="binpack"
+              rules={[{ required: true, message: 'Please select node policy' }]}
+              tooltip="How to distribute pods across nodes"
+            >
+              <Select>
+                <Select.Option value="binpack">binpack (Consolidate)</Select.Option>
+                <Select.Option value="spread">spread (Distribute)</Select.Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item 
+              name="gpuPolicy" 
+              label="GPU Scheduler Policy"
+              initialValue="spread"
+              rules={[{ required: true, message: 'Please select GPU policy' }]}
+              tooltip="How to allocate GPUs within a node"
+            >
+              <Select>
+                <Select.Option value="binpack">binpack (Consolidate)</Select.Option>
+                <Select.Option value="spread">spread (Distribute)</Select.Option>
+              </Select>
+            </Form.Item>
+          </Form>
+        </Modal>
 
         <style jsx>{`
           .cluster-row-error {

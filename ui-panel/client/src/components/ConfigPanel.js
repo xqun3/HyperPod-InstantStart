@@ -261,6 +261,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
       initialValues={{
         replicas: 1,
         gpuCount: 1,
+        gpuMemory: -1,
         instanceTypes: [],
         serviceType: 'external',
         deploymentName: '',
@@ -323,7 +324,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
       </Row>
 
       <Row gutter={16}>
-        <Col span={8}>
+        <Col span={6}>
           <Form.Item
             label={
               <Space>
@@ -347,7 +348,31 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
+          <Form.Item
+            label={
+              <Space>
+                GPU Memory (HAMi)
+                <Tooltip title="GPU memory in MB. -1 to use full GPU without HAMi">
+                  <InfoCircleOutlined />
+                </Tooltip>
+              </Space>
+            }
+            name="gpuMemory"
+            rules={[
+              { required: true, message: 'Please input GPU memory!' },
+              { type: 'number', min: -1, message: 'GPU memory must be -1 or positive' }
+            ]}
+          >
+            <InputNumber 
+              min={-1}
+              addonAfter="MB"
+              style={{ width: '100%' }}
+              placeholder="-1 (ignore HAMi)"
+            />
+          </Form.Item>
+        </Col>
+        <Col span={6}>
           <Form.Item
             label="CPU Request"
             name="cpuRequest"
@@ -365,7 +390,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
             />
           </Form.Item>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Form.Item
             label="Memory Request"
             name="memoryRequest"

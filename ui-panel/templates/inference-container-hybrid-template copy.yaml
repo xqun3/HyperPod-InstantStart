@@ -16,7 +16,7 @@ spec:
     metadata:
       labels:
         app: SERVENGINE-MODEL_TAG-inference
-        model-type: "SERVENGINE"HAMI_LABEL
+        model-type: "SERVENGINE"
     spec:
       affinity:
         nodeAffinity:

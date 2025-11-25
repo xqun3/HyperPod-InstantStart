@@ -693,6 +693,7 @@ app.post('/api/deploy', async (req, res) => {
       deploymentCommand,
       // ollamaModelId - 已移除Ollama支持
       gpuCount,
+      gpuMemory = -1,  // 新增：GPU内存配置（MB），默认-1表示忽略HAMi
       instanceTypes = [],  // 新增：多选实例类型数组
       serviceType = 'external',  // 新增：服务类型 ('external', 'clusterip', 'modelpool')
       deploymentName,  // 用户输入的部署名称
@@ -710,6 +711,7 @@ app.post('/api/deploy', async (req, res) => {
       instanceTypes,
       serviceType,
       dockerImage,
+      gpuMemory,
       cpuRequest,
       memoryRequest,
       port
@@ -806,9 +808,15 @@ app.post('/api/deploy', async (req, res) => {
       
       // 替换模板中的占位符 - 使用混合调度和Service类型
       // 动态生成resources部分
-      const generateResourcesSection = (cpuRequest, memoryRequest, gpuCount) => {
+      const generateResourcesSection = (cpuRequest, memoryRequest, gpuCount, gpuMemory) => {
         const limits = [`nvidia.com/gpu: ${gpuCount}`];
         const requests = [`nvidia.com/gpu: ${gpuCount}`];
+        
+        // 如果设置了 GPU 内存（不是 -1），添加 HAMi GPU 内存配置
+        if (gpuMemory > 0) {
+          limits.push(`nvidia.com/gpumem: ${gpuMemory}`);
+          requests.push(`nvidia.com/gpumem: ${gpuMemory}`);
+        }
         
         if (cpuRequest > 0) {
           limits.push(`cpu: "${cpuRequest}"`);
@@ -827,7 +835,12 @@ app.post('/api/deploy', async (req, res) => {
               ${requests.join('\n              ')}`;
       };
 
-      const resourcesSection = generateResourcesSection(cpuRequest, memoryRequest, gpuCount);
+      const resourcesSection = generateResourcesSection(cpuRequest, memoryRequest, gpuCount, gpuMemory);
+      
+      // 生成 HAMi webhook ignore label（如果 gpuMemory 是 -1）
+      const hamiLabel = gpuMemory === -1 
+        ? '\n        hami.io/webhook: ignore' 
+        : '';
 
       newYamlContent = templateContent
         .replace(/SERVENGINE/g, servEngine)
@@ -840,7 +853,8 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/DOCKER_IMAGE/g, dockerImage)
         .replace(/PORT_NUMBER/g, port || 8000)
         .replace(/RESOURCES_SECTION/g, resourcesSection)
-        .replace(/NLB_ANNOTATIONS/g, nlbAnnotations);
+        .replace(/NLB_ANNOTATIONS/g, nlbAnnotations)
+        .replace(/HAMI_LABEL/g, hamiLabel);
 
       // 在标准标签后面添加 Model Pool 标签
       if (serviceType === 'modelpool') {
@@ -8797,6 +8811,84 @@ console.log('Karpenter NodeClass/NodePool Management APIs loaded');
 console.log('Karpenter Management APIs loaded');
 
 // ================================
+// ==========================================
+// HAMi GPU Virtualization APIs
+// ==========================================
+
+const HAMiManager = require('./utils/hamiManager');
+
+// 安装/更新 HAMi
+app.post('/api/cluster/hami/install', async (req, res) => {
+  try {
+    const { splitCount, nodePolicy, gpuPolicy, nodeName } = req.body;
+    const activeCluster = clusterManager.getActiveCluster();
+
+    console.log(`Installing HAMi for cluster: ${activeCluster}`);
+
+    const result = await HAMiManager.installHAMi({
+      splitCount,
+      nodePolicy,
+      gpuPolicy,
+      nodeName
+    });
+
+    // 保存配置到 metadata
+    HAMiManager.saveConfig(activeCluster, {
+      splitCount,
+      nodePolicy,
+      gpuPolicy,
+      nodeName
+    }, clusterManager);
+
+    res.json(result);
+  } catch (error) {
+    console.error('HAMi installation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 检查 HAMi 状态
+app.get('/api/cluster/hami/status', async (req, res) => {
+  try {
+    const status = HAMiManager.checkStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('HAMi status check error:', error);
+    res.status(500).json({ 
+      installed: false, 
+      error: error.message 
+    });
+  }
+});
+
+// 重置节点的 HAMi 配置
+app.post('/api/cluster/hami/reset', async (req, res) => {
+  try {
+    const { nodeName } = req.body;
+    
+    if (!nodeName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Node name is required'
+      });
+    }
+
+    console.log(`Resetting HAMi for node: ${nodeName}`);
+    const result = await HAMiManager.resetNodeHAMi(nodeName);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('HAMi reset error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // KEDA Auto Scaling APIs
 // ================================
 

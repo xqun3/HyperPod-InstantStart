@@ -12,6 +12,9 @@ spec:
     - name: pods
       replicas: REPLICAS_COUNT
       template:
+        metadata:
+          labels:
+            hami.io/webhook: ignore
         spec:
           # serviceAccountName: mlflow-service-account
           # serviceAccountName: hp-training-operator-pod-manager
