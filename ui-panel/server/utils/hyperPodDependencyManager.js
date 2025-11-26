@@ -139,11 +139,12 @@ class HyperPodDependencyManager {
         --addon-name amazon-sagemaker-hyperpod-training-operator \\
         --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "HyperPod Training Operator addon not found"
     
-    echo "Cleaning up cert-manager addon..."
-    aws eks delete-addon \\
-        --cluster-name \$EKS_CLUSTER_NAME \\
-        --addon-name cert-manager \\
-        --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "cert-manager addon not found"
+    # cert-manager 已在 EKS 集群依赖配置时安装，此处不再重复安装
+    # echo "Cleaning up cert-manager addon..."
+    # aws eks delete-addon \\
+    #     --cluster-name \$EKS_CLUSTER_NAME \\
+    #     --addon-name cert-manager \\
+    #     --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "cert-manager addon not found"
     
     echo "Waiting for cleanup to complete..."
     sleep 30
@@ -159,39 +160,40 @@ class HyperPodDependencyManager {
         --service-account hp-training-operator-controller-manager \\
         --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "Pod Identity Association exists checked"
 
-    # 4. 重新创建cert-manager addon
-    echo "Creating cert-manager addon..."
-    aws eks create-addon \\
-        --cluster-name \$EKS_CLUSTER_NAME \\
-        --addon-name cert-manager \\
-        --region \$AWS_REGION \\
-        --resolve-conflicts OVERWRITE || echo "Failed to create cert-manager addon"
+    # cert-manager 已在 EKS 集群依赖配置时安装，此处不再重复安装
+    # # 4. 重新创建cert-manager addon
+    # echo "Creating cert-manager addon..."
+    # aws eks create-addon \\
+    #     --cluster-name \$EKS_CLUSTER_NAME \\
+    #     --addon-name cert-manager \\
+    #     --region \$AWS_REGION \\
+    #     --resolve-conflicts OVERWRITE || echo "Failed to create cert-manager addon"
 
-    # 5. 等待cert-manager就绪
-    echo "Waiting for cert-manager to be ready..."
-    MAX_WAIT=20
-    WAIT_COUNT=0
-    
-    while [ \$WAIT_COUNT -lt \$MAX_WAIT ]; do
-        CERT_STATUS=\$(aws eks describe-addon \\
-            --cluster-name \$EKS_CLUSTER_NAME \\
-            --addon-name cert-manager \\
-            --region \$AWS_REGION \\
-            --query "addon.status" \\
-            --output text 2>/dev/null || echo "UNKNOWN")
-        
-        if [ "\$CERT_STATUS" = "ACTIVE" ]; then
-            echo "cert-manager is ready (ACTIVE)"
-            break
-        elif [ "\$CERT_STATUS" = "CREATE_FAILED" ]; then
-            echo "WARNING: cert-manager creation failed, but continuing..."
-            break
-        else
-            echo "cert-manager status: \$CERT_STATUS, waiting... (\$((WAIT_COUNT+1))/\$MAX_WAIT)"
-            sleep 15
-            WAIT_COUNT=\$((WAIT_COUNT+1))
-        fi
-    done
+    # # 5. 等待cert-manager就绪
+    # echo "Waiting for cert-manager to be ready..."
+    # MAX_WAIT=20
+    # WAIT_COUNT=0
+    # 
+    # while [ \$WAIT_COUNT -lt \$MAX_WAIT ]; do
+    #     CERT_STATUS=\$(aws eks describe-addon \\
+    #         --cluster-name \$EKS_CLUSTER_NAME \\
+    #         --addon-name cert-manager \\
+    #         --region \$AWS_REGION \\
+    #         --query "addon.status" \\
+    #         --output text 2>/dev/null || echo "UNKNOWN")
+    #     
+    #     if [ "\$CERT_STATUS" = "ACTIVE" ]; then
+    #         echo "cert-manager is ready (ACTIVE)"
+    #         break
+    #     elif [ "\$CERT_STATUS" = "CREATE_FAILED" ]; then
+    #         echo "WARNING: cert-manager creation failed, but continuing..."
+    #         break
+    #     else
+    #         echo "cert-manager status: \$CERT_STATUS, waiting... (\$((WAIT_COUNT+1))/\$MAX_WAIT)"
+    #         sleep 15
+    #         WAIT_COUNT=\$((WAIT_COUNT+1))
+    #     fi
+    # done
 
     # 6. 重新创建HyperPod Training Operator addon
     echo "Creating HyperPod Training Operator addon..."
@@ -281,6 +283,86 @@ class HyperPodDependencyManager {
       console.error('Error cleaning up HyperPod dependencies:', error);
       throw error;
     }
+  }
+
+  /**
+   * 配置 HyperPod 执行角色的 Pod Identity 权限
+   * 允许 EKS Pod 使用 SageMaker 执行角色
+   */
+  static async configureHyperPodPodIdentity(clusterConfigDir) {
+    console.log('Configuring HyperPod Pod Identity permissions...');
+    
+    const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+
+    # 检查是否有 HyperPod 执行角色
+    if [ -z "\$EXECUTION_ROLE" ]; then
+        echo "No EXECUTION_ROLE found, skipping HyperPod Pod Identity configuration"
+        exit 0
+    fi
+
+    # 提取SageMaker执行角色名称
+    EXEC_ROLE_NAME=\${EXECUTION_ROLE##*/}
+    echo "Using execution role: \$EXEC_ROLE_NAME"
+
+    # 1. 为SageMaker执行角色添加DescribeClusterNode权限
+    echo "Adding SageMaker DescribeClusterNode policy..."
+    aws iam put-role-policy \\
+        --role-name \$EXEC_ROLE_NAME \\
+        --policy-name SageMakerDescribeClusterNode \\
+        --policy-document '"'"'{
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "sagemaker:DescribeClusterNode"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }'"'"'
+
+    # 2. 更新角色信任策略，允许EKS Pod Identity
+    echo "Updating assume role policy for EKS Pod Identity..."
+    aws iam update-assume-role-policy \\
+        --role-name \$EXEC_ROLE_NAME \\
+        --policy-document '"'"'{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "sagemaker.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            },
+            {
+                "Sid": "AllowEksAuthToAssumeRoleForPodIdentity",
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "pods.eks.amazonaws.com"
+                },
+                "Action": [
+                    "sts:AssumeRole",
+                    "sts:TagSession"
+                ]
+            }
+        ]
+    }'"'"'
+
+    # 3. 创建Pod Identity Association（绑定到 Training Operator）
+    echo "Creating Pod Identity Association for Training Operator..."
+    aws eks create-pod-identity-association \\
+        --cluster-name \$EKS_CLUSTER_NAME \\
+        --role-arn \$EXECUTION_ROLE \\
+        --namespace aws-hyperpod \\
+        --service-account hp-training-operator-controller-manager \\
+        --region \$AWS_REGION >> /app/tmp/hypd-dependency.log 2>&1 || echo "Pod Identity Association already exists"
+
+    echo "HyperPod Pod Identity configuration completed"
+    '`;
+    
+    await this.executeNonBlocking(commands);
   }
 }
 

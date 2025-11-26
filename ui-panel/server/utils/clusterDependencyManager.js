@@ -375,10 +375,87 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
     //   eks.amazonaws.com/role-arn=arn:aws:iam::\$ACCOUNT_ID:role/eksctl-\$EKS_CLUSTER_NAME-addon-iamserviceaccount-kube-system-aws-load-balancer-controller \\
     //   --overwrite || echo "Failed to annotate service account"
 
+  /**
+   * 安装 cert-manager EKS addon（必须在 AWS LB Controller 之前）
+   */
+  static async installCertManager(clusterConfigDir) {
+    console.log('Installing cert-manager addon...');
+    
+    const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+
+    echo "Creating cert-manager addon..."
+    aws eks create-addon \\
+        --cluster-name \$EKS_CLUSTER_NAME \\
+        --addon-name cert-manager \\
+        --region \$AWS_REGION \\
+        --resolve-conflicts OVERWRITE >> /app/tmp/dependency-install.log 2>&1 || echo "cert-manager addon already exists"
+
+    echo "Waiting for cert-manager to be ready..."
+    MAX_WAIT=20
+    WAIT_COUNT=0
+    
+    while [ \$WAIT_COUNT -lt \$MAX_WAIT ]; do
+        CERT_STATUS=\$(aws eks describe-addon \\
+            --cluster-name \$EKS_CLUSTER_NAME \\
+            --addon-name cert-manager \\
+            --region \$AWS_REGION \\
+            --query "addon.status" \\
+            --output text 2>/dev/null || echo "UNKNOWN")
+        
+        if [ "\$CERT_STATUS" = "ACTIVE" ]; then
+            echo "✅ cert-manager is ready (ACTIVE)"
+            break
+        elif [ "\$CERT_STATUS" = "CREATE_FAILED" ] || [ "\$CERT_STATUS" = "DEGRADED" ]; then
+            echo "⚠️  cert-manager status: \$CERT_STATUS, but continuing..."
+            break
+        else
+            echo "cert-manager status: \$CERT_STATUS, waiting... (\$((WAIT_COUNT+1))/\$MAX_WAIT)"
+            sleep 15
+            WAIT_COUNT=\$((WAIT_COUNT+1))
+        fi
+    done
+
+    echo "cert-manager installation completed"
+    '`;
+    
+    await this.executeNonBlocking(commands);
+  }
+
+  /**
+   * 安装 EKS Pod Identity Agent（所有集群都需要）
+   */
+  static async installEKSPodIdentity(clusterConfigDir) {
+    console.log('Installing EKS Pod Identity Agent...');
+    
+    const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+
+    # 创建EKS Pod Identity Agent addon
+    echo "Creating EKS Pod Identity Agent addon..."
+    aws eks create-addon \\
+        --cluster-name \$EKS_CLUSTER_NAME \\
+        --addon-name eks-pod-identity-agent \\
+        --region \$AWS_REGION \\
+        --resolve-conflicts OVERWRITE >> /app/tmp/dependency-install.log 2>&1 || echo "Pod Identity Agent addon already exists"
+
+    echo "EKS Pod Identity Agent installation completed"
+    '`;
+    
+    await this.executeNonBlocking(commands);
+  }
+
+  /**
+   * 配置 HyperPod Training Operator 的权限（仅在有 HyperPod 集群时需要）
+   */
   static async installCertificationDependency(clusterConfigDir) {
     console.log('Installing certification dependencies...');
     
     const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+
+    # 检查是否有 HyperPod 执行角色
+    if [ -z "\$EXECUTION_ROLE" ]; then
+        echo "No EXECUTION_ROLE found, skipping HyperPod-specific IAM configuration"
+        exit 0
+    fi
 
     # 提取SageMaker执行角色名称
     EXEC_ROLE_NAME=\${EXECUTION_ROLE##*/}
@@ -430,15 +507,7 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
         ]
     }'"'"'
 
-    # 3. 创建EKS Pod Identity Agent addon
-    echo "Creating EKS Pod Identity Agent addon..."
-    aws eks create-addon \\
-        --cluster-name \$EKS_CLUSTER_NAME \\
-        --addon-name eks-pod-identity-agent \\
-        --region \$AWS_REGION \\
-        --resolve-conflicts OVERWRITE >> /app/tmp/dependency-install.log 2>&1 || echo "Pod Identity Agent addon already exists"
-
-    # 4. 创建Pod Identity Association
+    # 3. 创建Pod Identity Association
     echo "Creating Pod Identity Association..."
     aws eks create-pod-identity-association \\
         --cluster-name \$EKS_CLUSTER_NAME \\
@@ -447,6 +516,7 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
         --service-account hp-training-operator-controller-manager \\
         --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "Pod Identity Association already exists"
 
+    echo "HyperPod Training Operator IAM configuration completed"
     '`;
     
     await this.executeNonBlocking(commands);
@@ -476,7 +546,10 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
 
       // cert-manager 必须在 AWS LB Controller 之前安装
       // 避免 LB Controller 的 webhook 拦截 cert-manager 的 Service 创建
-      await this.installCertificationDependency(configDir);
+      await this.installCertManager(configDir);
+
+      // 安装 EKS Pod Identity Agent（所有集群都需要）
+      await this.installEKSPodIdentity(configDir);
 
       await this.installnlbDependencies(configDir);
       
