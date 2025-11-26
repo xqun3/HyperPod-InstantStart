@@ -99,7 +99,7 @@ const getFallbackInstanceTypes = () => {
 
   return fallbackTypes.map(type => ({
     value: type,
-    label: `${type} (fallback)`,
+    label: type,  // 移除 (fallback) 标签
     disabled: false,
     instanceType: type // 保持与集群数据一致的格式
   }));
@@ -151,13 +151,13 @@ export const useHyperPodInstanceTypes = (options = {}) => {
       console.error('Error in useHyperPodInstanceTypes:', err);
       setError(err);
 
-      if (fallbackOnError) {
-        setInstanceTypes(getFallbackInstanceTypes());
-      }
+      // 不再使用 fallback,错误时返回空列表
+      // 用户可以通过刷新按钮重新获取
+      setInstanceTypes([]);
     } finally {
       setLoading(false);
     }
-  }, [fallbackOnError]);
+  }, []);
 
   useEffect(() => {
     if (autoFetch) {

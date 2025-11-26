@@ -31,7 +31,7 @@ const { TextArea } = Input;
 const { Panel } = Collapse;
 const { Text } = Typography;
 
-const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading }) => {
+const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading, refreshInstanceTypes }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -154,10 +154,15 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               size="small"
             />
           </Tooltip>
-          <Tooltip title="Reload Configuration">
+          <Tooltip title="Reload Configuration and Refresh Instance Types">
             <Button 
               icon={<ReloadOutlined />} 
-              onClick={loadSavedConfig}
+              onClick={() => {
+                loadSavedConfig();
+                if (refreshInstanceTypes) {
+                  refreshInstanceTypes();
+                }
+              }}
               size="small"
             />
           </Tooltip>
@@ -190,7 +195,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               label={
                 <Space>
                   <FireOutlined />
-                  <Text strong>Training Job Name</Text>
+                  <Text strong>Job Name</Text>
                 </Space>
               }
               name="trainingJobName"
@@ -267,7 +272,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>GPUs Per Node</Text>
+                  <Text strong>GPUs Per Replica</Text>
                 </Space>
               }
               name="nprocPerNode"

@@ -279,7 +279,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>GPUs Per Node</Text>
+                  <Text strong>GPUs Per Replica</Text>
                 </Space>
               }
               name="gpuPerNode"

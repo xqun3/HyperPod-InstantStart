@@ -201,7 +201,7 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
               label={
                 <Space>
                   <ExperimentOutlined />
-                  <Text strong>Training Job Name</Text>
+                  <Text strong>Job Name</Text>
                 </Space>
               }
               name="trainingJobName"
@@ -277,7 +277,7 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>GPUs Per Node</Text>
+                  <Text strong>GPUs Per Replica</Text>
                 </Space>
               }
               name="nprocPerNode"

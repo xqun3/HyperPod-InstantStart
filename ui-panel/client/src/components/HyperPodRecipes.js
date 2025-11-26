@@ -23,7 +23,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
   const showScriptRecipe = process.env.REACT_APP_SHOW_SCRIPT_RECIPE === 'true';
 
   // 🚀 预先获取所有HyperPod实例类型，避免Tab切换时的延迟
-  const { instanceTypes: hyperPodInstanceTypes, loading: instanceTypesLoading } = useHyperPodInstanceTypes();
+  const { instanceTypes: hyperPodInstanceTypes, loading: instanceTypesLoading, refresh: refreshInstanceTypes } = useHyperPodInstanceTypes();
 
   const handleTabChange = (key) => {
     setActiveTab(key);
@@ -56,6 +56,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
                 deploymentStatus={deploymentStatus}
                 hyperPodInstanceTypes={hyperPodInstanceTypes}
                 instanceTypesLoading={instanceTypesLoading}
+                refreshInstanceTypes={refreshInstanceTypes}
               />
             </div>
           </TabPane>
@@ -77,6 +78,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
               deploymentStatus={deploymentStatus}
               hyperPodInstanceTypes={hyperPodInstanceTypes}
               instanceTypesLoading={instanceTypesLoading}
+              refreshInstanceTypes={refreshInstanceTypes}
             />
           </div>
         </TabPane>
@@ -97,6 +99,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
               deploymentStatus={deploymentStatus}
               hyperPodInstanceTypes={hyperPodInstanceTypes}
               instanceTypesLoading={instanceTypesLoading}
+              refreshInstanceTypes={refreshInstanceTypes}
             />
           </div>
         </TabPane>
@@ -117,6 +120,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
               deploymentStatus={deploymentStatus}
               hyperPodInstanceTypes={hyperPodInstanceTypes}
               instanceTypesLoading={instanceTypesLoading}
+              refreshInstanceTypes={refreshInstanceTypes}
             />
           </div>
         </TabPane>
@@ -137,6 +141,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
               deploymentStatus={deploymentStatus}
               hyperPodInstanceTypes={hyperPodInstanceTypes}
               instanceTypesLoading={instanceTypesLoading}
+              refreshInstanceTypes={refreshInstanceTypes}
             />
           </div>
         </TabPane>
