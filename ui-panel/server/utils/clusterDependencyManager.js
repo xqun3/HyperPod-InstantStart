@@ -195,6 +195,7 @@ echo "Region: $AWS_REGION" &&
 helm upgrade --install hyperpod-dependencies ./sagemaker-hyperpod-cli/helm_chart/HyperPodHelmChart \\
   --kube-context arn:aws:eks:$AWS_REGION:$(aws sts get-caller-identity --query Account --output text):cluster/$EKS_CLUSTER_NAME \\
   --namespace kube-system \\
+  --set cert-manager.enabled=false \\
   --set neuron-device-plugin.devicePlugin.enabled=false \\
   --set nvidia-device-plugin.devicePlugin.enabled=true \\
   --set aws-efa-k8s-device-plugin.devicePlugin.enabled=true \\
@@ -472,9 +473,11 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
       
       await this.installHelmDependencies(configDir);
 
-      await this.installnlbDependencies(configDir);
-
+      // cert-manager 必须在 AWS LB Controller 之前安装
+      // 避免 LB Controller 的 webhook 拦截 cert-manager 的 Service 创建
       await this.installCertificationDependency(configDir);
+
+      await this.installnlbDependencies(configDir);
       
       await this.installGeneralDependencies(configDir);
       

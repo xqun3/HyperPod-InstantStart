@@ -1,7 +1,7 @@
 {
   "trainingJobName": "lmf-v1",
   "instanceType": "ml.g6.12xlarge",
-  "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/sm-training-op-torch26-smhp-op-v2:latest",
+  "dockerImage": "public.ecr.aws/t5u4s6i0/hypd-training-op-torch26-pub:latest",
   "nprocPerNode": 4,
   "replicas": 1,
   "efaCount": 1,
