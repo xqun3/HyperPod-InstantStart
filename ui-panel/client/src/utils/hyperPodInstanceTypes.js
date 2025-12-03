@@ -134,7 +134,7 @@ export const getAutoCompleteOptions = async () => {
  */
 
 export const useHyperPodInstanceTypes = (options = {}) => {
-  const { autoFetch = true, fallbackOnError = true } = options;
+  const { autoFetch = true } = options;
 
   const [instanceTypes, setInstanceTypes] = useState([]);
   const [loading, setLoading] = useState(false);

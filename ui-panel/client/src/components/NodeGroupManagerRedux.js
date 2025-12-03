@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip } from 'antd';
+import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip, Switch } from 'antd';
 import { ReloadOutlined, EditOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, InfoCircleOutlined, CloudServerOutlined } from '@ant-design/icons';
 import EksNodeGroupCreationPanel from './EksNodeGroupCreationPanel';
 import {
   fetchNodeGroups,
   createHyperPod,
-  deleteHyperPod,
+  // deleteHyperPod, // 已隐藏 Delete HyperPod 功能 (2025-12-03)
   addInstanceGroup,
   scaleNodeGroup,
   deleteNodeGroup,
@@ -35,7 +35,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
   const hyperPodGroupsFromStore = useSelector(selectHyperPodGroups);
   const hyperPodGroups = Array.isArray(hyperPodGroupsFromStore) ? hyperPodGroupsFromStore : [];
   const loading = useSelector(selectNodeGroupsLoading);
-  const error = useSelector(selectNodeGroupsError);
+  // const error = useSelector(selectNodeGroupsError); // Unused
   const hyperPodCreationStatus = useSelector(selectHyperPodCreationStatus);
   const hyperPodDeletionStatus = useSelector(selectHyperPodDeletionStatus);
   const effectiveDependenciesConfigured = useSelector(selectEffectiveDependenciesStatus);
@@ -85,6 +85,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
   // HyperPod子网相关状态
   const [hyperPodSubnets, setHyperPodSubnets] = useState([]);
   const [subnetsLoading, setSubnetsLoading] = useState(false);
+  
+  // Subnets for Add Instance Group
+  const [subnets, setSubnets] = useState({ publicSubnets: [], privateSubnets: [], hyperPodSubnets: [] });
 
   // 子网感知的实例类型状态
   const [selectedSubnet, setSelectedSubnet] = useState(null);
@@ -128,7 +131,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
     }
   };
 
-  const handleDeleteHyperPod = () => {
+  // Delete HyperPod 功能已隐藏 (2025-12-03)
+  /* const handleDeleteHyperPod = () => {
     Modal.confirm({
       title: 'Delete HyperPod Cluster',
       content: 'Are you sure you want to delete the HyperPod cluster? This action cannot be undone.',
@@ -144,7 +148,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         }
       }
     });
-  };
+  }; */
 
   // Karpenter 相关函数
   const fetchKarpenterStatus = useCallback(async () => {
@@ -347,6 +351,24 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       setHyperPodSubnets([]);
     } finally {
       setSubnetsLoading(false);
+    }
+  }, []);
+
+  // 获取所有子网（用于 Add Instance Group）
+  const fetchSubnets = useCallback(async () => {
+    try {
+      const response = await fetch('/api/cluster/subnets');
+      const result = await response.json();
+      
+      if (result.success) {
+        setSubnets({
+          publicSubnets: result.data.publicSubnets || [],
+          privateSubnets: result.data.privateSubnets || [],
+          hyperPodSubnets: result.data.hyperPodSubnets || []
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching subnets:', error);
     }
   }, []);
 
@@ -943,12 +965,13 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         fetchKarpenterStatus(), // 加载Karpenter状态
         fetchKarpenterResources(), // 加载NodeClass/NodePool资源
         fetchAvailableInstanceTypes(), // 加载实例类型
-        fetchHyperPodSubnets() // 加载HyperPod子网
+        fetchHyperPodSubnets(), // 加载HyperPod子网
+        fetchSubnets() // 加载所有子网（用于 Add Instance Group）
       ]);
     } catch (error) {
       console.error('Error in complete refresh:', error);
     }
-  }, [dispatch, fetchKarpenterStatus, fetchKarpenterResources, fetchAvailableInstanceTypes, fetchHyperPodSubnets]);
+  }, [dispatch, fetchKarpenterStatus, fetchKarpenterResources, fetchAvailableInstanceTypes, fetchHyperPodSubnets, fetchSubnets]);
 
   // 注册到全局刷新管理器
   useEffect(() => {
@@ -1117,6 +1140,20 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
     { title: 'Instance Group Name', dataIndex: 'name', key: 'name' },
     { title: 'Status', dataIndex: 'status', key: 'status', render: renderStatus },
     { title: 'Instance Type', dataIndex: 'instanceType', key: 'instanceType' },
+    { 
+      title: 'Capacity Type', 
+      dataIndex: 'capacityType', 
+      key: 'capacityType',
+      render: (capacityType) => {
+        if (!capacityType) return <Tag color="green">OD</Tag>;
+        const type = capacityType.toLowerCase();
+        return (
+          <Tag color={type === 'spot' ? 'orange' : 'green'}>
+            {type === 'spot' ? 'Spot' : 'OD'}
+          </Tag>
+        );
+      }
+    },
     { title: 'Current/Target', key: 'count', render: renderCount },
     { title: 'Actions', key: 'actions', render: renderHyperPodActions }
   ];
@@ -1198,10 +1235,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             >
               Create HyperPod
             </Button>
-            {hyperPodGroups.length > 0 && (() => {
-              // 检查是否为导入的EKS+HyperPod集群
+            {/* Delete HyperPod 按钮已隐藏 (2025-12-03) - 后端 API 仍保留: DELETE /api/cluster/:clusterTag/hyperpod */}
+            {/* {hyperPodGroups.length > 0 && (() => {
               const isImportedWithHyperPod = cluster?.type === 'imported' && cluster?.hasHyperPod;
-
               return (
                 <Button
                   type="default"
@@ -1212,7 +1248,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   disabled={
                     !!hyperPodCreationStatus ||
                     !!hyperPodDeletionStatus ||
-                    isImportedWithHyperPod  // 导入的EKS+HyperPod集群禁用删除
+                    isImportedWithHyperPod
                   }
                   title={
                     isImportedWithHyperPod
@@ -1223,7 +1259,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   Delete HyperPod
                 </Button>
               );
-            })()}
+            })()} */}
           </Space>
         }
       >
@@ -1747,6 +1783,21 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
           </div>
 
           <Form.Item
+            name="subnetId"
+            label="Subnet"
+            rules={[{ required: true, message: 'Please select subnet' }]}
+            extra="Select the subnet for this instance group"
+          >
+            <Select placeholder="Select subnet" loading={!subnets.privateSubnets.length}>
+              {subnets.privateSubnets.map(subnet => (
+                <Select.Option key={subnet.subnetId} value={subnet.subnetId}>
+                  {subnet.name} ({subnet.isHyperPodSubnet ? 'HyperPod' : 'Private'}) - {subnet.availabilityZone} - {subnet.cidrBlock}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
             name="volumeSize"
             label="EBS Volume Size (GB)"
             initialValue={300}
@@ -1754,6 +1805,14 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             extra="EBS volume size in GB"
           >
             <InputNumber min={100} max={16000} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="isSpot"
+            label="Use Spot Instances"
+            valuePropName="checked"
+          >
+            <Switch />
           </Form.Item>
 
           <Form.Item

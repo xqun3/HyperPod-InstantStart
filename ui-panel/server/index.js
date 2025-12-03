@@ -5506,6 +5506,12 @@ app.get('/api/cluster/nodegroups', async (req, res) => {
             const hpData = await AWSHelpers.describeHyperPodCluster(hpClusterName, region);
             
             for (const instanceGroup of hpData.InstanceGroups || []) {
+              // 判断 Capacity Type: 如果有 CapacityRequirements.Spot 则为 Spot，否则为 On-Demand
+              let capacityType = 'on-demand';
+              if (instanceGroup.CapacityRequirements?.Spot) {
+                capacityType = 'spot';
+              }
+              
               hyperPodGroups.push({
                 clusterName: hpData.ClusterName,
                 clusterArn: hpData.ClusterArn,
@@ -5513,6 +5519,7 @@ app.get('/api/cluster/nodegroups', async (req, res) => {
                 name: instanceGroup.InstanceGroupName,
                 status: instanceGroup.Status,
                 instanceType: instanceGroup.InstanceType,
+                capacityType: capacityType, // 添加容量类型
                 currentCount: instanceGroup.CurrentCount,
                 targetCount: instanceGroup.TargetCount,
                 executionRole: instanceGroup.ExecutionRole
@@ -5860,6 +5867,23 @@ app.post('/api/cluster/hyperpod/add-instance-group', async (req, res) => {
         }
       ]
     };
+
+    // 如果是 Spot 实例，添加 CapacityRequirements
+    if (userConfig.isSpot) {
+      newInstanceGroup.CapacityRequirements = { Spot: {} };
+    }
+
+    // 如果指定了 subnet，添加 OverrideVpcConfig
+    if (userConfig.subnetId) {
+      // 获取 SecurityGroupId
+      const securityGroupId = clusterData.VpcConfig?.SecurityGroupIds?.[0] || 
+                             clusterInfo.eksCluster?.securityGroupId;
+      
+      newInstanceGroup.OverrideVpcConfig = {
+        SecurityGroupIds: [securityGroupId],
+        Subnets: [userConfig.subnetId]
+      };
+    }
 
     // 如果有TrainingPlanArn，添加到新实例组配置中
     if (userConfig.trainingPlanArn) {

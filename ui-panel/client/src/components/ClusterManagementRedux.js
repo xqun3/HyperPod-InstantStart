@@ -212,7 +212,7 @@ const ClusterManagementRedux = () => {
   const dependenciesStatus = useSelector(selectDependenciesStatus);
   const effectiveDependenciesStatus = useSelector(selectEffectiveDependenciesStatus);
   const loading = useSelector(selectClusterLoading);
-  const error = useSelector(selectClusterError);
+  // const error = useSelector(selectClusterError); // Unused
 
   // 本地状态管理
   const [showImportModal, setShowImportModal] = useState(false);
