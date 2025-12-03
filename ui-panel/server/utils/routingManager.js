@@ -125,7 +125,8 @@ spec:
             limits:
               cpu: "4"
               memory: 8Gi
-          command: ["sglang-router"]
+          # command: ["sglang-router"]
+          command: ["python", "-m", "sglang_router.launch_router"]
           args: ${this.generateRouterArgs(config, deploymentName)}
           ports:
             - containerPort: ${routerPort}
