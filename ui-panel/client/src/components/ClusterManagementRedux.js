@@ -68,23 +68,11 @@ const DependencyStatus = ({ cluster, dependenciesStatus }) => {
     const isImported = cluster?.type === 'imported';
 
     if (isImported) {
-      // 导入的集群：区分有无HyperPod
-      if (cluster.hyperPodCluster) {
-        // 有HyperPod的导入集群：显示N/A
-        return <Tag color="default">N/A</Tag>;
+      // 导入的集群：显示实际配置状态（不再区分有无HyperPod）
+      if (dependenciesStatus?.configured) {
+        return <Tag color="green">Configured</Tag>;
       } else {
-        // 纯EKS导入集群：检查是否配置过依赖
-        if (dependenciesStatus?.configured !== undefined) {
-          // 用户曾经配置过依赖，显示配置状态
-          if (dependenciesStatus.configured) {
-            return <Tag color="green">Configured</Tag>;
-          } else {
-            return <Tag color="warning">Not Configured</Tag>;
-          }
-        } else {
-          // 从未配置过依赖，显示Not Configured（需要配置）
-          return <Tag color="warning">Not Configured</Tag>;
-        }
+        return <Tag color="warning">Not Configured</Tag>;
       }
     } else {
       // 创建的集群：显示配置状态
@@ -119,16 +107,8 @@ const DependencyConfigButton = ({ clusterTag, currentCluster }) => {
 
   // 获取按钮文本和状态
   const getButtonProps = () => {
-    // 检查是否为导入的EKS+HyperPod集群（不需要配置依赖）
-    if (currentCluster?.hyperPodCluster && currentCluster?.type === 'imported') {
-      return {
-        text: 'Dependencies N/A',
-        disabled: true,
-        type: 'default',
-        icon: <CheckCircleOutlined />
-      };
-    }
-
+    // 导入的集群也可以配置依赖（移除了原有的禁用逻辑）
+    
     if (!dependenciesStatus) {
       return {
         text: 'Configure Dependencies',

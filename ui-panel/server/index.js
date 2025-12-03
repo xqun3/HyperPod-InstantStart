@@ -6618,11 +6618,12 @@ app.post('/api/cluster/configure-dependencies', async (req, res) => {
     }
 
     // 检查是否为导入的EKS+HyperPod集群（不需要配置依赖）
-    if (clusterInfo.hyperPodCluster && clusterInfo.type === 'imported') {
-      return res.status(400).json({ 
-        error: 'Dependencies configuration not needed for imported clusters with HyperPod' 
-      });
-    }
+    // 注释掉：导入的集群现在也可以配置依赖
+    // if (clusterInfo.hyperPodCluster && clusterInfo.type === 'imported') {
+    //   return res.status(400).json({ 
+    //     error: 'Dependencies configuration not needed for imported clusters with HyperPod' 
+    //   });
+    // }
 
     // 检查是否已配置或正在配置中
     if (clusterInfo.dependencies?.configured) {

@@ -263,6 +263,58 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
     await this.executeNonBlocking(commands);
   }
 
+  /**
+   * 安装 FSx Dependencies
+   */
+  static async installFSxDependencies(clusterConfigDir) {
+    console.log('Installing FSx dependencies...');
+    
+    const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+    
+    echo "=== Installing FSx CSI Driver ==="
+    
+    # 安装 FSx CSI Driver addon
+    aws eks create-addon \\
+      --cluster-name $EKS_CLUSTER_NAME \\
+      --addon-name aws-fsx-csi-driver \\
+      --region $AWS_REGION || echo "FSx CSI Driver addon already exists or failed"
+    
+    echo "FSx dependencies installation completed"
+    '`;
+    
+    await this.executeNonBlocking(commands);
+  }
+
+  /**
+   * 安装 kuberay-operator
+   */
+  static async installKuberayOperator(clusterConfigDir) {
+    console.log('Installing kuberay-operator...');
+    
+    const commands = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
+    
+    echo "=== Installing kuberay-operator ==="
+    
+    # 添加 kuberay helm repo
+    helm repo add kuberay https://ray-project.github.io/kuberay-helm/ || echo "Repo already exists"
+    helm repo update
+    
+    # 创建 namespace
+    kubectl create namespace kuberay-operator --dry-run=client -o yaml | kubectl apply -f -
+    
+    # 安装 kuberay-operator
+    helm upgrade --install kuberay-operator kuberay/kuberay-operator \\
+      --namespace kuberay-operator \\
+      --version 1.1.1 \\
+      --set image.tag=v1.1.1 \\
+      --timeout=10m || echo "kuberay-operator already installed"
+    
+    echo "kuberay-operator installation completed"
+    '`;
+    
+    await this.executeNonBlocking(commands);
+  }
+
   static async installnlbDependencies(clusterConfigDir) {
     console.log('Installing NLB dependencies...');
     
@@ -523,11 +575,73 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
   }
 
   /**
+   * 导入集群的依赖配置流程
+   */
+  static async configureImportedClusterDependencies(clusterTag, clusterManager) {
+    try {
+      console.log(`Configuring imported cluster dependencies for: ${clusterTag}`);
+      
+      const clusterDir = clusterManager.getClusterDir(clusterTag);
+      const configDir = path.join(clusterDir, 'config');
+      
+      if (!fs.existsSync(configDir)) {
+        throw new Error(`Cluster config directory not found: ${configDir}`);
+      }
+      
+      // 步骤 1: 生成 stack_envs
+      await this.fetchCloudFormationOutputs(configDir, clusterTag);
+      
+      // 步骤 2: 配置 kubectl 和 OIDC
+      await this.configureKubectlAndOIDC(configDir);
+
+      // 步骤 3: 安装 S3 CSI Driver
+      await this.installGeneralDependencies(configDir);
+      
+      // 步骤 4: 安装 FSx CSI Driver
+      await this.installFSxDependencies(configDir);
+      
+      // 步骤 5: 安装 kuberay-operator
+      await this.installKuberayOperator(configDir);
+      
+      console.log(`Successfully configured imported cluster dependencies for: ${clusterTag}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error(`Error configuring imported cluster dependencies for ${clusterTag}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * EKS集群基础依赖配置流程（不包含HyperPod专用依赖）
+   * 路由方法：根据集群类型选择配置流程
    */
   static async configureClusterDependencies(clusterTag, clusterManager) {
     try {
-      console.log(`Configuring EKS cluster dependencies for: ${clusterTag}`);
+      // 获取集群类型
+      const MetadataUtils = require('./metadataUtils');
+      const clusterType = MetadataUtils.getClusterType(clusterTag);
+      
+      if (clusterType === 'imported') {
+        // 导入集群使用简化流程
+        return await this.configureImportedClusterDependencies(clusterTag, clusterManager);
+      } else {
+        // 创建集群使用完整流程
+        return await this.configureCreatedClusterDependencies(clusterTag, clusterManager);
+      }
+      
+    } catch (error) {
+      console.error(`Error configuring cluster dependencies for ${clusterTag}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 创建集群的依赖配置流程（完整版）
+   */
+  static async configureCreatedClusterDependencies(clusterTag, clusterManager) {
+    try {
+      console.log(`Configuring created cluster dependencies for: ${clusterTag}`);
       
       // 获取集群配置目录
       const clusterDir = clusterManager.getClusterDir(clusterTag);
@@ -555,11 +669,15 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
       
       await this.installGeneralDependencies(configDir);
       
-      console.log(`Successfully configured EKS cluster dependencies for: ${clusterTag}`);
+      await this.installFSxDependencies(configDir);
+
+      await this.installKuberayOperator(configDir);
+      
+      console.log(`Successfully configured created cluster dependencies for: ${clusterTag}`);
       return { success: true };
       
     } catch (error) {
-      console.error(`Error configuring EKS cluster dependencies for ${clusterTag}:`, error);
+      console.error(`Error configuring created cluster dependencies for ${clusterTag}:`, error);
       throw error;
     }
   }
