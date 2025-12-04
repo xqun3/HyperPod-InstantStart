@@ -86,6 +86,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
   const [hyperpodKarpenterResourceModalVisible, setHyperpodKarpenterResourceModalVisible] = useState(false);
   const [hyperpodKarpenterResourceCreating, setHyperpodKarpenterResourceCreating] = useState(false);
   const [selectedInstanceGroups, setSelectedInstanceGroups] = useState([]);
+  const [deletingNodePool, setDeletingNodePool] = useState(null); // 新增：记录正在删除的 NodePool
 
   // 动态实例类型相关状态
   const [instanceTypesLoading, setInstanceTypesLoading] = useState(false);
@@ -1538,15 +1539,27 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                 <Button
                   size="small"
                   danger
+                  loading={deletingNodePool === record.name}
+                  disabled={deletingNodePool !== null}
                   onClick={async () => {
+                    setDeletingNodePool(record.name);
                     try {
-                      await fetch(`/api/cluster/hyperpod-karpenter/nodepool/${record.name}`, {
+                      const response = await fetch(`/api/cluster/hyperpod-karpenter/nodepool/${record.name}`, {
                         method: 'DELETE'
                       });
-                      message.success(`NodePool ${record.name} deleted`);
-                      fetchHyperPodKarpenterResources();
+                      const data = await response.json();
+                      
+                      if (response.ok) {
+                        message.success(`NodePool ${record.name} deleted`);
+                        await fetchHyperPodKarpenterResources();
+                      } else {
+                        message.error(`Failed to delete: ${data.error || 'Unknown error'}`);
+                      }
                     } catch (error) {
-                      message.error('Failed to delete NodePool');
+                      console.error('Error deleting NodePool:', error);
+                      message.error(`Error: ${error.message}`);
+                    } finally {
+                      setDeletingNodePool(null);
                     }
                   }}
                 >

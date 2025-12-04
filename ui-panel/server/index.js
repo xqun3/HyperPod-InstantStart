@@ -814,9 +814,9 @@ app.post('/api/deploy', async (req, res) => {
 
       let nodeSelectorTerms = [];
 
-      // HyperPod 节点选择器条件
+      // HyperPod 节点选择器（原生 + Karpenter 都有 sagemaker.amazonaws.com/compute-type 标签）
       if (hyperpodTypes.length > 0) {
-        nodeSelectorTerms.push(`            # 选项1：HyperPod 节点
+        nodeSelectorTerms.push(`            # HyperPod 节点（原生 + Karpenter）
             - matchExpressions:
               - key: sagemaker.amazonaws.com/compute-type
                 operator: In
@@ -826,9 +826,9 @@ app.post('/api/deploy', async (req, res) => {
                 values: [${hyperpodTypes.map(t => `"${t}"`).join(', ')}]`);
       }
 
-      // EC2 节点选择器条件 (EKS NodeGroup + Karpenter)
+      // EC2 节点选择器条件 (EKS NodeGroup + Karpenter EC2)
       if (gpuTypes.length > 0) {
-        nodeSelectorTerms.push(`            # 选项2：EC2 GPU 节点 (EKS NodeGroup + Karpenter)
+        nodeSelectorTerms.push(`            # EC2 GPU 节点 (EKS NodeGroup + Karpenter)
             - matchExpressions:
               - key: node.kubernetes.io/instance-type
                 operator: In
@@ -5177,7 +5177,8 @@ app.get('/api/cluster/cluster-available-instance', async (req, res) => {
       data: {
         hyperpod: [],
         eksNodeGroup: [],
-        karpenter: []
+        karpenter: [],
+        karpenterHyperPod: []  // 新增：Karpenter HyperPod 实例类型
       }
     };
 
@@ -5253,34 +5254,59 @@ app.get('/api/cluster/cluster-available-instance', async (req, res) => {
       console.warn('Error fetching EKS NodeGroup instance types:', error.message);
     }
 
-    // 3. 获取 Karpenter NodePool 实例类型
+    // 3. 获取 Karpenter NodePool 实例类型（分离 EC2 和 HyperPod）
     try {
       const nodePoolsJson = execSync('kubectl get nodepool -o json', { encoding: 'utf8', timeout: 10000 });
       const nodePoolsData = JSON.parse(nodePoolsJson);
 
       nodePoolsData.items.forEach(nodePool => {
         const nodePoolName = nodePool.metadata.name;
-        const requirements = nodePool.spec.template.spec.requirements || [];
+        const nodeClassRef = nodePool.spec?.template?.spec?.nodeClassRef;
+        
+        // 检查是否是 HyperpodNodeClass
+        if (nodeClassRef?.kind === 'HyperpodNodeClass') {
+          // 从 HyperpodNodeClass 获取实例类型
+          try {
+            const nodeClassName = nodeClassRef.name;
+            const nodeClassJson = execSync(`kubectl get hyperpodnodeclass ${nodeClassName} -o json`, { encoding: 'utf8', timeout: 5000 });
+            const nodeClassData = JSON.parse(nodeClassJson);
+            
+            // 从 status.instanceGroups 获取实例类型
+            const statusInstanceGroups = nodeClassData.status?.instanceGroups || [];
+            statusInstanceGroups.forEach(ig => {
+              const instanceTypes = ig.instanceTypes || [];
+              instanceTypes.forEach(instanceType => {
+                result.data.karpenterHyperPod.push({
+                  type: instanceType,
+                  nodePool: nodePoolName,
+                  available: true
+                });
+              });
+            });
+          } catch (ncError) {
+            console.warn(`Failed to get HyperpodNodeClass for NodePool ${nodePoolName}:`, ncError.message);
+          }
+        } else {
+          // EC2 Karpenter - 从 requirements 获取实例类型
+          const requirements = nodePool.spec.template.spec.requirements || [];
+          const instanceTypeReq = requirements.find(req =>
+            req.key === 'node.kubernetes.io/instance-type'
+          );
 
-        // 查找instance-type requirement
-        const instanceTypeReq = requirements.find(req =>
-          req.key === 'node.kubernetes.io/instance-type'
-        );
-
-        if (instanceTypeReq && instanceTypeReq.values) {
-          instanceTypeReq.values.forEach(instanceType => {
-            if (!instanceType.startsWith('ml.')) {
+          if (instanceTypeReq && instanceTypeReq.values) {
+            instanceTypeReq.values.forEach(instanceType => {
               result.data.karpenter.push({
                 type: instanceType,
                 nodePool: nodePoolName,
                 available: true
               });
-            }
-          });
+            });
+          }
         }
       });
 
-      console.log(`Found ${result.data.karpenter.length} Karpenter instance types`);
+      console.log(`Found ${result.data.karpenter.length} Karpenter EC2 instance types`);
+      console.log(`Found ${result.data.karpenterHyperPod.length} Karpenter HyperPod instance types`);
     } catch (error) {
       console.warn('Error fetching Karpenter instance types:', error.message);
     }

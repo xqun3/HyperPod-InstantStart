@@ -40,7 +40,8 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
   const [instanceTypes, setInstanceTypes] = useState({
     hyperpod: [],
     eksNodeGroup: [],
-    karpenter: []
+    karpenter: [],
+    karpenterHyperPod: []  // 新增：Karpenter HyperPod 实例类型
   });
   const [instanceTypesLoading, setInstanceTypesLoading] = useState(false);
 
@@ -136,6 +137,13 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
           </Option>
         ))}
       </OptGroup>
+      <OptGroup label="HyperPod Karpenter (ml.*)">
+        {instanceTypes.karpenterHyperPod.map((type, index) => (
+          <Option key={`kar-hp-${type.type}-${type.nodePool}-${index}`} value={`${type.type}#karpenter-hyperpod#${type.nodePool}`}>
+            {type.type} (Karpenter: {type.nodePool})
+          </Option>
+        ))}
+      </OptGroup>
       <OptGroup label="EC2">
         {/* EKS NodeGroup 实例 */}
         {instanceTypes.eksNodeGroup.map(type => (
@@ -145,7 +153,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
         ))}
         {/* Karpenter 实例 - 使用唯一的key和value来避免相同机型选择冲突 */}
         {instanceTypes.karpenter.map((type, index) => (
-          <Option key={`kar-${type.type}-${type.nodePool}-${index}`} value={`${type.type}#${type.nodePool}`}>
+          <Option key={`kar-${type.type}-${type.nodePool}-${index}`} value={`${type.type}#karpenter-ec2#${type.nodePool}`}>
             {type.type} (Karpenter: {type.nodePool})
           </Option>
         ))}
@@ -182,7 +190,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
 
     // 处理格式转换
     const processedTypes = instanceTypes.map(type => {
-      // 如果是Karpenter的特殊格式（type#nodePool），提取纯实例类型
+      // 如果是Karpenter的特殊格式（type#source#nodePool），提取纯实例类型
       if (type.includes('#')) {
         return type.split('#')[0];
       }

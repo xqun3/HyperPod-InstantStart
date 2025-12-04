@@ -99,8 +99,37 @@ class HyperPodKarpenterManager {
    */
   static async deleteNodePool(nodePoolName) {
     try {
-      const deleteCmd = `kubectl delete nodepool ${nodePoolName}`;
-      execSync(deleteCmd, { encoding: 'utf8' });
+      // 1. 获取 NodePool 信息，找到关联的 HyperpodNodeClass
+      const getNodePoolCmd = `kubectl get nodepool ${nodePoolName} -o json`;
+      const nodePoolOutput = execSync(getNodePoolCmd, { encoding: 'utf8' });
+      const nodePoolData = JSON.parse(nodePoolOutput);
+      
+      const nodeClassRef = nodePoolData.spec?.template?.spec?.nodeClassRef?.name;
+      
+      // 2. 删除 NodePool
+      const deleteNodePoolCmd = `kubectl delete nodepool ${nodePoolName}`;
+      execSync(deleteNodePoolCmd, { encoding: 'utf8' });
+      console.log(`NodePool ${nodePoolName} deleted successfully`);
+      
+      // 3. 如果有关联的 HyperpodNodeClass，也删除它
+      if (nodeClassRef) {
+        try {
+          const deleteNodeClassCmd = `kubectl delete hyperpodnodeclass ${nodeClassRef}`;
+          execSync(deleteNodeClassCmd, { encoding: 'utf8' });
+          console.log(`Associated HyperpodNodeClass ${nodeClassRef} deleted successfully`);
+          return { 
+            success: true, 
+            message: `NodePool ${nodePoolName} and HyperpodNodeClass ${nodeClassRef} deleted successfully` 
+          };
+        } catch (ncError) {
+          console.warn(`Failed to delete HyperpodNodeClass ${nodeClassRef}:`, ncError.message);
+          return { 
+            success: true, 
+            message: `NodePool ${nodePoolName} deleted, but failed to delete HyperpodNodeClass ${nodeClassRef}` 
+          };
+        }
+      }
+      
       return { success: true, message: `NodePool ${nodePoolName} deleted successfully` };
     } catch (error) {
       console.error('Failed to delete NodePool:', error.message);
