@@ -1809,7 +1809,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
 
           <Form.Item
             name="isSpot"
-            label="Use Spot Instances"
+            label="Use HyperPod Spot Instances"
             valuePropName="checked"
           >
             <Switch />

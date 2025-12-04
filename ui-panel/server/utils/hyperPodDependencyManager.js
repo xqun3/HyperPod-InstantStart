@@ -169,7 +169,7 @@ class HyperPodDependencyManager {
         --service-account hp-training-operator-controller-manager \\
         --region \$AWS_REGION >> /app/tmp/dependency-install.log 2>&1 || echo "Pod Identity Association exists checked"
 
-    # cert-manager 已在 EKS 集群依赖配置时安装，此处不再重复安装
+    # cert-manager 已在 EKS 集群依赖配置时安装
     # # 4. 重新创建cert-manager addon
     # echo "Creating cert-manager addon..."
     # aws eks create-addon \\
@@ -204,32 +204,32 @@ class HyperPodDependencyManager {
     #     fi
     # done
 
-    # 6. 等待 AWS Load Balancer Controller webhook 就绪
-    echo "Waiting for AWS Load Balancer Controller webhook to be ready..."
-    
-    # 等待 LBC deployment 就绪
-    kubectl wait --for=condition=available deployment/aws-load-balancer-controller -n kube-system --timeout=300s || echo "WARNING: LBC deployment wait timeout"
-    
-    # 等待 webhook service endpoints 就绪
-    for i in {1..30}; do
-        ENDPOINTS=\$(kubectl get endpoints aws-load-balancer-webhook-service -n kube-system -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
-        if [ -n "\$ENDPOINTS" ]; then
-            echo "Webhook service endpoints ready: \$ENDPOINTS"
-            break
-        fi
-        echo "Waiting for webhook endpoints... attempt \$i/30"
-        sleep 5
-    done
-    
-    # 验证 webhook 配置已注册
-    WEBHOOK_NAME=\$(kubectl get mutatingwebhookconfiguration aws-load-balancer-webhook -o jsonpath=\"{.webhooks[?(@.name==\\\"mservice.elbv2.k8s.aws\\\")].name}\" 2>/dev/null)
-    if [ "\$WEBHOOK_NAME" = "mservice.elbv2.k8s.aws" ]; then
-        echo "Webhook configuration registered: \$WEBHOOK_NAME"
-    else
-        echo "WARNING: Webhook configuration not found"
-    fi
-    
-    echo "Webhook readiness check completed"
+    # 6. 等待 AWS Load Balancer Controller webhook 就绪（暂时注释掉）
+    # echo "Waiting for AWS Load Balancer Controller webhook to be ready..."
+    # 
+    # # 等待 LBC deployment 就绪
+    # kubectl wait --for=condition=available deployment/aws-load-balancer-controller -n kube-system --timeout=300s || echo "WARNING: LBC deployment wait timeout"
+    # 
+    # # 等待 webhook service endpoints 就绪
+    # for i in {1..30}; do
+    #     ENDPOINTS=\$(kubectl get endpoints aws-load-balancer-webhook-service -n kube-system -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null)
+    #     if [ -n "\$ENDPOINTS" ]; then
+    #         echo "Webhook service endpoints ready: \$ENDPOINTS"
+    #         break
+    #     fi
+    #     echo "Waiting for webhook endpoints... attempt \$i/30"
+    #     sleep 5
+    # done
+    # 
+    # # 验证 webhook 配置已注册
+    # WEBHOOK_NAME=\$(kubectl get mutatingwebhookconfiguration aws-load-balancer-webhook -o jsonpath=\"{.webhooks[?(@.name==\\\"mservice.elbv2.k8s.aws\\\")].name}\" 2>/dev/null)
+    # if [ "\$WEBHOOK_NAME" = "mservice.elbv2.k8s.aws" ]; then
+    #     echo "Webhook configuration registered: \$WEBHOOK_NAME"
+    # else
+    #     echo "WARNING: Webhook configuration not found"
+    # fi
+    # 
+    # echo "Webhook readiness check completed"
     
     # 7. 重新创建HyperPod Training Operator addon
     echo "Creating HyperPod Training Operator addon..."
@@ -243,7 +243,16 @@ class HyperPodDependencyManager {
     echo "=== Installing KubeRay Operator ==="
     helm repo add kuberay https://ray-project.github.io/kuberay-helm/
     helm repo update
-    helm upgrade --install kuberay-operator kuberay/kuberay-operator --namespace kubeflow --timeout=300s || echo "KubeRay Operator installation failed"
+    
+    # 创建 namespace
+    kubectl create namespace kuberay-operator --dry-run=client -o yaml | kubectl apply -f -
+    
+    # 安装到 kuberay-operator namespace（与之前保持一致）
+    helm upgrade --install kuberay-operator kuberay/kuberay-operator \\
+        --namespace kuberay-operator \\
+        --version 1.1.1 \\
+        --set image.tag=v1.1.1 \\
+        --timeout=300s || echo "KubeRay Operator installation failed"
 
     echo "=== All HyperPod dependencies installed successfully ==="
     '`;

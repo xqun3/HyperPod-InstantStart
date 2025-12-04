@@ -290,11 +290,11 @@ class KarpenterManager {
   }
 
   /**
-   * 创建Karpenter IAM资源
+   * 创建Karpenter IAM资源（旧方法 - 使用 CloudFormation）
    * @param {Object} stackInfo - 基础设施信息
    * @param {string} logFile - 日志文件路径
    */
-  static async createKarpenterIAMResources(stackInfo, logFile) {
+  static async createKarpenterIAMResourcesOld(stackInfo, logFile) {
     try {
       const kptRoleName = `${stackInfo.EKS_CLUSTER_NAME}-karpenter`;
 
@@ -411,12 +411,222 @@ class KarpenterManager {
   }
 
   /**
+   * 创建Karpenter IAM资源（新方法 - 使用 eksctl）
+   * @param {Object} stackInfo - 基础设施信息
+   * @param {string} logFile - 日志文件路径
+   */
+  static async createKarpenterIAMResources(stackInfo, logFile) {
+    try {
+      const kptRoleName = `${stackInfo.EKS_CLUSTER_NAME}-karpenter`;
+
+      // 使用 eksctl 创建 IAM Role（不创建 ServiceAccount，让 Helm 创建）
+      this.log(logFile, 'Creating Karpenter IAM Role via eksctl...');
+      
+      const eksctlCmd = `eksctl create iamserviceaccount \\
+        --name karpenter \\
+        --namespace kube-system \\
+        --cluster ${stackInfo.EKS_CLUSTER_NAME} \\
+        --role-name ${kptRoleName} \\
+        --attach-policy-arn arn:aws:iam::aws:policy/AdministratorAccess \\
+        --approve \\
+        --role-only \\
+        --region ${stackInfo.REGION}`;
+
+      execSync(eksctlCmd, { encoding: 'utf8', timeout: 300000 });
+      this.log(logFile, `Karpenter Controller IAM Role created: ${kptRoleName}`);
+
+      // 创建 Spot 服务链接角色
+      this.log(logFile, 'Creating Spot service linked role...');
+      try {
+        const spotRoleCmd = 'aws iam create-service-linked-role --aws-service-name spot.amazonaws.com';
+        execSync(spotRoleCmd, { encoding: 'utf8', timeout: 30000 });
+        this.log(logFile, 'Spot service linked role created');
+      } catch (error) {
+        this.log(logFile, `Spot service linked role: ${error.message} (may already exist)`);
+      }
+
+      // 创建 KarpenterNodeRole
+      this.log(logFile, 'Creating KarpenterNodeRole...');
+      const nodeRoleName = `KarpenterNodeRole-${stackInfo.EKS_CLUSTER_NAME}`;
+      const nodeTrustPolicy = {
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": { "Service": "ec2.amazonaws.com" },
+          "Action": "sts:AssumeRole"
+        }]
+      };
+
+      const nodeTrustPolicyPath = '/tmp/karpenter-node-trust-policy.json';
+      fs.writeFileSync(nodeTrustPolicyPath, JSON.stringify(nodeTrustPolicy, null, 2));
+
+      try {
+        const createNodeRoleCmd = `aws iam create-role \\
+          --role-name ${nodeRoleName} \\
+          --assume-role-policy-document file://${nodeTrustPolicyPath}`;
+        execSync(createNodeRoleCmd, { encoding: 'utf8', timeout: 30000 });
+        this.log(logFile, `KarpenterNodeRole created: ${nodeRoleName}`);
+      } catch (error) {
+        this.log(logFile, `KarpenterNodeRole: ${error.message} (may already exist)`);
+      }
+
+      // 附加必要的 AWS Managed Policies 到 NodeRole
+      const nodePolicies = [
+        'arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy',
+        'arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy',
+        'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly',
+        'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      ];
+
+      for (const policyArn of nodePolicies) {
+        try {
+          const attachCmd = `aws iam attach-role-policy --role-name ${nodeRoleName} --policy-arn ${policyArn}`;
+          execSync(attachCmd, { encoding: 'utf8', timeout: 30000 });
+          this.log(logFile, `Attached policy: ${policyArn}`);
+        } catch (error) {
+          this.log(logFile, `Policy attachment: ${error.message} (may already be attached)`);
+        }
+      }
+
+      // 创建 Access Entry
+      this.log(logFile, 'Creating Access Entry...');
+      try {
+        const accessEntryCmd = `aws eks create-access-entry \\
+          --cluster-name ${stackInfo.EKS_CLUSTER_NAME} \\
+          --principal-arn arn:aws:iam::${stackInfo.AWS_ACCOUNT_ID}:role/${nodeRoleName} \\
+          --type EC2_LINUX`;
+
+        execSync(accessEntryCmd, { encoding: 'utf8', timeout: 30000 });
+        this.log(logFile, 'Access Entry created');
+      } catch (error) {
+        this.log(logFile, `Access Entry: ${error.message} (may already exist)`);
+      }
+
+      // 创建 SQS 中断队列
+      this.log(logFile, 'Creating Karpenter interruption queue...');
+      const queueName = stackInfo.EKS_CLUSTER_NAME;
+      try {
+        const createQueueCmd = `aws sqs create-queue \\
+          --queue-name ${queueName} \\
+          --attributes MessageRetentionPeriod=300,SqsManagedSseEnabled=true \\
+          --region ${stackInfo.REGION}`;
+        
+        const queueResult = execSync(createQueueCmd, { encoding: 'utf8', timeout: 30000 });
+        const queueUrl = JSON.parse(queueResult).QueueUrl;
+        this.log(logFile, `SQS queue created: ${queueUrl}`);
+
+        // 获取队列 ARN
+        const getQueueArnCmd = `aws sqs get-queue-attributes \\
+          --queue-url ${queueUrl} \\
+          --attribute-names QueueArn \\
+          --region ${stackInfo.REGION}`;
+        const queueArnResult = execSync(getQueueArnCmd, { encoding: 'utf8', timeout: 30000 });
+        const queueArn = JSON.parse(queueArnResult).Attributes.QueueArn;
+
+        // 设置队列策略（使用正确的格式）
+        const queuePolicy = {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["events.amazonaws.com", "sqs.amazonaws.com"]
+              },
+              "Action": "sqs:SendMessage",
+              "Resource": queueArn
+            },
+            {
+              "Sid": "DenyHTTP",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "sqs:*",
+              "Resource": queueArn,
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        };
+
+        const setQueuePolicyCmd = `aws sqs set-queue-attributes \\
+          --queue-url ${queueUrl} \\
+          --attributes '{"Policy":"${JSON.stringify(queuePolicy).replace(/"/g, '\\"')}"}' \\
+          --region ${stackInfo.REGION}`;
+        execSync(setQueuePolicyCmd, { encoding: 'utf8', timeout: 30000 });
+        this.log(logFile, 'SQS queue policy set');
+
+        // 创建 EventBridge 规则
+        this.log(logFile, 'Creating EventBridge rules...');
+        
+        const rules = [
+          {
+            name: `${stackInfo.EKS_CLUSTER_NAME}-spot-interruption`,
+            pattern: { "source": ["aws.ec2"], "detail-type": ["EC2 Spot Instance Interruption Warning"] }
+          },
+          {
+            name: `${stackInfo.EKS_CLUSTER_NAME}-rebalance`,
+            pattern: { "source": ["aws.ec2"], "detail-type": ["EC2 Instance Rebalance Recommendation"] }
+          },
+          {
+            name: `${stackInfo.EKS_CLUSTER_NAME}-instance-state-change`,
+            pattern: { "source": ["aws.ec2"], "detail-type": ["EC2 Instance State-change Notification"] }
+          },
+          {
+            name: `${stackInfo.EKS_CLUSTER_NAME}-scheduled-change`,
+            pattern: { "source": ["aws.health"], "detail-type": ["AWS Health Event"] }
+          }
+        ];
+
+        for (const rule of rules) {
+          try {
+            // 创建规则
+            const createRuleCmd = `aws events put-rule \\
+              --name ${rule.name} \\
+              --event-pattern '${JSON.stringify(rule.pattern)}' \\
+              --region ${stackInfo.REGION}`;
+            execSync(createRuleCmd, { encoding: 'utf8', timeout: 30000 });
+
+            // 添加目标
+            const putTargetsCmd = `aws events put-targets \\
+              --rule ${rule.name} \\
+              --targets Id=1,Arn=${queueArn} \\
+              --region ${stackInfo.REGION}`;
+            execSync(putTargetsCmd, { encoding: 'utf8', timeout: 30000 });
+            
+            this.log(logFile, `EventBridge rule created: ${rule.name}`);
+          } catch (error) {
+            this.log(logFile, `EventBridge rule ${rule.name}: ${error.message} (may already exist)`);
+          }
+        }
+
+      } catch (error) {
+        this.log(logFile, `SQS/EventBridge setup: ${error.message} (may already exist)`);
+      }
+
+    } catch (error) {
+      this.log(logFile, `Error creating Karpenter IAM resources: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * 安装Karpenter Helm Chart
    * @param {Object} stackInfo - 基础设施信息
    * @param {string} logFile - 日志文件路径
    */
   static async installKarpenterHelm(stackInfo, logFile) {
     try {
+      // 删除可能存在的旧 ServiceAccount（由 eksctl 创建）
+      this.log(logFile, 'Cleaning up old ServiceAccount if exists...');
+      try {
+        execSync('kubectl delete serviceaccount karpenter -n kube-system', { encoding: 'utf8', timeout: 30000 });
+        this.log(logFile, 'Old ServiceAccount deleted');
+      } catch (error) {
+        this.log(logFile, `ServiceAccount cleanup: ${error.message} (may not exist)`);
+      }
+
       // 登出Helm registry
       this.log(logFile, 'Logging out of Helm registry...');
       try {
@@ -434,6 +644,8 @@ class KarpenterManager {
         --create-namespace \\
         --set "settings.clusterName=${stackInfo.EKS_CLUSTER_NAME}" \\
         --set "settings.interruptionQueue=${stackInfo.EKS_CLUSTER_NAME}" \\
+        --set "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::${stackInfo.AWS_ACCOUNT_ID}:role/${stackInfo.EKS_CLUSTER_NAME}-karpenter" \\
+        --set serviceAccount.automountServiceAccountToken=true \\
         --set controller.resources.requests.cpu=1 \\
         --set controller.resources.requests.memory=1Gi \\
         --set controller.resources.limits.cpu=1 \\

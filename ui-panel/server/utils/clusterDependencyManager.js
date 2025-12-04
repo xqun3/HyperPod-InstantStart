@@ -175,7 +175,8 @@ fi`;
     console.log('Creating namespaces...');
     
     const namespaceCmd = `cd ${clusterConfigDir} && bash -c 'source init_envs && source stack_envs && 
-kubectl create namespace aws-hyperpod --dry-run=client -o yaml | kubectl apply -f -'`;
+kubectl create namespace aws-hyperpod --dry-run=client -o yaml | kubectl apply -f - &&
+kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -'`;
     
     await this.executeNonBlocking(namespaceCmd);
   }
@@ -204,10 +205,10 @@ helm upgrade --install hyperpod-dependencies ./sagemaker-hyperpod-cli/helm_chart
   --set hyperpod-patching.enabled=true \\
   --set mpi-operator.enabled=true \\
   --set trainingOperators.enabled=true \\
-  --set deep-health-check.enabled=false \\
-  --set job-auto-restart.enabled=false \\
   --set inferenceOperators.enabled=false \\
   --set mlflow.enabled=false \\
+  --set deep-health-check.enabled=false \\
+  --set job-auto-restart.enabled=false \\
   --set storage.enabled=false \\
   --set cluster-role-and-bindings.enabled=false \\
   --set namespaced-role-and-bindings.enabled=false \\

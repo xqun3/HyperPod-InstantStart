@@ -258,7 +258,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>EFA Count</Text>
+                  <Text strong>Request Num of EFAs per Node</Text>
                 </Space>
               }
               name="efaCount"
@@ -272,7 +272,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>GPUs Per Replica</Text>
+                  <Text strong>Request Num of GPUs per Node</Text>
                 </Space>
               }
               name="nprocPerNode"
@@ -286,7 +286,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
               label={
                 <Space>
                   <ThunderboltOutlined />
-                  <Text strong>Num Replicas</Text>
+                  <Text strong>Request Num of Nodes</Text>
                 </Space>
               }
               name="replicas"

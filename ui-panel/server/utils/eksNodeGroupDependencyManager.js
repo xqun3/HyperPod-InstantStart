@@ -107,13 +107,51 @@ class EksNodeGroupDependencyManager {
   }
   
   /**
-   * 安装自定义依赖
+   * 安装自定义依赖（旧版本 - 使用 kubectl apply）
+   */
+  static async installCustomDependenciesOld(configDir, nodeGroupName) {
+    console.log(`Installing custom dependencies for node group: ${nodeGroupName}`);
+    
+    const commands = `cd ${configDir} && bash -c 'source init_envs && 
+    kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.3/deployments/static/nvidia-device-plugin.yml && 
+    helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true && 
+    helm repo update && 
+    helm upgrade --install efa eks/aws-efa-k8s-device-plugin -n kube-system
+    '`;
+    
+    try {
+      execSync(commands, { stdio: 'inherit' });
+      console.log(`Custom dependencies installed successfully for node group: ${nodeGroupName}`);
+    } catch (error) {
+      console.error(`Error installing custom dependencies: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 安装自定义依赖（新版本 - 使用 Helm + affinity，排除 HyperPod 节点）
    */
   static async installCustomDependencies(configDir, nodeGroupName) {
     console.log(`Installing custom dependencies for node group: ${nodeGroupName}`);
     
     const commands = `cd ${configDir} && bash -c 'source init_envs && 
-    kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.3/deployments/static/nvidia-device-plugin.yml && 
+    # 添加 nvidia helm repo
+    helm repo add nvdp https://nvidia.github.io/k8s-device-plugin 2>/dev/null || true && 
+    helm repo update && 
+    
+    # 使用 Helm 安装 nvidia-device-plugin，排除 HyperPod 节点（没有 sagemaker.amazonaws.com/compute-type 标签）
+    helm upgrade --install nvidia-device-plugin nvdp/nvidia-device-plugin \\
+      --namespace kube-system \\
+      --version 0.17.3 \\
+      --set affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=sagemaker.amazonaws.com/compute-type \\
+      --set affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=DoesNotExist \\
+      --set tolerations[0].key=nvidia.com/gpu \\
+      --set tolerations[0].operator=Exists \\
+      --set tolerations[0].effect=NoSchedule && 
+    
+    # 安装 EFA device plugin
+    helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true && 
+    helm repo update && 
     helm upgrade --install efa eks/aws-efa-k8s-device-plugin -n kube-system
     '`;
     

@@ -7283,7 +7283,7 @@ app.post('/api/cluster/create-hyperpod', async (req, res) => {
       PrivateSubnet1CIDR: hyperPodPrivateSubnetCidr,
       HyperPodClusterName: hyperPodClusterName,
       NodeRecovery: 'None',
-      UseContinuousNodeProvisioningMode: 'false',
+      UseContinuousNodeProvisioningMode: 'true',
       CreateAcceleratedInstanceGroup: 'true',
       AcceleratedInstanceGroupName: `accelerated-${clusterTag}`,
       AcceleratedInstanceType: userConfig.AcceleratedInstanceType,

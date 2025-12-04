@@ -506,7 +506,7 @@ const ClusterStatusV2Redux = () => {
           rowKey="nodeName"
           size="small"
           pagination={false}
-          scroll={{ y: 300 }}
+          // scroll={{ y: 300 }}
           locale={{
             emptyText: loading ? 'Refreshing cluster data...' : 'No cluster data available'
           }}
@@ -521,6 +521,7 @@ const ClusterStatusV2Redux = () => {
         <Modal
           title="Configure HAMi GPU Partition"
           open={partitionModalVisible}
+          centered
           onCancel={() => {
             setPartitionModalVisible(false);
             setSelectedNode(null);

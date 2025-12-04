@@ -251,7 +251,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
               label={
                 <Space>
                   <ThunderboltOutlined />
-                  <Text strong>Header Replica</Text>
+                  <Text strong>Num Node for Header</Text>
                 </Space>
               }
               extra="at least 1 header replica is required"
@@ -264,7 +264,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
               label={
                 <Space>
                   <ThunderboltOutlined />
-                  <Text strong>Worker Replicas</Text>
+                  <Text strong>Num Nodes for Worker</Text>
                 </Space>
               }
               name="workerReplicas"
@@ -279,7 +279,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>GPUs Per Replica</Text>
+                  <Text strong>Request Num of GPUs per Node</Text>
                 </Space>
               }
               name="gpuPerNode"
@@ -293,7 +293,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
               label={
                 <Space>
                   <SettingOutlined />
-                  <Text strong>EFA Per Node</Text>
+                  <Text strong>Request Num of EFAs per Node</Text>
                 </Space>
               }
               name="efaPerNode"
