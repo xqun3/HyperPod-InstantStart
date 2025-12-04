@@ -137,7 +137,7 @@ class HyperPodKarpenterInstaller {
       await fs.appendFile(logFile, `Step 4: Updating HyperPod cluster with Karpenter\n`);
       await fs.appendFile(logFile, `Role ARN: ${roleArn}\n`);
       
-      const updateClusterCmd = `aws sagemaker update-cluster --cluster-name "${hyperPodClusterName}" --auto-scaling Mode=Enable,AutoScalerType=Karpenter --cluster-role "${roleArn}" --region ${region}`;
+      const updateClusterCmd = `aws sagemaker update-cluster --cluster-name "${hyperPodClusterName}" --auto-scaling Mode=Enable,AutoScalerType=Karpenter --cluster-role "${roleArn}" --node-recovery Automatic --region ${region}`;
       
       try {
         const updateOutput = execSync(updateClusterCmd, { encoding: 'utf8' });
