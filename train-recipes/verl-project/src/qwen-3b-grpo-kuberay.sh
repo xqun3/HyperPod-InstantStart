@@ -4,7 +4,7 @@ set -x
 
 echo "=== Starting VeRL Training on KubeRay ==="
 
-TOTAL_NUM_NODES=$((INSTRT_NUM_NODES + 1))
+export PYTHONPATH=/verl_workspace:/verl_workspace/verl
 
 python3 -c "import ray; print(f'Ray initialized: {ray.is_initialized()}'); print(f'Ray nodes: {len(ray.nodes()) if ray.is_initialized() else 0}')"
 # export VLLM_ATTENTION_BACKEND=XFORMERS
@@ -43,7 +43,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name='verl_grpo_example_gsm8k' \
     trainer.experiment_name='qwen2_3b_function_rm_kuberay' \
     trainer.n_gpus_per_node=${INSTRT_PROC_PER_NODE} \
-    trainer.nnodes=${TOTAL_NUM_NODES} \
+    trainer.nnodes=${INSTRT_NUM_NODES} \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
     trainer.total_epochs=15 $@

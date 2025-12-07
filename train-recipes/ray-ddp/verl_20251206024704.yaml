@@ -1,10 +1,10 @@
 apiVersion: ray.io/v1
 kind: RayJob
 metadata:
-  name: JOB_NAME
+  name: d-training-a1
   namespace: default
 spec:
-  entrypoint: bash ENTRY_POINT_PATH
+  entrypoint: bash /s3/train-recipes/ray-ddp/run-all.sh
   # backoffLimit: 0
   shutdownAfterJobFinishes: true
   ttlSecondsAfterFinished: 3600
@@ -20,21 +20,21 @@ spec:
             hami.io/webhook: ignore
         spec:
           nodeSelector:
-            beta.kubernetes.io/instance-type: INSTANCE_TYPE
+            beta.kubernetes.io/instance-type: ml.g6.12xlarge
           containers:
           - name: ray-head
-            image: DOCKER_IMAGE
+            image: 633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest
             resources:
               limits:
                 # cpu: 20
                 # memory: 80Gi
-                nvidia.com/gpu: GPU_PER_NODE
-                vpc.amazonaws.com/efa: EFA_PER_NODE
+                nvidia.com/gpu: 4
+                vpc.amazonaws.com/efa: 1
               requests:
                 # cpu: 20
                 # memory: 80Gi
-                nvidia.com/gpu: GPU_PER_NODE
-                vpc.amazonaws.com/efa: EFA_PER_NODE
+                nvidia.com/gpu: 4
+                vpc.amazonaws.com/efa: 1
             env:
             # - name: PYTHONPATH
             #   value: "/verl_workspace:/verl_workspace/verl"
@@ -45,9 +45,9 @@ spec:
             - name: NCCL_SOCKET_IFNAME
               value: "eth0"
             - name: INSTRT_NUM_NODES
-              value: "TOT_NUM_NODES"
+              value: "2"
             - name: INSTRT_PROC_PER_NODE
-              value: "GPU_PER_NODE"
+              value: "4"
             volumeMounts:
             - name: persistent-storage-s3
               mountPath: /s3
@@ -77,9 +77,9 @@ spec:
             persistentVolumeClaim:
               claimName: s3-claim
     workerGroupSpecs:
-    - replicas: WORKER_REPLICAS
+    - replicas: 1
       minReplicas: 0
-      maxReplicas: MAX_REPLICAS
+      maxReplicas: 3
       groupName: worker-group
       rayStartParams: {}
       template:
@@ -88,21 +88,21 @@ spec:
             hami.io/webhook: ignore
         spec:
           nodeSelector:
-            beta.kubernetes.io/instance-type: INSTANCE_TYPE
+            beta.kubernetes.io/instance-type: ml.g6.12xlarge
           containers:
           - name: ray-worker
-            image: DOCKER_IMAGE
+            image: 633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest
             resources:
               limits:
                 # cpu: 20
                 # memory: 80Gi
-                nvidia.com/gpu: GPU_PER_NODE
-                vpc.amazonaws.com/efa: EFA_PER_NODE
+                nvidia.com/gpu: 4
+                vpc.amazonaws.com/efa: 1
               requests:
                 # cpu: 20
                 # memory: 80Gi
-                nvidia.com/gpu: GPU_PER_NODE
-                vpc.amazonaws.com/efa: EFA_PER_NODE
+                nvidia.com/gpu: 4
+                vpc.amazonaws.com/efa: 1
             env:
             # - name: PYTHONPATH
             #   value: "/verl_workspace:/verl_workspace/verl"
@@ -113,9 +113,9 @@ spec:
             - name: NCCL_SOCKET_IFNAME
               value: "eth0"
             - name: INSTRT_NUM_NODES
-              value: "TOT_NUM_NODES"
+              value: "2"
             - name: INSTRT_PROC_PER_NODE
-              value: "GPU_PER_NODE"
+              value: "4"
             volumeMounts:
             - name: persistent-storage-s3
               mountPath: /s3

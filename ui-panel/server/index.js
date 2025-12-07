@@ -2546,6 +2546,9 @@ app.post('/api/launch-verl-training', async (req, res) => {
     const templatePath = path.join(__dirname, '../templates/verl-training-template.yaml');
     const templateContent = await fs.readFile(templatePath, 'utf8');
     
+    // 计算总节点数 = 1 (head) + worker replicas
+    const totNumNodes = 1 + workerReplicas;
+    
     // 替换模板中的占位符
     const newYamlContent = templateContent
       .replace(/JOB_NAME/g, jobName)
@@ -2555,7 +2558,8 @@ app.post('/api/launch-verl-training', async (req, res) => {
       .replace(/WORKER_REPLICAS/g, workerReplicas.toString())
       .replace(/MAX_REPLICAS/g, Math.max(3, workerReplicas + 2).toString())
       .replace(/GPU_PER_NODE/g, gpuPerNode.toString())
-      .replace(/EFA_PER_NODE/g, efaPerNode.toString());
+      .replace(/EFA_PER_NODE/g, efaPerNode.toString())
+      .replace(/TOT_NUM_NODES/g, totNumNodes.toString());
 
     console.log('Generated VERL YAML content preview:', newYamlContent.substring(0, 500) + '...');
 

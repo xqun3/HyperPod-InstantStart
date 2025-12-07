@@ -1,8 +1,8 @@
 {
-  "jobName": "verl-training-a1",
+  "jobName": "d-training-a1",
   "instanceType": "ml.g6.12xlarge",
   "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest",
-  "entryPointPath": "verl-project/src/qwen-3b-grpo-kuberay.sh",
+  "entryPointPath": "/s3/run-all.sh",
   "workerReplicas": 1,
   "gpuPerNode": 4,
   "efaPerNode": 1

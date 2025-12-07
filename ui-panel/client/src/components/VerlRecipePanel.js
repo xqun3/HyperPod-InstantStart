@@ -159,7 +159,7 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
         initialValues={{
           jobName: 'verl-training-a1',
           instanceType: '',
-          entryPointPath: 'verl-project/src/qwen-3b-grpo-kuberay.sh',
+          entryPointPath: '/s3/train-recipes/verl-project/src/qwen-3b-grpo-kuberay.sh',
           dockerImage: '633205212955.dkr.ecr.us-west-2.amazonaws.com/hypd-verl:latest',
           workerReplicas: 1,
           gpuPerNode: 4,
@@ -239,9 +239,8 @@ const VerlRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, in
           }
           name="entryPointPath"
           rules={[{ required: true, message: 'Please input entry point path!' }]}
-          extra="Relative Path under /s3/train-recipes/"
         >
-          <Input placeholder="verl-project/src/qwen-3b-grpo-kuberay.sh" />
+          <Input placeholder="/s3/train-recipes/verl-project/src/qwen-3b-grpo-kuberay.sh" />
         </Form.Item>
 
         {/* 资源配置 */}
