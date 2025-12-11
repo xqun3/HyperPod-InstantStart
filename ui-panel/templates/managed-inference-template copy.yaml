@@ -4,7 +4,7 @@ metadata:
   name: DEPLOYMENT_NAME
   namespace: defaultHAMI_LABEL
 spec:
-  modelName: MODEL_NAMEINVOCATION_ENDPOINT
+  modelName: MODEL_NAME
   instanceType: INSTANCE_TYPE
   replicas: REPLICAS_COUNT
 
@@ -13,8 +13,8 @@ spec:
     s3Storage:
       bucketName: S3_BUCKET_NAME
       region: AWS_REGION
-    modelLocation: MODEL_LOCATIONKV_CACHE_SPEC
-INTELLIGENT_ROUTING_SPEC
+    modelLocation: MODEL_LOCATION
+
   worker:
     image: DOCKER_IMAGE
     args:WORKER_ARGS
@@ -30,4 +30,4 @@ INTELLIGENT_ROUTING_SPEC
         nvidia.com/gpu: "GPU_COUNT"GPU_MEMORY
     environmentVariables:
       - name: HF_HUB_OFFLINE
-        value: "1"SESSION_KEY_ENV
+        value: "1"

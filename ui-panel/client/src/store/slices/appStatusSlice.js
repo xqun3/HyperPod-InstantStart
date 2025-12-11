@@ -156,6 +156,32 @@ export const fetchTrainingJobs = createAsyncThunk(
   }
 );
 
+// 异步操作：获取 InferenceEndpointConfig 资源
+export const fetchInferenceEndpoints = createAsyncThunk(
+  'appStatus/fetchInferenceEndpoints',
+  async (_, { rejectWithValue }) => {
+    try {
+      console.log('Fetching InferenceEndpointConfig resources via Redux...');
+      const response = await fetch('/api/inference-endpoints');
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Inference endpoints status response:', data);
+
+      return {
+        inferenceEndpoints: data.success ? (data.endpoints || []) : [],
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error fetching inference endpoints:', error);
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // 新增：使用V2 API的优化组合获取
 export const fetchAppStatusV2 = createAsyncThunk(
   'appStatus/fetchAppStatusV2',
@@ -197,13 +223,14 @@ export const refreshAllAppStatus = createAsyncThunk(
         dispatch(fetchRayJobs()).unwrap(),
         dispatch(fetchBindingServices()).unwrap(),
         dispatch(fetchDeployments()).unwrap(),        // 新增
-        dispatch(fetchTrainingJobs()).unwrap()        // 新增
+        dispatch(fetchTrainingJobs()).unwrap(),       // 新增
+        dispatch(fetchInferenceEndpoints()).unwrap()  // 新增
       ]);
 
       const errors = [];
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
-          const operations = ['App Status V2', 'RayJobs', 'Business Services', 'Deployments', 'Training Jobs'];
+          const operations = ['App Status V2', 'RayJobs', 'Business Services', 'Deployments', 'Training Jobs', 'Inference Endpoints'];
           errors.push(`${operations[index]}: ${result.reason}`);
         }
       });
@@ -233,6 +260,7 @@ const appStatusSlice = createSlice({
     bindingServices: [],
     deployments: [],           // 新增
     trainingJobs: [],          // 新增
+    inferenceEndpoints: [],    // 新增
 
     // 加载状态管理
     loading: false,
@@ -242,6 +270,7 @@ const appStatusSlice = createSlice({
     bindingServicesLoading: false,
     deploymentsLoading: false, // 新增
     trainingJobsLoading: false, // 新增
+    inferenceEndpointsLoading: false, // 新增
 
     // 错误状态管理
     error: null,
@@ -251,6 +280,7 @@ const appStatusSlice = createSlice({
     bindingServicesError: null,
     deploymentsError: null,    // 新增
     trainingJobsError: null,   // 新增
+    inferenceEndpointsError: null, // 新增
 
     // 时间戳记录
     lastUpdate: null,
@@ -260,6 +290,7 @@ const appStatusSlice = createSlice({
     lastBindingServicesUpdate: null,
     lastDeploymentsUpdate: null,    // 新增
     lastTrainingJobsUpdate: null,   // 新增
+    lastInferenceEndpointsUpdate: null, // 新增
 
     // 统计信息
     stats: {
@@ -280,7 +311,9 @@ const appStatusSlice = createSlice({
       totalTrainingJobs: 0,       // 新增
       runningTrainingJobs: 0,     // 新增
       completedTrainingJobs: 0,   // 新增
-      failedTrainingJobs: 0       // 新增
+      failedTrainingJobs: 0,      // 新增
+      totalInferenceEndpoints: 0, // 新增
+      activeInferenceEndpoints: 0 // 新增
     }
   },
   reducers: {
@@ -293,6 +326,7 @@ const appStatusSlice = createSlice({
       state.bindingServicesError = null;
       state.deploymentsError = null;      // 新增
       state.trainingJobsError = null;     // 新增
+      state.inferenceEndpointsError = null; // 新增
     },
 
     // 更新单个 Pod 状态（用于 WebSocket 实时更新）
@@ -448,13 +482,24 @@ const appStatusSlice = createSlice({
         failedTrainingJobs: 0
       });
 
+      // InferenceEndpointConfig 统计
+      const inferenceEndpointStats = {
+        totalInferenceEndpoints: state.inferenceEndpoints.length,
+        activeInferenceEndpoints: state.inferenceEndpoints.filter(endpoint =>
+          endpoint.state === 'InService' ||
+          endpoint.deploymentStatus === 'DeploymentComplete' ||
+          endpoint.availableReplicas > 0
+        ).length
+      };
+
       state.stats = {
         ...podStats,
         ...serviceStats,
         ...rayJobStats,
         ...businessServiceStats,
         ...deploymentStats,        // 新增
-        ...trainingJobStats        // 新增
+        ...trainingJobStats,       // 新增
+        ...inferenceEndpointStats  // 新增
       };
     }
   },
@@ -605,6 +650,27 @@ const appStatusSlice = createSlice({
       .addCase(fetchTrainingJobs.rejected, (state, action) => {
         state.trainingJobsLoading = false;
         state.trainingJobsError = action.payload;
+      })
+
+    // 处理获取 InferenceEndpointConfig
+      .addCase(fetchInferenceEndpoints.pending, (state) => {
+        state.inferenceEndpointsLoading = true;
+        state.inferenceEndpointsError = null;
+      })
+      .addCase(fetchInferenceEndpoints.fulfilled, (state, action) => {
+        state.inferenceEndpointsLoading = false;
+        state.inferenceEndpoints = action.payload.inferenceEndpoints;
+        state.lastInferenceEndpointsUpdate = action.payload.timestamp;
+
+        console.log('Redux: Updated inference endpoints:', {
+          inferenceEndpointsCount: state.inferenceEndpoints.length
+        });
+
+        appStatusSlice.caseReducers.updateStats(state);
+      })
+      .addCase(fetchInferenceEndpoints.rejected, (state, action) => {
+        state.inferenceEndpointsLoading = false;
+        state.inferenceEndpointsError = action.payload;
       })
 
     // 处理组合刷新操作

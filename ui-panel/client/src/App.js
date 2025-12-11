@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Layout, Row, Col, Card, message, Tabs, Space, Badge, Button } from 'antd';
 import { useDispatch, useSelector } from 'react-redux';
-import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, CloudServerOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, CloudServerOutlined, SettingOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { refreshAllAppStatus } from './store/slices/appStatusSlice';
 import { selectAppPods, selectAppServices } from './store/selectors';
 import ThemeProvider from './components/ThemeProvider';
@@ -1035,7 +1035,7 @@ function App() {
                         label: (
                           <Space>
                             Managed Inference
-                            <Badge count="NEW" style={{ backgroundColor: '#52c41a' }} />
+                            <Badge count="NEW" style={{ backgroundColor: '#ff4d4f' }} />
                           </Space>
                         ),
                         children: (
@@ -1194,13 +1194,28 @@ function App() {
                     />
                   </div>
                 </TabPane>
-                <TabPane 
+                <TabPane
+                  tab={
+                    <Space>
+                      <ThunderboltOutlined />
+                      InferenceEndpointConfig
+                    </Space>
+                  }
+                  key="inference-endpoints"
+                >
+                  <div style={{ padding: '16px' }}>
+                    <StatusMonitorRedux
+                      activeTab="inference"
+                    />
+                  </div>
+                </TabPane>
+                <TabPane
                   tab={
                     <Space>
                       <ExperimentOutlined />
                       HyperPodPytorchJob
                     </Space>
-                  } 
+                  }
                   key="hyperpod-jobs"
                 >
                   <div style={{ padding: '16px' }}>

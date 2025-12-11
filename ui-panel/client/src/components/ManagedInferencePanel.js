@@ -11,7 +11,12 @@ import {
   Col,
   AutoComplete,
   Select,
-  message
+  message,
+  Collapse,
+  Switch,
+  Card,
+  Typography,
+  Divider
 } from 'antd';
 import {
   RocketOutlined,
@@ -25,15 +30,26 @@ import {
   DatabaseOutlined,
   GlobalOutlined,
   CloudServerOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  ThunderboltFilled,
+  ApiOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
 const { Option } = Select;
+const { Panel } = Collapse;
+const { Text, Paragraph } = Typography;
 
 const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
   const [deploymentForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
+
+  // KV Cache 和 Intelligent Routing 状态
+  const [enableKvCache, setEnableKvCache] = useState(false);
+  const [enableL1Cache, setEnableL1Cache] = useState(false);
+  const [enableL2Cache, setEnableL2Cache] = useState(false);
+  const [enableIntelligentRouting, setEnableIntelligentRouting] = useState(false);
+  const [routingStrategy, setRoutingStrategy] = useState('prefixaware');
 
   // 实例类型相关状态 - 只需要 HyperPod 实例类型
   const [instanceTypes, setInstanceTypes] = useState({
@@ -43,6 +59,34 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
   const [instanceTypesLoading, setInstanceTypesLoading] = useState(false);
   const [s3Buckets, setS3Buckets] = useState([]);
   const [s3Region, setS3Region] = useState('');
+
+  // 路由策略选项和说明
+  const routingStrategyOptions = useMemo(() => [
+    {
+      value: 'prefixaware',
+      label: 'Prefix-aware',
+      description: 'Best for workloads with common prompt prefixes. Maintains tree structure to track cached prefixes.',
+      recommended: true
+    },
+    {
+      value: 'roundrobin',
+      label: 'Round-robin',
+      description: 'Simple load balancing. Distributes requests evenly across workers without cache optimization.'
+    },
+    {
+      value: 'session',
+      label: 'Session-based',
+      description: 'Routes same session to same worker. Ideal for chatbots maintaining conversation context.',
+      requiresSessionKey: true
+    },
+    {
+      value: 'kvaware',
+      label: 'KV-aware',
+      description: 'Advanced cache management with centralized controller. Requires HuggingFace models and tokenization.',
+      requiresSessionKey: true,
+      advanced: true
+    }
+  ], []);
 
   // Docker镜像预设选项
   const dockerImageOptions = useMemo(() => [
@@ -201,7 +245,21 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
     try {
       const deploymentConfig = {
         ...values,
-        deploymentType: 'managed-inference'
+        deploymentType: 'managed-inference',
+        // KV Cache 配置
+        kvCache: enableKvCache ? {
+          enableL1Cache: enableL1Cache,
+          enableL2Cache: enableL2Cache,
+          l2CacheUrl: enableL2Cache ? values.l2CacheUrl : undefined
+        } : undefined,
+        // Intelligent Routing 配置
+        intelligentRouting: enableIntelligentRouting ? {
+          enabled: true,
+          strategy: routingStrategy,
+          sessionKey: (routingStrategy === 'session' || routingStrategy === 'kvaware') 
+            ? values.sessionKey 
+            : undefined
+        } : undefined
       };
 
       console.log('Managed inference deployment config:', deploymentConfig);
@@ -588,7 +646,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
           }
           name="workerCommand"
           rules={[{ required: true, message: 'Please input worker command!' }]}
-          extra="e.g., Keep /opt/ml/model unchanged - it represents the mounted model path"
+          extra="/opt/ml/model default model mount path"
         >
           <TextArea
             rows={8}
@@ -596,6 +654,237 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
             style={{ fontFamily: 'monospace', fontSize: '12px' }}
           />
         </Form.Item>
+
+        <Alert
+          message={
+            <Space>
+              <ThunderboltOutlined />
+              <Text strong>Advanced Features (Optional)</Text>
+            </Space>
+          }
+          type="info"
+          showIcon={false}
+          style={{ marginBottom: 16, marginTop: 16 }}
+        />
+
+        <Collapse
+          defaultActiveKey={[]}
+          style={{ marginBottom: 24 }}
+        >
+          {/* KV Cache Configuration */}
+          <Panel
+            header={
+              <Space>
+                <DatabaseOutlined />
+                <Text strong>KV Cache Configuration</Text>
+                <Switch
+                  checked={enableKvCache}
+                  onChange={(checked) => {
+                    setEnableKvCache(checked);
+                    if (!checked) {
+                      setEnableL1Cache(false);
+                      setEnableL2Cache(false);
+                    }
+                  }}
+                  onClick={(_, e) => e.stopPropagation()}
+                />
+                {enableKvCache && (
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    (L1: {enableL1Cache ? 'ON' : 'OFF'}, L2: {enableL2Cache ? 'ON' : 'OFF'})
+                  </Text>
+                )}
+              </Space>
+            }
+            key="kv-cache"
+          >
+            <Card size="small" style={{ marginBottom: 16, backgroundColor: '#e6f7ff' }}>
+              <Paragraph style={{ marginBottom: 0, fontSize: '13px' }}>
+                <strong>KV Cache</strong> stores computed key-value pairs to accelerate inference:
+                <ul style={{ marginTop: 8, marginBottom: 0 }}>
+                  <li><strong>L1 Cache:</strong> Local CPU memory on each node (fastest access)</li>
+                  <li><strong>L2 Cache:</strong> Shared Redis storage across nodes (enables cache sharing)</li>
+                </ul>
+              </Paragraph>
+            </Card>
+
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <Switch
+                      checked={enableL1Cache}
+                      onChange={setEnableL1Cache}
+                      disabled={!enableKvCache}
+                    />
+                    <Text>L1 Cache (Local CPU Memory)</Text>
+                  </Space>
+                }
+                style={{ 
+                  borderColor: enableL1Cache ? '#52c41a' : '#d9d9d9',
+                  opacity: enableKvCache ? 1 : 0.5
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Fastest access to recently computed key-value pairs. Recommended for all deployments.
+                </Text>
+              </Card>
+
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <Switch
+                      checked={enableL2Cache}
+                      onChange={setEnableL2Cache}
+                      disabled={!enableKvCache}
+                    />
+                    <Text>L2 Cache (Redis - Shared Storage)</Text>
+                  </Space>
+                }
+                style={{ 
+                  borderColor: enableL2Cache ? '#52c41a' : '#d9d9d9',
+                  opacity: enableKvCache ? 1 : 0.5
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 12 }}>
+                  Enables cache sharing across multiple nodes. Requires Redis deployment in same VPC.
+                </Text>
+
+                {enableL2Cache && (
+                  <Form.Item
+                    label="Redis URL"
+                    name="l2CacheUrl"
+                    rules={[
+                      { required: enableL2Cache, message: 'Redis URL is required when L2 Cache is enabled' },
+                      { pattern: /^redis:\/\/.+/, message: 'Must start with redis://' }
+                    ]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Input
+                      placeholder="redis://redis.default.svc.cluster.local:6379"
+                      style={{ fontFamily: 'monospace' }}
+                      disabled={!enableKvCache || !enableL2Cache}
+                    />
+                  </Form.Item>
+                )}
+
+                {enableL2Cache && (
+                  <Alert
+                    message="Redis URL Format"
+                    description={
+                      <Text code style={{ fontSize: '11px' }}>
+                        redis://{'<service-name>.<namespace>.svc.cluster.local:6379'}
+                      </Text>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginTop: 8, fontSize: '12px' }}
+                  />
+                )}
+              </Card>
+            </Space>
+          </Panel>
+
+          {/* Intelligent Routing Configuration */}
+          <Panel
+            header={
+              <Space>
+                <ApiOutlined />
+                <Text strong>Intelligent Routing</Text>
+                <Switch
+                  checked={enableIntelligentRouting}
+                  onChange={setEnableIntelligentRouting}
+                  onClick={(_, e) => e.stopPropagation()}
+                />
+                {enableIntelligentRouting && (
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    ({routingStrategyOptions.find(opt => opt.value === routingStrategy)?.label})
+                  </Text>
+                )}
+              </Space>
+            }
+            key="intelligent-routing"
+          >
+            <Card size="small" style={{ marginBottom: 16, backgroundColor: '#e6f7ff' }}>
+              <Paragraph style={{ marginBottom: 0, fontSize: '13px' }}>
+                <strong>Intelligent Routing</strong> optimizes request distribution across workers to maximize cache reuse and performance.
+              </Paragraph>
+            </Card>
+
+            <Form.Item
+              label="Routing Strategy"
+              name="routingStrategy"
+              initialValue="prefixaware"
+              rules={[{ required: enableIntelligentRouting, message: 'Please select a routing strategy' }]}
+            >
+              <Select
+                disabled={!enableIntelligentRouting}
+                onChange={(value) => setRoutingStrategy(value)}
+                style={{ width: '100%' }}
+              >
+                {routingStrategyOptions.map(option => (
+                  <Option key={option.value} value={option.value}>
+                    <Space>
+                      <Text strong>{option.label}</Text>
+                      {option.recommended && (
+                        <Text type="success" style={{ fontSize: '11px' }}>(Recommended)</Text>
+                      )}
+                      {option.advanced && (
+                        <Text type="warning" style={{ fontSize: '11px' }}>(Advanced)</Text>
+                      )}
+                    </Space>
+                    <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: 4 }}>
+                      {option.description}
+                    </div>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            {/* Session Key - 仅在 session 或 kvaware 策略时显示 */}
+            {enableIntelligentRouting && (routingStrategy === 'session' || routingStrategy === 'kvaware') && (
+              <Form.Item
+                label={
+                  <Space>
+                    Session Key
+                    <Tooltip title="Request field used to identify sessions (e.g., user_id, session_id)">
+                      <InfoCircleOutlined />
+                    </Tooltip>
+                  </Space>
+                }
+                name="sessionKey"
+                rules={[
+                  { 
+                    required: true, 
+                    message: 'Session key is required for session-based and kv-aware routing' 
+                  }
+                ]}
+                initialValue="user_id"
+              >
+                <Input
+                  placeholder="e.g., user_id, session_id"
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </Form.Item>
+            )}
+
+            {/* 策略说明卡片 */}
+            {enableIntelligentRouting && (
+              <Card size="small" style={{ marginTop: 16, backgroundColor: '#fffbe6' }}>
+                <Text strong style={{ fontSize: '12px', display: 'block', marginBottom: 8 }}>
+                  Strategy Comparison:
+                </Text>
+                <ul style={{ fontSize: '11px', marginBottom: 0, paddingLeft: 20 }}>
+                  <li><strong>Prefix-aware:</strong> Best general-purpose choice, good cache reuse</li>
+                  <li><strong>Round-robin:</strong> Simplest, no cache optimization</li>
+                  <li><strong>Session-based:</strong> Best for chatbots, maintains conversation context</li>
+                  <li><strong>KV-aware:</strong> Most advanced, requires HuggingFace models</li>
+                </ul>
+              </Card>
+            )}
+          </Panel>
+        </Collapse>
 
         <Form.Item>
           <Button

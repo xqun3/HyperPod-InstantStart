@@ -772,7 +772,10 @@ app.post('/api/deploy', async (req, res) => {
       s3BucketName,  // S3 存储桶名称
       s3Region,  // S3 区域
       modelLocation,  // S3 中的模型路径
-      workerCommand  // Worker 命令（bash 风格字符串，与 ConfigPanel 格式相同）
+      workerCommand,  // Worker 命令（bash 风格字符串，与 ConfigPanel 格式相同）
+      // KV Cache and Intelligent Routing
+      kvCache,  // { enableL1Cache, enableL2Cache, l2CacheUrl }
+      intelligentRouting  // { enabled, strategy, sessionKey }
     } = req.body;
 
     console.log('Inference deployment request:', {
@@ -786,7 +789,9 @@ app.post('/api/deploy', async (req, res) => {
       gpuMemory,
       cpuRequest,
       memoryRequest,
-      port
+      port,
+      kvCache,
+      intelligentRouting
     });
 
     // 生成带时间戳的唯一标签（符合Kubernetes命名规范）
@@ -910,10 +915,46 @@ app.post('/api/deploy', async (req, res) => {
         ? '\n  labels:\n    hami.io/webhook: ignore'
         : '';
 
+      // 处理 KV Cache 配置
+      let kvCacheSpecYaml = '';
+      if (kvCache && (kvCache.enableL1Cache || kvCache.enableL2Cache)) {
+        kvCacheSpecYaml = '\n\n  kvCacheSpec:';
+        if (kvCache.enableL1Cache) {
+          kvCacheSpecYaml += '\n    enableL1Cache: true';
+        }
+        if (kvCache.enableL2Cache) {
+          kvCacheSpecYaml += '\n    enableL2Cache: true';
+          kvCacheSpecYaml += '\n    l2CacheSpec:';
+          kvCacheSpecYaml += '\n      l2CacheBackend: redis';
+          kvCacheSpecYaml += `\n      l2CacheLocalUrl: "${kvCache.l2CacheUrl}"`;
+        }
+      }
+
+      // 处理 Intelligent Routing 配置
+      let intelligentRoutingSpecYaml = '';
+      let invocationEndpointYaml = '';
+      if (intelligentRouting && intelligentRouting.enabled) {
+        intelligentRoutingSpecYaml = '\n  intelligentRoutingSpec:';
+        intelligentRoutingSpecYaml += '\n    enabled: true';
+        intelligentRoutingSpecYaml += `\n    routingStrategy: ${intelligentRouting.strategy}`;
+        
+        // 当启用 Intelligent Routing 时，必须指定 invocationEndpoint
+        invocationEndpointYaml = '\n  invocationEndpoint: v1/chat/completions';
+      }
+
+      // 处理 Session Key 环境变量（仅在 session 或 kvaware 策略时添加）
+      let sessionKeyEnvYaml = '';
+      if (intelligentRouting && intelligentRouting.enabled && 
+          (intelligentRouting.strategy === 'session' || intelligentRouting.strategy === 'kvaware') &&
+          intelligentRouting.sessionKey) {
+        sessionKeyEnvYaml = `\n      - name: SESSION_KEY\n        value: "${intelligentRouting.sessionKey}"`;
+      }
+
       // 替换模板中的占位符
       newYamlContent = templateContent
         .replace(/DEPLOYMENT_NAME/g, finalDeploymentTag)
         .replace(/MODEL_NAME/g, effectiveModelName)
+        .replace(/INVOCATION_ENDPOINT/g, invocationEndpointYaml)
         .replace(/INSTANCE_TYPE/g, instanceType)
         .replace(/REPLICAS_COUNT/g, replicas.toString())
         .replace(/S3_BUCKET_NAME/g, s3BucketName)
@@ -926,7 +967,10 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/MEMORY_REQUEST/g, memoryRequestYaml)
         .replace(/GPU_COUNT/g, gpuCount.toString())
         .replace(/GPU_MEMORY/g, gpuMemoryYaml)
-        .replace(/HAMI_LABEL/g, hamiLabel);
+        .replace(/HAMI_LABEL/g, hamiLabel)
+        .replace(/KV_CACHE_SPEC/g, kvCacheSpecYaml)
+        .replace(/INTELLIGENT_ROUTING_SPEC/g, intelligentRoutingSpecYaml)
+        .replace(/SESSION_KEY_ENV/g, sessionKeyEnvYaml);
 
       servEngine = 'managed-inf';
       console.log('Generated managed inference YAML');
@@ -2952,6 +2996,104 @@ app.delete('/api/hyperpod-jobs/:jobName', async (req, res) => {
       message: `Failed to delete training job: ${error.message}`
     });
     
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🔄 获取所有 InferenceEndpointConfig 资源
+app.get('/api/inference-endpoints', async (req, res) => {
+  try {
+    console.log('Fetching InferenceEndpointConfig resources...');
+
+    let inferenceEndpoints = [];
+    try {
+      const output = await executeKubectl('get inferenceendpointconfig -A -o json');
+      const result = JSON.parse(output);
+      inferenceEndpoints = result.items.map(endpoint => ({
+        name: endpoint.metadata.name,
+        namespace: endpoint.metadata.namespace || 'default',
+        creationTimestamp: endpoint.metadata.creationTimestamp,
+        modelName: endpoint.spec?.modelName || '-',
+        instanceType: endpoint.spec?.instanceType || '-',
+        replicas: endpoint.spec?.replicas || 0,
+        s3Bucket: endpoint.spec?.modelSourceConfig?.s3Storage?.bucketName || '-',
+        s3Region: endpoint.spec?.modelSourceConfig?.s3Storage?.region || '-',
+        modelLocation: endpoint.spec?.modelSourceConfig?.modelLocation || '-',
+        status: endpoint.status || {},
+        state: endpoint.status?.state || 'Unknown',
+        deploymentStatus: endpoint.status?.deploymentStatus?.deploymentObjectOverallState || 'Unknown',
+        availableReplicas: endpoint.status?.deploymentStatus?.status?.availableReplicas || 0,
+        totalReplicas: endpoint.status?.deploymentStatus?.status?.replicas || 0
+      }));
+    } catch (error) {
+      const optimizedMessage = optimizeErrorMessage(error.message);
+      console.log('No InferenceEndpointConfig found or error:', optimizedMessage);
+
+      // 如果是资源类型不存在，返回友好提示
+      if (error.message.includes(`doesn't have a resource type "inferenceendpointconfig"`)) {
+        return res.json({
+          success: true,
+          endpoints: [],
+          message: 'No InferenceEndpointConfig found (Inference Operator may not be installed)'
+        });
+      }
+    }
+
+    console.log(`Found ${inferenceEndpoints.length} inference endpoints:`,
+                inferenceEndpoints.map(e => e.name));
+
+    res.json({
+      success: true,
+      endpoints: inferenceEndpoints
+    });
+  } catch (error) {
+    console.error('Error fetching inference endpoints:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      endpoints: []
+    });
+  }
+});
+
+// 🔄 删除指定的 InferenceEndpointConfig
+app.delete('/api/inference-endpoints/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { namespace } = req.query; // 从 query 获取 namespace，默认为 default
+    const ns = namespace || 'default';
+
+    console.log(`Deleting InferenceEndpointConfig: ${name} in namespace: ${ns}`);
+
+    const output = await executeKubectl(`delete inferenceendpointconfig ${name} -n ${ns}`);
+    console.log('Delete output:', output);
+
+    // 广播删除状态更新
+    broadcast({
+      type: 'inference_endpoint_deleted',
+      status: 'success',
+      message: `Inference endpoint "${name}" deleted successfully`,
+      endpointName: name,
+      namespace: ns
+    });
+
+    res.json({
+      success: true,
+      message: `Inference endpoint "${name}" deleted successfully`,
+      output: output
+    });
+  } catch (error) {
+    console.error('Error deleting inference endpoint:', error);
+
+    broadcast({
+      type: 'inference_endpoint_deleted',
+      status: 'error',
+      message: `Failed to delete inference endpoint: ${error.message}`
+    });
+
     res.status(500).json({
       success: false,
       error: error.message

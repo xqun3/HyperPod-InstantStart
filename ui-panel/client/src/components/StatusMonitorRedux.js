@@ -44,6 +44,7 @@ import {
   selectAppBindingServices,
   selectAppDeployments,        // 新增
   selectAppTrainingJobs,       // 新增
+  selectAppInferenceEndpoints, // 新增
   selectAppStatusLoading,
   selectAppStatusError,
   selectAppStats
@@ -67,6 +68,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
   const businessServices = useSelector(selectAppBindingServices);
   const deployments = useSelector(selectAppDeployments);          // 新增
   const trainingJobs = useSelector(selectAppTrainingJobs);        // 新增
+  const inferenceEndpoints = useSelector(selectAppInferenceEndpoints); // 新增
   const loading = useSelector(selectAppStatusLoading);
   const error = useSelector(selectAppStatusError);
   const appStats = useSelector(selectAppStats);
@@ -78,6 +80,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
   const [deletingDeployments, setDeletingDeployments] = useState(new Set());    // 新增
   const [scalingDeployments, setScalingDeployments] = useState(new Set());      // 新增
   const [deletingTrainingJobs, setDeletingTrainingJobs] = useState(new Set());  // 新增
+  const [deletingInferenceEndpoints, setDeletingInferenceEndpoints] = useState(new Set()); // 新增
 
   // 🔄 Badge同步状态 - 确保Badge数字与表格数据完全同步
   const [localRefreshTrigger, setLocalRefreshTrigger] = useState(0);
@@ -377,6 +380,38 @@ const StatusMonitorRedux = ({ activeTab }) => {
       setDeletingTrainingJobs(prev => {
         const newSet = new Set(prev);
         newSet.delete(jobName);
+        return newSet;
+      });
+    }
+  };
+
+  // 删除 InferenceEndpointConfig
+  const handleInferenceEndpointDelete = async (endpointName, namespace) => {
+    setDeletingInferenceEndpoints(prev => new Set([...prev, endpointName]));
+
+    try {
+      const response = await fetch(`/api/inference-endpoints/${endpointName}?namespace=${namespace}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        message.success(`Inference endpoint ${endpointName} deleted successfully`);
+        // 刷新数据
+        await dispatch(refreshAllAppStatus());
+        // 🔄 强制Badge重新渲染
+        setLocalRefreshTrigger(prev => prev + 1);
+      } else {
+        message.error(`Failed to delete inference endpoint: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error deleting inference endpoint:', error);
+      message.error('Failed to delete inference endpoint');
+    } finally {
+      setDeletingInferenceEndpoints(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(endpointName);
         return newSet;
       });
     }
@@ -1230,6 +1265,117 @@ const StatusMonitorRedux = ({ activeTab }) => {
     },
   ];
 
+  // InferenceEndpointConfig 表格列定义
+  const inferenceEndpointColumns = [
+    {
+      title: 'Endpoint Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name) => (
+        <Space>
+          <ThunderboltOutlined style={{ color: '#1890ff' }} />
+          <Text strong>{name}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Namespace',
+      dataIndex: 'namespace',
+      key: 'namespace',
+      render: (namespace) => <Tag color="blue">{namespace}</Tag>,
+    },
+    {
+      title: 'Model Name',
+      dataIndex: 'modelName',
+      key: 'modelName',
+    },
+    {
+      title: 'Instance Type',
+      dataIndex: 'instanceType',
+      key: 'instanceType',
+      render: (type) => <Tag color="green">{type}</Tag>,
+    },
+    {
+      title: 'Replicas',
+      key: 'replicas',
+      render: (_, record) => (
+        <Text>{record.availableReplicas || 0}/{record.replicas || 0}</Text>
+      ),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'deploymentStatus',
+      key: 'deploymentStatus',
+      render: (status) => {
+        const statusConfig = {
+          'DeploymentComplete': { color: 'success', icon: <CheckCircleOutlined /> },
+          'DeploymentInProgress': { color: 'processing', icon: <SyncOutlined /> },
+          'DeploymentFailed': { color: 'error', icon: <CloseCircleOutlined /> },
+          'Unknown': { color: 'default', icon: <ClockCircleOutlined /> }
+        };
+
+        const config = statusConfig[status] || statusConfig['Unknown'];
+
+        return (
+          <Tag color={config.color} icon={config.icon}>
+            {status}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'S3 Bucket',
+      dataIndex: 's3Bucket',
+      key: 's3Bucket',
+      render: (bucket) => (
+        <Tooltip title={bucket}>
+          <Text type="secondary" ellipsis style={{ maxWidth: 150 }}>
+            {bucket}
+          </Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: 'Created',
+      dataIndex: 'creationTimestamp',
+      key: 'creationTimestamp',
+      render: (timestamp) => {
+        if (!timestamp) return '-';
+        const date = new Date(timestamp);
+        return (
+          <Tooltip title={date.toLocaleString()}>
+            <Text type="secondary">
+              {date.toLocaleDateString()} {date.toLocaleTimeString()}
+            </Text>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Popconfirm
+          title="Delete Inference Endpoint"
+          description={`Are you sure you want to delete "${record.name}"?`}
+          onConfirm={() => handleInferenceEndpointDelete(record.name, record.namespace)}
+          okText="Yes"
+          cancelText="No"
+        >
+          <Button
+            type="primary"
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            loading={deletingInferenceEndpoints.has(record.name)}
+          >
+            Delete
+          </Button>
+        </Popconfirm>
+      ),
+    },
+  ];
+
   // 统计信息
   const podStats = {
     total: pods.length,
@@ -1526,6 +1672,38 @@ const StatusMonitorRedux = ({ activeTab }) => {
               showSizeChanger: false,
               showQuickJumper: false,
               showTotal: (total) => `Total ${total} jobs`
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (activeTab === 'inference') {
+      return (
+        <div>
+
+          {error && (
+            <Alert
+              message="App Status Error"
+              description={error}
+              type="error"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
+          {/* InferenceEndpointConfig 表格 */}
+          <Table
+            columns={inferenceEndpointColumns}
+            dataSource={inferenceEndpoints}
+            rowKey="name"
+            loading={loading}
+            size="small"
+            pagination={{
+              pageSize: 5,
+              showSizeChanger: false,
+              showQuickJumper: false,
+              showTotal: (total) => `Total ${total} endpoints`
             }}
           />
         </div>
