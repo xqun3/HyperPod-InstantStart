@@ -7,6 +7,7 @@ import { selectAppPods, selectAppServices } from './store/selectors';
 import ThemeProvider from './components/ThemeProvider';
 import ConfigPanel from './components/ConfigPanel';
 import ServiceConfigPanel from './components/ServiceConfigPanel';
+import ManagedInferencePanel from './components/ManagedInferencePanel';
 import ClusterStatusV2Redux from './components/ClusterStatusV2Redux';
 import TestPanel from './components/TestPanel';
 import StatusMonitorRedux from './components/StatusMonitorRedux';
@@ -1024,6 +1025,17 @@ function App() {
                         children: (
                           <ScalingPanel
                             onDeploy={handleScalingDeploy}
+                            deploymentStatus={deploymentStatus}
+                          />
+                        )
+                      },
+                      // Managed Inference tab
+                      {
+                        key: 'managed-inference',
+                        label: 'Managed Inference',
+                        children: (
+                          <ManagedInferencePanel
+                            onDeploy={handleDeploy}
                             deploymentStatus={deploymentStatus}
                           />
                         )

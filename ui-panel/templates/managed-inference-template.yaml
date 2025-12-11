@@ -1,0 +1,33 @@
+apiVersion: inference.sagemaker.aws.amazon.com/v1
+kind: InferenceEndpointConfig
+metadata:
+  name: DEPLOYMENT_NAME
+  namespace: default
+spec:
+  modelName: MODEL_NAME
+  instanceType: INSTANCE_TYPE
+  replicas: REPLICAS_COUNT
+
+  modelSourceConfig:
+    modelSourceType: s3
+    s3Storage:
+      bucketName: S3_BUCKET_NAME
+      region: AWS_REGION
+    modelLocation: MODEL_LOCATION
+
+  worker:
+    image: DOCKER_IMAGE
+    args:WORKER_ARGS
+    modelInvocationPort:
+      containerPort: PORT_NUMBER
+    modelVolumeMount:
+      name: model-weights
+    resources:
+      requests:CPU_REQUEST
+        memory: MEMORY_REQUEST
+        nvidia.com/gpu: "GPU_COUNT"
+      limits:
+        nvidia.com/gpu: "GPU_COUNT"
+    environmentVariables:
+      - name: HF_HUB_OFFLINE
+        value: "1"HF_TOKEN_ENV

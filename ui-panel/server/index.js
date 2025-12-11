@@ -765,7 +765,14 @@ app.post('/api/deploy', async (req, res) => {
       dockerImage = 'vllm/vllm-openai:latest',
       port = 8000,  // 端口配置，默认8000
       cpuRequest = -1,  // CPU请求，默认-1（不设置限制）
-      memoryRequest = -1  // 内存请求，默认-1（不设置限制）
+      memoryRequest = -1,  // 内存请求，默认-1（不设置限制）
+      // Managed Inference specific fields
+      modelName,  // 模型名称
+      instanceType,  // 单个实例类型 (ml.*)
+      s3BucketName,  // S3 存储桶名称
+      s3Region,  // S3 区域
+      modelLocation,  // S3 中的模型路径
+      workerArgs  // Worker 参数（多行字符串，每行一个参数）
     } = req.body;
 
     console.log('Inference deployment request:', {
@@ -841,8 +848,64 @@ app.post('/api/deploy', async (req, res) => {
     const hybridNodeSelectorTerms = generateHybridNodeSelectorTerms(instanceTypes);
     console.log('Generated hybrid node selector terms:', hybridNodeSelectorTerms);
 
+    // 处理 Managed Inference 部署
+    if (deploymentType === 'managed-inference') {
+      console.log('Processing managed-inference deployment');
+
+      // 验证必需字段
+      if (!modelName || !instanceType || !s3BucketName || !s3Region || !modelLocation) {
+        throw new Error('Missing required fields for managed inference deployment');
+      }
+
+      const templatePath = path.join(__dirname, '../templates/managed-inference-template.yaml');
+      const templateContent = await fs.readFile(templatePath, 'utf8');
+
+      // 处理 worker args - 将多行字符串转换为 YAML 数组格式
+      let workerArgsYaml = '';
+      if (workerArgs && workerArgs.trim()) {
+        const argsArray = workerArgs.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        workerArgsYaml = argsArray.map(arg => `\n      - "${arg}"`).join('');
+      }
+
+      // 处理 CPU 和 Memory 请求（可选）
+      let cpuRequestYaml = '';
+      let memoryRequestYaml = '';
+      if (cpuRequest && cpuRequest.trim() && cpuRequest !== '-1') {
+        cpuRequestYaml = `\n        cpu: "${cpuRequest}"`;
+      }
+      if (memoryRequest && memoryRequest.trim() && memoryRequest !== '-1') {
+        memoryRequestYaml = `\n        memory: ${memoryRequest}Gi`;
+      }
+
+      // 生成 HuggingFace token 环境变量（如果提供了 token）
+      let hfTokenEnvYaml = '';
+      if (huggingFaceToken && huggingFaceToken.trim() !== '') {
+        hfTokenEnvYaml = `\n      - name: HUGGING_FACE_HUB_TOKEN
+        value: "${huggingFaceToken}"`;
+      }
+
+      // 替换模板中的占位符
+      newYamlContent = templateContent
+        .replace(/DEPLOYMENT_NAME/g, deploymentName || finalDeploymentTag)
+        .replace(/MODEL_NAME/g, modelName)
+        .replace(/INSTANCE_TYPE/g, instanceType)
+        .replace(/REPLICAS_COUNT/g, replicas.toString())
+        .replace(/S3_BUCKET_NAME/g, s3BucketName)
+        .replace(/AWS_REGION/g, s3Region)
+        .replace(/MODEL_LOCATION/g, modelLocation)
+        .replace(/DOCKER_IMAGE/g, dockerImage)
+        .replace(/WORKER_ARGS/g, workerArgsYaml)
+        .replace(/PORT_NUMBER/g, port.toString())
+        .replace(/CPU_REQUEST/g, cpuRequestYaml)
+        .replace(/MEMORY_REQUEST/g, memoryRequestYaml)
+        .replace(/GPU_COUNT/g, gpuCount.toString())
+        .replace(/HF_TOKEN_ENV/g, hfTokenEnvYaml);
+
+      servEngine = 'managed-inf';
+      console.log('Generated managed inference YAML');
+    }
     // 处理Container部署（移除了Ollama支持）
-    {
+    else {
       // 处理VLLM/SGLang/Custom部署
       const parsedCommand = parseVllmCommand(deploymentCommand);
       console.log('Parsed command:', parsedCommand);
@@ -5807,6 +5870,38 @@ app.post('/api/cluster/hyperpod/update-software', async (req, res) => {
   }
 });
 
+// 获取HyperPod高级功能配置
+app.get('/api/cluster/hyperpod/advanced-features', async (req, res) => {
+  try {
+    const ManagedFeaturesManager = require('./utils/managedFeaturesManager');
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const featuresManager = new ManagedFeaturesManager(clusterManager);
+
+    const result = await featuresManager.getAdvancedFeatures();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error fetching advanced features:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 更新HyperPod高级功能配置
+app.post('/api/cluster/hyperpod/advanced-features', async (req, res) => {
+  try {
+    const ManagedFeaturesManager = require('./utils/managedFeaturesManager');
+    const ClusterManager = require('./cluster-manager');
+    const clusterManager = new ClusterManager();
+    const featuresManager = new ManagedFeaturesManager(clusterManager);
+
+    const result = await featuresManager.updateAdvancedFeatures(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating advanced features:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 添加实例组到现有HyperPod集群
 app.post('/api/cluster/hyperpod/add-instance-group', async (req, res) => {
   try {
@@ -7115,6 +7210,21 @@ app.get('/api/cluster/info', async (req, res) => {
   }
 });
 
+// 获取S3存储桶列表 - 简化版本
+app.get('/api/cluster/s3-buckets', async (req, res) => {
+  try {
+    // 简单返回空数组，让用户手动输入
+    res.json({
+      success: true,
+      buckets: [],
+      clusterBucket: null
+    });
+  } catch (error) {
+    console.error('Error getting S3 buckets:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 获取当前AWS配置的region
 app.get('/api/aws/current-region', async (req, res) => {
   try {
@@ -7125,8 +7235,8 @@ app.get('/api/aws/current-region', async (req, res) => {
     });
   } catch (error) {
     console.error('Failed to get current AWS region:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: error.message,
       region: 'us-west-1' // 提供默认值
     });

@@ -80,6 +80,46 @@ export const addInstanceGroup = createAsyncThunk(
   }
 );
 
+// 异步操作：获取高级功能配置
+export const fetchAdvancedFeatures = createAsyncThunk(
+  'nodeGroups/fetchAdvancedFeatures',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch('/api/cluster/hyperpod/advanced-features');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch advanced features');
+      }
+      return await response.json();
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// 异步操作：更新高级功能配置
+export const updateAdvancedFeatures = createAsyncThunk(
+  'nodeGroups/updateAdvancedFeatures',
+  async (updates, { rejectWithValue }) => {
+    try {
+      const response = await fetch('/api/cluster/hyperpod/advanced-features', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update advanced features');
+      }
+      return await response.json();
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+
 // 异步操作：扩展节点组
 export const scaleNodeGroup = createAsyncThunk(
   'nodeGroups/scaleNodeGroup',
@@ -168,6 +208,9 @@ const nodeGroupsSlice = createSlice({
     instanceGroupAdditionStatus: null,
     nodeGroupDeletionStatus: null,
     nodeGroupScalingStatus: null,
+    advancedFeatures: null,
+    advancedFeaturesLoading: false,
+    advancedFeaturesUpdating: false,
   },
   reducers: {
     clearHyperPodCreationStatus(state) {
@@ -278,6 +321,34 @@ const nodeGroupsSlice = createSlice({
         // 这确保页面重启后能正确恢复创建状态显示
         state.hyperPodCreationStatus = action.payload;
       })
+
+    // 处理获取高级功能配置
+      .addCase(fetchAdvancedFeatures.pending, (state) => {
+        state.advancedFeaturesLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchAdvancedFeatures.fulfilled, (state, action) => {
+        state.advancedFeatures = action.payload.advancedFeatures;
+        state.advancedFeaturesLoading = false;
+      })
+      .addCase(fetchAdvancedFeatures.rejected, (state, action) => {
+        state.advancedFeaturesLoading = false;
+        state.error = action.payload;
+      })
+
+    // 处理更新高级功能配置
+      .addCase(updateAdvancedFeatures.pending, (state) => {
+        state.advancedFeaturesUpdating = true;
+        state.error = null;
+      })
+      .addCase(updateAdvancedFeatures.fulfilled, (state) => {
+        state.advancedFeaturesUpdating = false;
+      })
+      .addCase(updateAdvancedFeatures.rejected, (state, action) => {
+        state.advancedFeaturesUpdating = false;
+        state.error = action.payload;
+      })
+
       // 处理集群切换 - 清空旧集群的节点数据
       .addCase(switchCluster.pending, (state) => {
         // 清空节点组数据，避免显示旧集群的信息

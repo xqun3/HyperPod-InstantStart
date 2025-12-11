@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, List, Button, Space, Typography, Spin, Empty, Tag, message, Tooltip } from 'antd';
 import { ReloadOutlined, FolderOutlined, FileOutlined, CloudOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import globalRefreshManager from '../hooks/useGlobalRefresh';
 
 const { Text, Title } = Typography;
 
@@ -17,7 +16,7 @@ const S3StoragePanel = ({ selectedStorage = 'default' }) => {
       console.log(`Fetching S3 storage data for: ${selectedStorage}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒超时
       
       const response = await fetch(`/api/s3-storage?storage=${selectedStorage}`, {
         signal: controller.signal
@@ -57,20 +56,7 @@ const S3StoragePanel = ({ selectedStorage = 'default' }) => {
 
   useEffect(() => {
     fetchS3Data();
-
-    // 恢复全局刷新订阅，使用更长超时和较低优先级
-    const componentId = globalRefreshManager.subscribe('s3-storage', async () => {
-      console.log('🔄 S3 Storage Panel: Global refresh triggered');
-      await fetchS3Data();
-    }, {
-      priority: 7,        // 较低优先级，避免阻塞其他组件
-      timeout: 35000,     // 35秒超时，比前端超时更长
-      enabled: true
-    });
-
-    return () => {
-      globalRefreshManager.unsubscribe(componentId);
-    };
+    // S3 数据不需要频繁刷新，只在初始加载和手动刷新时获取
   }, [selectedStorage]);
 
   const formatFileSize = (bytes) => {

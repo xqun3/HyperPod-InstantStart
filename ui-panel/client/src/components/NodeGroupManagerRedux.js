@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip, Switch } from 'antd';
-import { ReloadOutlined, EditOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, InfoCircleOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip, Switch, Radio, Divider } from 'antd';
+import { ReloadOutlined, EditOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, InfoCircleOutlined, CloudServerOutlined, SettingOutlined } from '@ant-design/icons';
 import EksNodeGroupCreationPanel from './EksNodeGroupCreationPanel';
 import {
   fetchNodeGroups,
@@ -12,7 +12,9 @@ import {
   deleteNodeGroup,
   checkHyperPodCreationStatus,
   clearHyperPodCreationStatus,
-  clearNodeGroupOperationStatus
+  clearNodeGroupOperationStatus,
+  fetchAdvancedFeatures,
+  updateAdvancedFeatures
 } from '../store/slices/nodeGroupsSlice';
 import {
   selectEksNodeGroups,
@@ -57,6 +59,14 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
   const [form] = Form.useForm();
   const [hyperPodForm] = Form.useForm();
   const [instanceGroupForm] = Form.useForm();
+
+  // Advanced Features 相关状态
+  const [advancedFeaturesModalVisible, setAdvancedFeaturesModalVisible] = useState(false);
+  const [advancedFeaturesForm] = Form.useForm();
+  const [advancedFeaturesData, setAdvancedFeaturesData] = useState(null);
+  const [advancedFeaturesLoading, setAdvancedFeaturesLoading] = useState(false);
+  const [advancedFeaturesUpdating, setAdvancedFeaturesUpdating] = useState(false);
+
 
   // Karpenter 相关状态
   const [karpenterStatus, setKarpenterStatus] = useState(null);
@@ -921,6 +931,70 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
     }
   };
 
+  // 打开 Advanced Features Modal
+  const handleOpenAdvancedFeatures = async () => {
+    setAdvancedFeaturesModalVisible(true);
+    setAdvancedFeaturesLoading(true);
+    
+    try {
+      const result = await dispatch(fetchAdvancedFeatures()).unwrap();
+      setAdvancedFeaturesData(result.advancedFeatures);
+      
+      // 设置表单初始值
+      advancedFeaturesForm.setFieldsValue({
+        tieredStorageEnabled: result.advancedFeatures.tieredStorage.enabled,
+        tieredStorageMode: result.advancedFeatures.tieredStorage.configMode,
+        tieredStoragePercentage: result.advancedFeatures.tieredStorage.percentage || 50,
+        inferenceOperatorEnabled: result.advancedFeatures.inferenceOperator.enabled
+      });
+    } catch (error) {
+      console.error('Error fetching advanced features:', error);
+      message.error(`Failed to load advanced features: ${error}`);
+      setAdvancedFeaturesModalVisible(false);
+    } finally {
+      setAdvancedFeaturesLoading(false);
+    }
+  };
+
+  // 提交 Advanced Features 配置
+  const handleSubmitAdvancedFeatures = async () => {
+    try {
+      setAdvancedFeaturesUpdating(true);
+      const values = await advancedFeaturesForm.validateFields();
+      
+      const updates = {};
+      
+      // Tiered Storage
+      updates.tieredStorage = {
+        enabled: values.tieredStorageEnabled,
+        configMode: values.tieredStorageMode,
+        percentage: values.tieredStorageMode === 'custom' ? values.tieredStoragePercentage : null
+      };
+      
+      // Inference Operator
+      updates.inferenceOperator = {
+        enabled: values.inferenceOperatorEnabled
+      };
+
+      await dispatch(updateAdvancedFeatures(updates)).unwrap();
+      
+      message.success('Advanced features updated successfully');
+      
+      // 先关闭 Modal
+      setAdvancedFeaturesModalVisible(false);
+      advancedFeaturesForm.resetFields();
+      
+      // 后台刷新节点组以获取最新状态
+      dispatch(fetchNodeGroups());
+    } catch (error) {
+      console.error('Error updating advanced features:', error);
+      message.error(`Failed to update advanced features: ${error}`);
+    } finally {
+      setAdvancedFeaturesUpdating(false);
+    }
+  };
+
+
   const handleCreateHyperPod = async () => {
     try {
       const values = await hyperPodForm.validateFields();
@@ -1311,6 +1385,28 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         size="small"
         extra={
           <Space>
+            <Button
+              type="default"
+              icon={<SettingOutlined />}
+              size="small"
+              onClick={handleOpenAdvancedFeatures}
+              disabled={
+                !!hyperPodCreationStatus ||
+                !!hyperPodDeletionStatus ||
+                hyperPodGroups.length === 0
+              }
+              title={
+                hyperPodCreationStatus
+                  ? "HyperPod creation in progress"
+                  : hyperPodDeletionStatus
+                    ? "HyperPod deletion in progress"
+                    : hyperPodGroups.length === 0
+                      ? "No HyperPod cluster exists"
+                      : "Configure advanced features"
+              }
+            >
+              Advanced Features
+            </Button>
             <Button
               type="default"
               icon={<PlusOutlined />}
@@ -1995,6 +2091,141 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             <Input placeholder="arn:aws:sagemaker:region:account:training-plan/..." />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Advanced Features Modal */}
+      <Modal
+        title="Advanced Features Configuration"
+        open={advancedFeaturesModalVisible}
+        onOk={handleSubmitAdvancedFeatures}
+        onCancel={() => {
+          if (advancedFeaturesUpdating) return; // 防止更新时关闭
+          setAdvancedFeaturesModalVisible(false);
+          advancedFeaturesForm.resetFields();
+        }}
+        okText="Apply Changes"
+        confirmLoading={advancedFeaturesUpdating}
+        cancelButtonProps={{ disabled: advancedFeaturesUpdating }}
+        width={700}
+      >
+        <Spin spinning={advancedFeaturesLoading}>
+          <Form form={advancedFeaturesForm} layout="vertical">
+            {/* Tiered Storage Section */}
+            <Card 
+              size="small" 
+              style={{ marginBottom: 16, backgroundColor: '#fafafa' }}
+            >
+              <Form.Item 
+                name="tieredStorageEnabled" 
+                valuePropName="checked"
+                style={{ marginBottom: 12 }}
+              >
+                <Checkbox>
+                  <Text strong>Tiered Storage (Managed Checkpointing)</Text>
+                </Checkbox>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.tieredStorageEnabled !== curr.tieredStorageEnabled}>
+                {({ getFieldValue }) => 
+                  getFieldValue('tieredStorageEnabled') ? (
+                    <>
+                      <Alert
+                        message="Tiered Storage uses cluster CPU memory for faster checkpoint operations and improved fault tolerance."
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                      />
+                      
+                      <Form.Item 
+                        name="tieredStorageMode" 
+                        label="Configuration Mode"
+                        rules={[{ required: true, message: 'Please select a mode' }]}
+                      >
+                        <Radio.Group>
+                          <Space direction="vertical">
+                            <Radio value="default">
+                              <Text>Use Default (Enable only)</Text>
+                              <br />
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                System automatically manages memory allocation
+                              </Text>
+                            </Radio>
+                            <Radio value="custom">
+                              <Text>Custom Configuration</Text>
+                              <br />
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                Specify memory allocation percentage
+                              </Text>
+                            </Radio>
+                          </Space>
+                        </Radio.Group>
+                      </Form.Item>
+
+                      <Form.Item noStyle shouldUpdate={(prev, curr) => prev.tieredStorageMode !== curr.tieredStorageMode}>
+                        {({ getFieldValue }) => 
+                          getFieldValue('tieredStorageMode') === 'custom' ? (
+                            <Form.Item
+                              name="tieredStoragePercentage"
+                              label="Memory Allocation Percentage"
+                              rules={[
+                                { required: true, message: 'Please specify percentage' },
+                                { type: 'number', min: 20, max: 80, message: 'Must be between 20-80' }
+                              ]}
+                            >
+                              <InputNumber
+                                min={20}
+                                max={80}
+                                style={{ width: '100%' }}
+                                addonAfter="%"
+                                placeholder="50"
+                              />
+                            </Form.Item>
+                          ) : null
+                        }
+                      </Form.Item>
+                    </>
+                  ) : null
+                }
+              </Form.Item>
+            </Card>
+
+            {/* Inference Operator Section */}
+            <Card 
+              size="small" 
+              style={{ marginBottom: 16, backgroundColor: '#fafafa' }}
+            >
+              <Form.Item 
+                name="inferenceOperatorEnabled" 
+                valuePropName="checked"
+                style={{ marginBottom: 12 }}
+              >
+                <Checkbox>
+                  <Text strong>HyperPod Inference Operator</Text>
+                </Checkbox>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.inferenceOperatorEnabled !== curr.inferenceOperatorEnabled}>
+                {({ getFieldValue }) => 
+                  getFieldValue('inferenceOperatorEnabled') ? (
+                    <Alert
+                      message="Inference Operator enables deployment and management of ML inference endpoints on your EKS cluster. This will install required IAM roles and Helm charts."
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                    />
+                  ) : null
+                }
+              </Form.Item>
+            </Card>
+
+            <Divider />
+
+            {/* Future Features Placeholder */}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              More advanced features will be available here in future releases.
+            </Text>
+          </Form>
+        </Spin>
       </Modal>
 
       <Modal
