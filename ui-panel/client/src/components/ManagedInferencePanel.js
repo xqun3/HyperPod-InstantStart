@@ -16,7 +16,8 @@ import {
   Switch,
   Card,
   Typography,
-  Divider
+  Divider,
+  Radio
 } from 'antd';
 import {
   RocketOutlined,
@@ -32,7 +33,8 @@ import {
   CloudServerOutlined,
   ReloadOutlined,
   ThunderboltFilled,
-  ApiOutlined
+  ApiOutlined,
+  LinkOutlined
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -48,6 +50,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
   const [enableKvCache, setEnableKvCache] = useState(false);
   const [enableL1Cache, setEnableL1Cache] = useState(false);
   const [enableL2Cache, setEnableL2Cache] = useState(false);
+  const [l2CacheBackend, setL2CacheBackend] = useState('tieredstorage'); // 'tieredstorage' or 'redis'
   const [enableIntelligentRouting, setEnableIntelligentRouting] = useState(false);
   const [routingStrategy, setRoutingStrategy] = useState('prefixaware');
 
@@ -113,6 +116,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
 --model-path /opt/ml/model \\
 --host 0.0.0.0 \\
 --port 22022 \\
+--tp-size 1 \\
 --trust-remote-code`;
     } else {
       // vLLM: 显示完整命令（用户友好），后端会自动去掉 vllm serve
@@ -120,7 +124,10 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
       return `vllm serve \\
 --model /opt/ml/model \\
 --served-model-name ${modelName} \\
---max-model-len 2048 \\
+--port 8000 \\
+--max-num-seqs 32 \\
+--max-model-len 1280 \\
+--tensor-parallel-size 1 \\
 --dtype auto`;
     }
   }, []);
@@ -250,7 +257,8 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
         kvCache: enableKvCache ? {
           enableL1Cache: enableL1Cache,
           enableL2Cache: enableL2Cache,
-          l2CacheUrl: enableL2Cache ? values.l2CacheUrl : undefined
+          l2CacheBackend: enableL2Cache ? l2CacheBackend : undefined,
+          l2CacheUrl: (enableL2Cache && l2CacheBackend === 'redis') ? values.l2CacheUrl : undefined
         } : undefined,
         // Intelligent Routing 配置
         intelligentRouting: enableIntelligentRouting ? {
@@ -521,7 +529,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
         </Row>
 
         <Row gutter={16}>
-          <Col span={18}>
+          <Col span={12}>
             <Form.Item
               label={
                 <Space>
@@ -560,6 +568,36 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
               rules={[{ required: true, message: 'Please input port!' }]}
             >
               <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item
+              label={
+                <Space>
+                  Service Type
+                  <Tooltip title="External: Internet-facing NLB, Internal: ClusterIP only">
+                    <InfoCircleOutlined />
+                  </Tooltip>
+                </Space>
+              }
+              name="serviceType"
+              initialValue="internal"
+              rules={[{ required: true, message: 'Please select service type!' }]}
+            >
+              <Radio.Group>
+                <Radio value="external">
+                  <Space>
+                    <GlobalOutlined />
+                    External
+                  </Space>
+                </Radio>
+                <Radio value="internal">
+                  <Space>
+                    <LinkOutlined />
+                    Internal
+                  </Space>
+                </Radio>
+              </Radio.Group>
             </Form.Item>
           </Col>
         </Row>
@@ -659,7 +697,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
           message={
             <Space>
               <ThunderboltOutlined />
-              <Text strong>Advanced Features (Optional)</Text>
+              <Text strong>Advanced Features (Optional, vLLM support only)</Text>
             </Space>
           }
           type="info"
@@ -739,48 +777,71 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
                       onChange={setEnableL2Cache}
                       disabled={!enableKvCache}
                     />
-                    <Text>L2 Cache (Redis - Shared Storage)</Text>
+                    <Text>L2 Cache (Shared Storage)</Text>
                   </Space>
                 }
-                style={{ 
+                style={{
                   borderColor: enableL2Cache ? '#52c41a' : '#d9d9d9',
                   opacity: enableKvCache ? 1 : 0.5
                 }}
               >
                 <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 12 }}>
-                  Enables cache sharing across multiple nodes. Requires Redis deployment in same VPC.
+                  Enables cache sharing across multiple nodes via Tiered Storage or Redis.
                 </Text>
 
                 {enableL2Cache && (
-                  <Form.Item
-                    label="Redis URL"
-                    name="l2CacheUrl"
-                    rules={[
-                      { required: enableL2Cache, message: 'Redis URL is required when L2 Cache is enabled' },
-                      { pattern: /^redis:\/\/.+/, message: 'Must start with redis://' }
-                    ]}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <Input
-                      placeholder="redis://redis.default.svc.cluster.local:6379"
-                      style={{ fontFamily: 'monospace' }}
-                      disabled={!enableKvCache || !enableL2Cache}
-                    />
-                  </Form.Item>
-                )}
+                  <>
+                    <Form.Item
+                      label="L2 Cache Backend"
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Select
+                        value={l2CacheBackend}
+                        onChange={setL2CacheBackend}
+                        disabled={!enableKvCache || !enableL2Cache}
+                        style={{ width: '100%' }}
+                      >
+                        <Option value="tieredstorage">
+                          <Space>
+                            <Text>Tiered Storage</Text>
+                            <Text type="success" style={{ fontSize: '11px' }}>(Recommended)</Text>
+                          </Space>
+                        </Option>
+                        <Option value="redis">Redis</Option>
+                      </Select>
+                    </Form.Item>
 
-                {enableL2Cache && (
-                  <Alert
-                    message="Redis URL Format"
-                    description={
-                      <Text code style={{ fontSize: '11px' }}>
-                        redis://{'<service-name>.<namespace>.svc.cluster.local:6379'}
-                      </Text>
-                    }
-                    type="info"
-                    showIcon
-                    style={{ marginTop: 8, fontSize: '12px' }}
-                  />
+                    {l2CacheBackend === 'redis' && (
+                      <>
+                        <Form.Item
+                          label="Redis URL"
+                          name="l2CacheUrl"
+                          rules={[
+                            { required: l2CacheBackend === 'redis', message: 'Redis URL is required when using Redis backend' },
+                            { pattern: /^redis:\/\/.+/, message: 'Must start with redis://' }
+                          ]}
+                          style={{ marginBottom: 8 }}
+                        >
+                          <Input
+                            placeholder="redis://redis.default.svc.cluster.local:6379"
+                            style={{ fontFamily: 'monospace' }}
+                            disabled={!enableKvCache || !enableL2Cache}
+                          />
+                        </Form.Item>
+                        <Alert
+                          message="Redis URL Format"
+                          description={
+                            <Text code style={{ fontSize: '11px' }}>
+                              redis://{'<service-name>.<namespace>.svc.cluster.local:6379'}
+                            </Text>
+                          }
+                          type="info"
+                          showIcon
+                          style={{ fontSize: '12px' }}
+                        />
+                      </>
+                    )}
+                  </>
                 )}
               </Card>
             </Space>
@@ -822,21 +883,38 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
                 disabled={!enableIntelligentRouting}
                 onChange={(value) => setRoutingStrategy(value)}
                 style={{ width: '100%' }}
+                optionLabelProp="label"
               >
                 {routingStrategyOptions.map(option => (
-                  <Option key={option.value} value={option.value}>
-                    <Space>
-                      <Text strong>{option.label}</Text>
-                      {option.recommended && (
-                        <Text type="success" style={{ fontSize: '11px' }}>(Recommended)</Text>
-                      )}
-                      {option.advanced && (
-                        <Text type="warning" style={{ fontSize: '11px' }}>(Advanced)</Text>
-                      )}
+                  <Option 
+                    key={option.value} 
+                    value={option.value}
+                    label={
+                      <Space>
+                        <Text strong>{option.label}</Text>
+                        {option.recommended && (
+                          <Text type="success" style={{ fontSize: '11px' }}>(Recommended)</Text>
+                        )}
+                        {option.advanced && (
+                          <Text type="warning" style={{ fontSize: '11px' }}>(Advanced)</Text>
+                        )}
+                      </Space>
+                    }
+                  >
+                    <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                      <Space>
+                        <Text strong>{option.label}</Text>
+                        {option.recommended && (
+                          <Text type="success" style={{ fontSize: '11px' }}>(Recommended)</Text>
+                        )}
+                        {option.advanced && (
+                          <Text type="warning" style={{ fontSize: '11px' }}>(Advanced)</Text>
+                        )}
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: '12px' }}>
+                        {option.description}
+                      </Text>
                     </Space>
-                    <div style={{ fontSize: '12px', color: '#8c8c8c', marginTop: 4 }}>
-                      {option.description}
-                    </div>
                   </Option>
                 ))}
               </Select>

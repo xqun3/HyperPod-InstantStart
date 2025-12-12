@@ -271,7 +271,7 @@ const ConfigPanel = ({ onDeploy, deploymentStatus }) => {
         gpuCount: 1,
         gpuMemory: -1,
         instanceTypes: [],
-        serviceType: 'external',
+        serviceType: 'clusterip',
         deploymentName: '',
         dockerImage: '', // 改为空，用户必须选择
         deploymentCommand: '', // 命令也为空，等待用户选择镜像后自动填充

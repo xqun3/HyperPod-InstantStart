@@ -925,8 +925,13 @@ app.post('/api/deploy', async (req, res) => {
         if (kvCache.enableL2Cache) {
           kvCacheSpecYaml += '\n    enableL2Cache: true';
           kvCacheSpecYaml += '\n    l2CacheSpec:';
-          kvCacheSpecYaml += '\n      l2CacheBackend: redis';
-          kvCacheSpecYaml += `\n      l2CacheLocalUrl: "${kvCache.l2CacheUrl}"`;
+          // 支持 tieredstorage 和 redis 两种后端
+          const l2Backend = kvCache.l2CacheBackend || 'tieredstorage';
+          kvCacheSpecYaml += `\n      l2CacheBackend: "${l2Backend}"`;
+          // 只有 redis 后端才需要 l2CacheLocalUrl
+          if (l2Backend === 'redis' && kvCache.l2CacheUrl) {
+            kvCacheSpecYaml += `\n      l2CacheLocalUrl: "${kvCache.l2CacheUrl}"`;
+          }
         }
       }
 
@@ -972,8 +977,19 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/INTELLIGENT_ROUTING_SPEC/g, intelligentRoutingSpecYaml)
         .replace(/SESSION_KEY_ENV/g, sessionKeyEnvYaml);
 
+      // 生成 Service YAML（使用 EKSServiceHelper）
+      const serviceYaml = EKSServiceHelper.generateManagedInferenceService(
+        finalDeploymentTag,
+        serviceType,
+        port,  // 用户指定的对外暴露端口
+        nlbAnnotations
+      );
+      
+      // 将 Service YAML 附加到 InferenceEndpointConfig 后面
+      newYamlContent += serviceYaml;
+
       servEngine = 'managed-inf';
-      console.log('Generated managed inference YAML');
+      console.log('Generated managed inference YAML with service type:', serviceType);
     }
     // 处理Container部署（移除了Ollama支持）
     else {

@@ -129,6 +129,39 @@ spec:
   }
 
   /**
+   * 生成 Managed Inference Service YAML
+   * @param {string} deploymentName - InferenceEndpointConfig 的名称
+   * @param {string} serviceType - 服务类型 ('external', 'internal')
+   * @param {number} port - 对外暴露的端口
+   * @param {string} nlbAnnotations - NLB注解 (仅external类型需要)
+   * @returns {string} Service YAML字符串
+   */
+  static generateManagedInferenceService(deploymentName, serviceType, port, nlbAnnotations = '') {
+    const isExternal = serviceType === 'external';
+    const serviceName = isExternal ? `${deploymentName}-nlb` : `${deploymentName}-service`;
+    const serviceTypeName = isExternal ? 'LoadBalancer' : 'ClusterIP';
+    const sidecarPort = 8081; // Inference Operator sidecar-reverse-proxy 固定端口
+
+    return `---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${serviceName}
+  labels:
+    app: ${deploymentName}${isExternal ? `
+  annotations:${nlbAnnotations}` : ''}
+spec:
+  type: ${serviceTypeName}
+  selector:
+    app: ${deploymentName}
+  ports:
+    - name: http-proxy
+      port: ${port}
+      targetPort: ${sidecarPort}
+      protocol: TCP`;
+  }
+
+  /**
    * 根据服务类型生成对应的Service YAML
    * @param {string} serviceType - 服务类型 ('external', 'clusterip', 'modelpool')
    * @param {string} servEngine - 服务引擎名称
