@@ -37,6 +37,8 @@ spec:
               env:
               - name: LOGLEVEL
                 value: "INFO"
+              - name: SERVER_LOG_LEVEL
+                value: "warning"
               - name: FI_PROVIDER
                 value: "efa"
               # - name: TORCH_DISTRIBUTED_DEBUG

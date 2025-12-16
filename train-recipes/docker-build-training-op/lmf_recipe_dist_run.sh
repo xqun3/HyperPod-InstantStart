@@ -33,10 +33,13 @@ echo "完成 LlamaFactory Yaml 适配"
 # EOF
 # chmod +x post_train.sh
 
+SERVER_LOG_LEVEL=${SERVER_LOG_LEVEL:-info}
+
 # Start training
 hyperpodrun \
     --nnodes=${NNODES} --nproc-per-node=${NPROC_PER_NODE} \
     --server-host=0.0.0.0 --server-port=8080 \
+    --server-log-level=${SERVER_LOG_LEVEL} \
     --tee=3 --log_dir=/tmp/hyperpod \
     --post-train-script=$LOCAL_WORKDIR/post_train.sh \
     $LMA_RECIPE_LLAMA_FACTORY_LAUNCHER \

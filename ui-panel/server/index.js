@@ -4702,20 +4702,56 @@ const hyperPodStatusCheckInterval = setInterval(async () => {
     for (const [clusterTag, clusterInfo] of Object.entries(creatingClusters)) {
       if (clusterInfo.stackName && clusterInfo.region) {
         try {
+          // 检查是否已经在配置依赖
+          if (clusterInfo.phase === 'CONFIGURING_DEPENDENCIES') {
+            console.log(`[Auto-Check] ${clusterTag} is already configuring dependencies, skipping...`);
+            continue;
+          }
+          
           const checkCmd = `aws cloudformation describe-stacks --stack-name ${clusterInfo.stackName} --region ${clusterInfo.region} --query 'Stacks[0].StackStatus' --output text`;
           const stackStatus = execSync(checkCmd, { encoding: 'utf8', timeout: 10000 }).trim();
           
           if (stackStatus === 'CREATE_COMPLETE') {
-            console.log(`[Auto-Check] HyperPod cluster ${clusterTag} creation completed, registering...`);
-            await registerCompletedHyperPod(clusterTag);
-            updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+            console.log(`[Auto-Check] HyperPod cluster ${clusterTag} creation completed, starting dependency configuration...`);
             
-            broadcast({
-              type: 'hyperpod_creation_completed',
-              status: 'success',
-              message: `HyperPod cluster created successfully: ${clusterInfo.stackName}`,
-              clusterTag: clusterTag
+            // 立即更新状态为"配置中"，防止重复触发
+            updateCreatingHyperPodStatus(clusterTag, {
+              ...clusterInfo,
+              phase: 'CONFIGURING_DEPENDENCIES',
+              dependencyConfigStartedAt: new Date().toISOString()
             });
+            
+            // 执行依赖配置
+            try {
+              await registerCompletedHyperPod(clusterTag);
+              
+              // 配置成功，删除记录
+              updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+              
+              broadcast({
+                type: 'hyperpod_creation_completed',
+                status: 'success',
+                message: `HyperPod cluster created successfully: ${clusterInfo.stackName}`,
+                clusterTag: clusterTag
+              });
+            } catch (error) {
+              console.error(`[Auto-Check] Failed to configure dependencies for ${clusterTag}:`, error);
+              
+              // 配置失败，更新状态（保留记录，允许重试）
+              updateCreatingHyperPodStatus(clusterTag, {
+                ...clusterInfo,
+                phase: 'DEPENDENCY_CONFIG_FAILED',
+                error: error.message,
+                lastAttempt: new Date().toISOString()
+              });
+              
+              broadcast({
+                type: 'hyperpod_creation_failed',
+                status: 'error',
+                message: `Failed to configure HyperPod dependencies: ${error.message}`,
+                clusterTag: clusterTag
+              });
+            }
           }
         } catch (error) {
           console.error(`[Auto-Check] Error checking HyperPod ${clusterTag}:`, error);

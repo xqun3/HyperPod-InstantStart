@@ -19,9 +19,12 @@ python torch_process_train_args.py "$TORCH_RECIPE_PY_PARAMS"
 
 [ -f "requirements.txt" ] && pip install -r requirements.txt
 
+SERVER_LOG_LEVEL=${SERVER_LOG_LEVEL:-info}
+
 CMD="hyperpodrun \
     --nnodes=${NNODES} --nproc-per-node=${NPROC_PER_NODE} \
     --server-host=0.0.0.0 --server-port=8080 \
+    --server-log-level=${SERVER_LOG_LEVEL} \
     --tee=3 --log_dir=/tmp/hyperpod \
     --post-train-script=$LOCAL_WORKDIR/post_train.sh \
     $LOCAL_WORKDIR/$PY_NAME \
