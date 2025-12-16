@@ -128,8 +128,8 @@ class HyperPodDependencyManager {
     console.log('Installing HyperPod-specific dependencies...');
 
     // Phase 0: 初始等待 - 等待节点就绪和基础 addon pods 启动
-    console.log('Waiting 60 seconds for cluster nodes and base addons to initialize...');
-    await this.executeNonBlocking(`echo "Initial wait: 60 seconds for nodes and pods to initialize..." && sleep 60 && echo "Initial wait completed"`);
+    console.log('Waiting 180 seconds for cluster nodes and base addons to initialize...');
+    await this.executeNonBlocking(`echo "Initial wait: 180 seconds for nodes and pods to initialize..." && sleep 180 && echo "Initial wait completed"`);
 
     // Phase 1: 清理失败的安装
     const cleanupResult = await this.cleanupFailedInstallations(configDir);
@@ -270,10 +270,10 @@ class HyperPodDependencyManager {
 
     echo ""
     echo "=========================================="
-    echo "Step 4: Stabilization wait (60s)"
+    echo "Step 4: Stabilization wait (120s)"
     echo "=========================================="
-    echo "Waiting 60 seconds for cert-manager to fully stabilize..."
-    sleep 60
+    echo "Waiting 120 seconds for cert-manager webhook to be fully accessible..."
+    sleep 120
 
     echo "✅ cert-manager is ready"
     '`;
@@ -301,7 +301,7 @@ class HyperPodDependencyManager {
     echo "=========================================="
 
     MAX_RETRIES=3
-    RETRY_DELAY=90
+    RETRY_DELAY=120
 
     for ATTEMPT in 1 2 3; do
         echo ""
