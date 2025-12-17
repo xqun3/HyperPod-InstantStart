@@ -61,6 +61,8 @@ spec:
                 value: MSSWIFT_COMMAND_TYPE_PH
               - name: MSSWIFT_RECIPE_YAML_FILE
                 value: MSSWIFT_RECIPE_YAMLFILE_PH
+              # command: ["bash", "/s3/train-recipes/entries/run_msswift_recipe.sh"]
+              # command: ["bash", "/s3/train-recipes/ms-swift-project/run_msswift_recipe.sh"]
               command: ["bash", "/docker_workspace/msswift_recipe_dist_run.sh"]
               volumeMounts:
                 - name: persistent-storage-s3

@@ -1,10 +1,10 @@
 {
-  "trainingJobName": "msswift-3",
+  "trainingJobName": "msswift-6",
   "instanceType": "ml.g6.12xlarge",
-  "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/hyperpod-instantstart-ms-swift:latest",
+  "dockerImage": "public.ecr.aws/t5u4s6i0/hypd-training-op-torch28-pub:v1217-5",
   "efaCount": 1,
   "nprocPerNode": 4,
-  "replicas": 1,
+  "replicas": 2,
   "msswiftRecipeRunPath": "/s3/train-recipes/ms-swift-project/",
   "msswiftCommandType": "swift sft",
   "msswiftRecipeYamlFile": "sample1-sft.yaml",

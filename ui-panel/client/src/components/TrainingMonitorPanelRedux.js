@@ -43,19 +43,19 @@ import {
 const { Option } = Select;
 const { Text, Title } = Typography;
 
-// 日志显示配置
-const MAX_DISPLAY_LINES = 1000; // 前端最多显示1000行日志
+// Log display configuration
+const MAX_DISPLAY_LINES = 1000; // Maximum lines to display in frontend
 
-// 为不同pod定义颜色
+// Define colors for different pods
 const POD_COLORS = [
-  '#1890ff', // 蓝色
-  '#52c41a', // 绿色
-  '#fa8c16', // 橙色
-  '#eb2f96', // 粉色
-  '#722ed1', // 紫色
-  '#13c2c2', // 青色
-  '#faad14', // 金色
-  '#f5222d', // 红色
+  '#1890ff', // blue
+  '#52c41a', // green
+  '#fa8c16', // orange
+  '#eb2f96', // pink
+  '#722ed1', // purple
+  '#13c2c2', // cyan
+  '#faad14', // gold
+  '#f5222d', // red
 ];
 
 const TrainingMonitorPanelRedux = () => {
@@ -75,10 +75,10 @@ const TrainingMonitorPanelRedux = () => {
   const [logStreaming, setLogStreaming] = useState({});
   const [websocket, setWebsocket] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
-  const [autoScroll, setAutoScroll] = useState(true); // 自动滚动开关
+  const [autoScroll, setAutoScroll] = useState(true); // Auto-scroll toggle
   const logContainerRef = useRef(null);
 
-  // 创建WebSocket连接
+  // Create WebSocket connection
   useEffect(() => {
     console.log('Creating WebSocket connection for training monitor');
     setConnectionStatus('connecting');
@@ -107,7 +107,7 @@ const TrainingMonitorPanelRedux = () => {
         setWebsocket(null);
         setConnectionStatus('disconnected');
 
-        // 自动重连（如果不是正常关闭）
+        // Auto reconnect (if not normal close)
         if (event.code !== 1000) {
           console.log('Attempting to reconnect WebSocket in 3 seconds...');
           setTimeout(() => {
@@ -135,7 +135,7 @@ const TrainingMonitorPanelRedux = () => {
     };
   }, []);
 
-  // 自动滚动到底部
+  // Auto scroll to bottom
   const scrollToBottom = () => {
     if (autoScroll && logContainerRef.current) {
       const container = logContainerRef.current;
@@ -143,25 +143,25 @@ const TrainingMonitorPanelRedux = () => {
     }
   };
 
-  // 检查用户是否手动滚动了日志容器
+  // Check if user manually scrolled the log container
   const handleLogScroll = () => {
     if (logContainerRef.current) {
       const container = logContainerRef.current;
-      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50; // 50px容差
+      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50; // 50px tolerance
 
-      // 如果用户滚动到底部附近，启用自动滚动；否则禁用
+      // Enable auto-scroll if user scrolls near bottom; otherwise disable
       if (isAtBottom !== autoScroll) {
         setAutoScroll(isAtBottom);
       }
     }
   };
 
-  // 当日志更新时自动滚动
+  // Auto scroll when logs update
   useEffect(() => {
     scrollToBottom();
   }, [logs, autoScroll]);
 
-  // 处理WebSocket消息
+  // Handle WebSocket messages
   const handleWebSocketMessage = (data) => {
     switch (data.type) {
       case 'log_data':
@@ -181,7 +181,7 @@ const TrainingMonitorPanelRedux = () => {
         break;
       case 'training_job_deleted':
         if (data.status === 'success') {
-          // 不显示通知，由 StatusMonitorRedux 处理（删除按钮在那里）
+          // Don't show notification, handled by StatusMonitorRedux (delete button is there)
           dispatch(fetchTrainingJobs());
           if (selectedJob === data.jobName) {
             dispatch(setActiveJob(null));
@@ -389,7 +389,7 @@ const TrainingMonitorPanelRedux = () => {
       }
     } catch (error) {
       console.error('Failed to fetch full logs:', error);
-      message.error(`获取完整日志失败: ${error.message}`);
+      message.error(`Failed to fetch full logs: ${error.message}`);
       return null;
     }
   };
@@ -409,14 +409,14 @@ const TrainingMonitorPanelRedux = () => {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        message.success('日志文件下载成功');
+        message.success('Log file downloaded successfully');
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to download logs');
       }
     } catch (error) {
       console.error('Failed to download logs:', error);
-      message.error(`下载日志失败: ${error.message}`);
+      message.error(`Failed to download logs: ${error.message}`);
     }
   };
 
@@ -425,7 +425,7 @@ const TrainingMonitorPanelRedux = () => {
     const fullLogs = await fetchFullLogs(jobName, podName);
     if (fullLogs) {
       Modal.info({
-        title: `完整日志 - ${podName}`,
+        title: `Full Logs - ${podName}`,
         content: (
           <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
             <pre style={{ fontSize: '12px', lineHeight: '1.4', whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
@@ -434,7 +434,7 @@ const TrainingMonitorPanelRedux = () => {
           </div>
         ),
         width: '80%',
-        okText: '关闭'
+        okText: 'Close'
       });
     }
   };
@@ -695,7 +695,7 @@ const TrainingMonitorPanelRedux = () => {
                 <Tag color="green">Live Streaming</Tag>
               )}
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                显示最近 {MAX_DISPLAY_LINES} 行日志 (实时)
+                Showing last {MAX_DISPLAY_LINES} lines (live)
               </Text>
             </Space>
           }
@@ -736,7 +736,7 @@ const TrainingMonitorPanelRedux = () => {
                       } else {
                         // 多个pod时显示选择菜单
                         Modal.confirm({
-                          title: '选择Pod查看完整日志',
+                          title: 'Select Pod to View Full Logs',
                           content: (
                             <div>
                               {jobPods.map(pod => (
@@ -760,7 +760,7 @@ const TrainingMonitorPanelRedux = () => {
                       }
                     }}
                   >
-                    查看完整日志
+                    View Full Logs
                   </Button>
                   <Button
                     size="small"
@@ -771,7 +771,7 @@ const TrainingMonitorPanelRedux = () => {
                       } else {
                         // 多个pod时显示选择菜单
                         Modal.confirm({
-                          title: '选择Pod下载完整日志',
+                          title: 'Select Pod to Download Full Logs',
                           content: (
                             <div>
                               {jobPods.map(pod => (
@@ -795,7 +795,7 @@ const TrainingMonitorPanelRedux = () => {
                       }
                     }}
                   >
-                    下载完整日志
+                    Download Full Logs
                   </Button>
                 </>
               )}

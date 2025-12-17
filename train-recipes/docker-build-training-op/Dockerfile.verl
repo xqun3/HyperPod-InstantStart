@@ -1,0 +1,20 @@
+# FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training:2.6.0-gpu-py312-cu126-ubuntu22.04-ec2
+FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training:2.8.0-gpu-py312-cu129-ubuntu22.04-ec2
+
+# https://verl.readthedocs.io/en/latest/start/install.html
+
+WORKDIR /verl_workspace
+
+RUN python -m pip install --upgrade pip
+RUN git clone -b v0.6.1 https://github.com/volcengine/verl.git
+RUN pip install -e ./verl
+RUN pip install vllm==0.10.2
+# RUN pip install vllm==0.8.3
+ENV VLLM_USE_V1=1
+RUN pip install sglang[all]==0.5.2
+RUN pip install --no-build-isolation flash-attn==2.8.3
+RUN pip install --no-cache-dir "torch-memory-saver==0.0.9rc1"
+RUN pip install wandb
+RUN pip install boto3
+RUN pip install huggingface-hub==0.34.0
+RUN pip install hf_transfer hf_xet

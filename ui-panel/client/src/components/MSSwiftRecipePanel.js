@@ -13,7 +13,8 @@ import {
   Typography,
   message,
   Tooltip,
-  Select
+  Select,
+  AutoComplete
 } from 'antd';
 import {
   ExperimentOutlined,
@@ -128,7 +129,19 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
       });
       
       // 将 key 转换为 value 用于 YAML 填充
-      const commandValue = commandsMap[values.msswiftCommandType] || values.msswiftCommandType;
+      let commandValue = commandsMap[values.msswiftCommandType];
+      if (!commandValue) {
+        // 手动输入的命令，根据前缀自动转换
+        const input = values.msswiftCommandType.trim();
+        if (input.startsWith('swift ')) {
+          commandValue = `swift.cli.${input.substring(6)}`;
+        } else if (input.startsWith('megatron ')) {
+          commandValue = `swift.cli._megatron.${input.substring(9)}`;
+        } else {
+          // 其他情况直接透传
+          commandValue = input;
+        }
+      }
       
       await onLaunch({ 
         ...values, 
@@ -330,14 +343,13 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
                 </Space>
               }
               name="msswiftCommandType"
-              rules={[{ required: true, message: 'Please select command type!' }]}
+              rules={[{ required: true, message: 'Please select or input command type!' }]}
             >
-              <Select
-                placeholder="Select command type"
+              <AutoComplete
+                placeholder="Select or type command type"
                 options={commandOptions}
-                showSearch
-                filterOption={(input, option) =>
-                  option.label.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                filterOption={(inputValue, option) =>
+                  option.label.toLowerCase().indexOf(inputValue.toLowerCase()) >= 0
                 }
               />
             </Form.Item>

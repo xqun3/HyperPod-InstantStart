@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tabs, Space } from 'antd';
+import { Tabs, Space, Badge } from 'antd';
 import {
   ExperimentOutlined,
   RocketOutlined,
@@ -109,6 +109,7 @@ const HyperPodRecipes = ({ onLaunch, deploymentStatus }) => {
             <Space>
               <ThunderboltOutlined />
               MS-Swift Recipe
+              <Badge count="DEV" style={{ backgroundColor: '#ff4d4f' }} />
             </Space>
           }
           key="msswift"
