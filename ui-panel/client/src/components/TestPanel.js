@@ -61,7 +61,7 @@ const TestPanel = ({ services, onRefresh }) => {
 
   // 通过API直接获取真实的模型ID
   const fetchRealModelIdFromAPI = async (service) => {
-    if (!service) return 'unknown';
+    if (!service) return 'N/A';
     
     const serviceUrl = getServiceUrl(service);
     const modelType = detectModelType(service);
@@ -82,7 +82,7 @@ const TestPanel = ({ services, onRefresh }) => {
         apiPath = '/api/tags';
       } else {
         console.error('Unknown model type:', modelType);
-        return 'unknown';
+        return 'N/A';
       }
       
       const fullUrl = `${serviceUrl}${apiPath}`;
@@ -135,9 +135,9 @@ const TestPanel = ({ services, onRefresh }) => {
       console.error(`Failed to fetch model ID from API for ${service.metadata.name}:`, error);
     }
     
-    // 如果API调用失败，返回unknown
-    console.log('Returning unknown due to API failure');
-    return 'unknown';
+    // 如果API调用失败，返回N/A
+    console.log('Returning N/A due to API failure');
+    return 'N/A';
   };
 
   // 手动刷新服务列表
@@ -190,7 +190,7 @@ const TestPanel = ({ services, onRefresh }) => {
 
   // 获取真实的模型ID
   const getRealModelId = async (service) => {
-    if (!service) return 'unknown';
+    if (!service) return 'N/A';
     
     console.log('Fetching model ID for:', service.metadata.name);
     return await fetchRealModelIdFromAPI(service);
@@ -198,7 +198,7 @@ const TestPanel = ({ services, onRefresh }) => {
 
   // 检测模型类型
   const detectModelType = (service) => {
-    if (!service) return 'unknown';
+    if (!service) return 'other';
     
     // 只通过 model-type 标签检测
     const labels = service.metadata.labels || {};
@@ -212,8 +212,8 @@ const TestPanel = ({ services, onRefresh }) => {
       return 'ollama';
     }
     
-    // 如果没有 model-type 标签，返回 unknown
-    return 'unknown';
+    // 如果没有 model-type 标签，返回 other
+    return 'other';
   };
 
   useEffect(() => {
@@ -355,12 +355,12 @@ const TestPanel = ({ services, onRefresh }) => {
       
       if (accessMode === 'portforward') {
         // Port-Forward 模式：拼接完整 URL（包含端口）
-        fullUrl = `http://localhost:${localPort || 8080}${apiPath}`;
+        fullUrl = `http://localhost:${localPort || 2020}${apiPath}`;
         const servicePort = selectedService.spec.ports?.[0]?.port || 8000;
         const namespace = selectedService.metadata.namespace || 'default';
         
         curlCmd = `# Start port-forward first:
-kubectl port-forward -n ${namespace} service/${selectedService.metadata.name} ${localPort || 8080}:${servicePort}
+kubectl port-forward -n ${namespace} service/${selectedService.metadata.name} ${localPort || 2020}:${servicePort}
 
 # Then run this curl command:
 curl -X POST "${fullUrl}" \\
@@ -410,7 +410,7 @@ curl -X POST "${fullUrl}" \\
       
       if (accessMode === 'portforward') {
         // Port-Forward 模式：使用新的 API
-        fullUrl = `http://localhost:${localPort || 8080}${apiPath}`;
+        fullUrl = `http://localhost:${localPort || 2020}${apiPath}`;
         const servicePort = selectedService.spec.ports?.[0]?.port || 8000;
         const namespace = selectedService.metadata.namespace || 'default';
         
@@ -422,7 +422,7 @@ curl -X POST "${fullUrl}" \\
             serviceName: selectedService.metadata.name,
             namespace: namespace,
             servicePort: servicePort,
-            localPort: localPort || 8080
+            localPort: localPort || 2020
           }
         };
         
@@ -482,7 +482,7 @@ curl -X POST "${fullUrl}" \\
   };
 
   const getServiceStatus = (service) => {
-    if (!service) return 'unknown';
+    if (!service) return 'N/A';
     
     const ingress = service.status?.loadBalancer?.ingress;
     if (ingress && ingress.length > 0) {
@@ -632,7 +632,7 @@ curl -X POST "${fullUrl}" \\
           form={form}
           layout="vertical"
           onFinish={generateCurlCommand}
-          initialValues={{ localPort: 8080 }}
+          initialValues={{ localPort: 2020 }}
         >
         {/* Local Port - 仅 Port-Forward 模式显示 */}
         {accessMode === 'portforward' && (
@@ -643,10 +643,10 @@ curl -X POST "${fullUrl}" \\
             tooltip="Port on your local machine for port-forward"
           >
             <InputNumber 
-              min={1024}
+              min={2000}
               max={65535}
               style={{ width: '100%' }}
-              placeholder="8080"
+              placeholder="2020"
             />
           </Form.Item>
         )}
@@ -709,31 +709,20 @@ curl -X POST "${fullUrl}" \\
                 /v1/chat/completions - Chat API (OpenAI Compatible)<br/>
                 /v1/completions - Text Completion API<br/>
                 /v1/models - Model List (GET Request)<br/>
-                /health - Health Check<br/>
-                <Text style={{ color: '#0066cc', fontSize: '11px' }}>
-                  Current Model: {fetchingModelId ? 'Fetching...' : 'Check model field in JSON payload'}
-                </Text>
+                /health - Health Check
               </>
             ) : modelType === 'sglang' ? (
               <>
                 /v1/chat/completions - Chat API (OpenAI Compatible)<br/>
                 /v1/completions - Text Completion API<br/>
                 /v1/models - Model List (GET Request)<br/>
-                /health - Health Check<br/>
-                <Text style={{ color: '#0066cc', fontSize: '11px' }}>
-                  Current Model: {fetchingModelId ? 'Fetching...' : 'Check model field in JSON payload'}
-                </Text>
+                /health - Health Check
               </>
             ) : (
               <>
                 /v1/chat/completions - Chat API (OpenAI Compatible)<br/>
                 /api/generate - Prompt Text Generation<br/>
-                /api/chat - Chat API<br/>
-                /api/tags - Model List (GET Request, empty payload)<br/>
-                / - Health Check<br/>
-                <Text style={{ color: '#0066cc', fontSize: '11px' }}>
-                  Current Model: {fetchingModelId ? 'Fetching...' : 'Check model field in JSON payload'}
-                </Text>
+                /api/chat - Chat API
               </>
             )}
           </div>
@@ -868,34 +857,10 @@ curl -X POST "${fullUrl}" \\
               <Text strong>Type:</Text> {selectedService.spec.type}
             </div>
             <div>
-              <Text strong>Model Type:</Text> {modelType.toUpperCase()}
-            </div>
-            <div>
-              <Text strong>Model ID:</Text>{' '}
-              {fetchingModelId ? (
-                <Text type="secondary">
-                  <Spin size="small" style={{ marginRight: 8 }} />
-                  Fetching...
-                </Text>
-              ) : (
-                <Text type="secondary">Check model field in JSON payload</Text>
-              )}
-            </div>
-            <div>
               <Text strong>Status:</Text>{' '}
               <Text type={getStatusColor(getServiceStatus(selectedService))}>
                 {getServiceStatus(selectedService)}
               </Text>
-            </div>
-            <div>
-              <Text strong>Labels:</Text>{' '}
-              <Space wrap>
-                {Object.entries(selectedService.metadata.labels || {}).map(([key, value]) => (
-                  <Text key={key} code style={{ fontSize: '11px' }}>
-                    {key}={value}
-                  </Text>
-                ))}
-              </Space>
             </div>
             {selectedService.status?.loadBalancer?.ingress?.[0] && (
               <div>

@@ -4,10 +4,14 @@ metadata:
   name: DEPLOYMENT_NAME
   namespace: defaultHAMI_LABEL
 spec:
-  modelName: MODEL_NAMEINVOCATION_ENDPOINT
+  modelName: MODEL_NAME
+  invocationEndpoint: v1/chat/completions
   instanceType: INSTANCE_TYPE
-  replicas: REPLICAS_COUNT
-
+  replicas: REPLICAS_COUNTAUTOSCALING_SPEC
+  metrics:
+    enabled: true
+    modelMetrics:
+      port: PORT_NUMBER
   modelSourceConfig:
     modelSourceType: s3
     s3Storage:

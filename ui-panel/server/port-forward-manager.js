@@ -5,7 +5,7 @@ class PortForwardManager {
     this.activeProcesses = new Map();
   }
 
-  async startTemporary(serviceName, namespace = 'default', servicePort = 8000, localPort = 8080) {
+  async startTemporary(serviceName, namespace = 'default', servicePort = 8000, localPort = 2020) {
     const requestId = `${serviceName}-${Date.now()}`;
     
     return new Promise((resolve, reject) => {

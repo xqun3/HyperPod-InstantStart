@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const WebSocket = require('ws');
 const { exec, spawn, execSync } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 const fs = require('fs-extra');
 const YAML = require('yaml');
 const path = require('path');
@@ -775,7 +777,9 @@ app.post('/api/deploy', async (req, res) => {
       workerCommand,  // Worker 命令（bash 风格字符串，与 ConfigPanel 格式相同）
       // KV Cache and Intelligent Routing
       kvCache,  // { enableL1Cache, enableL2Cache, l2CacheUrl }
-      intelligentRouting  // { enabled, strategy, sessionKey }
+      intelligentRouting,  // { enabled, strategy, sessionKey }
+      // Auto-Scaling
+      autoScaling  // { enabled, minReplicaCount, maxReplicaCount, pollingInterval, cooldownPeriod, prometheusTrigger }
     } = req.body;
 
     console.log('Inference deployment request:', {
@@ -791,7 +795,8 @@ app.post('/api/deploy', async (req, res) => {
       memoryRequest,
       port,
       kvCache,
-      intelligentRouting
+      intelligentRouting,
+      autoScaling
     });
 
     // 生成带时间戳的唯一标签（符合Kubernetes命名规范）
@@ -937,14 +942,10 @@ app.post('/api/deploy', async (req, res) => {
 
       // 处理 Intelligent Routing 配置
       let intelligentRoutingSpecYaml = '';
-      let invocationEndpointYaml = '';
       if (intelligentRouting && intelligentRouting.enabled) {
         intelligentRoutingSpecYaml = '\n  intelligentRoutingSpec:';
         intelligentRoutingSpecYaml += '\n    enabled: true';
         intelligentRoutingSpecYaml += `\n    routingStrategy: ${intelligentRouting.strategy}`;
-        
-        // 当启用 Intelligent Routing 时，必须指定 invocationEndpoint
-        invocationEndpointYaml = '\n  invocationEndpoint: v1/chat/completions';
       }
 
       // 处理 Session Key 环境变量（仅在 session 或 kvaware 策略时添加）
@@ -955,13 +956,37 @@ app.post('/api/deploy', async (req, res) => {
         sessionKeyEnvYaml = `\n      - name: SESSION_KEY\n        value: "${intelligentRouting.sessionKey}"`;
       }
 
+      // 处理 Auto-Scaling 配置
+      let autoScalingSpecYaml = '';
+      if (autoScaling && autoScaling.enabled) {
+        autoScalingSpecYaml = '\n\n  autoScalingSpec:';
+        autoScalingSpecYaml += `\n    minReplicaCount: ${autoScaling.minReplicaCount}`;
+        autoScalingSpecYaml += `\n    maxReplicaCount: ${autoScaling.maxReplicaCount}`;
+        autoScalingSpecYaml += `\n    pollingInterval: ${autoScaling.pollingInterval || 30}`;
+        autoScalingSpecYaml += `\n    cooldownPeriod: ${autoScaling.cooldownPeriod || 120}`;
+        autoScalingSpecYaml += `\n    scaleDownStabilizationTime: ${autoScaling.scaleDownStabilizationTime || 60}`;
+        autoScalingSpecYaml += `\n    scaleUpStabilizationTime: ${autoScaling.scaleUpStabilizationTime || 0}`;
+        
+        // Prometheus Trigger
+        if (autoScaling.prometheusTrigger) {
+          const prom = autoScaling.prometheusTrigger;
+          autoScalingSpecYaml += '\n    prometheusTrigger:';
+          autoScalingSpecYaml += `\n      serverAddress: "${prom.serverAddress}"`;
+          autoScalingSpecYaml += `\n      query: "${prom.query}"`;
+          autoScalingSpecYaml += `\n      targetValue: ${prom.targetValue}`;
+          if (prom.activationTargetValue !== undefined) {
+            autoScalingSpecYaml += `\n      activationTargetValue: ${prom.activationTargetValue}`;
+          }
+        }
+      }
+
       // 替换模板中的占位符
       newYamlContent = templateContent
         .replace(/DEPLOYMENT_NAME/g, finalDeploymentTag)
         .replace(/MODEL_NAME/g, effectiveModelName)
-        .replace(/INVOCATION_ENDPOINT/g, invocationEndpointYaml)
         .replace(/INSTANCE_TYPE/g, instanceType)
         .replace(/REPLICAS_COUNT/g, replicas.toString())
+        .replace(/AUTOSCALING_SPEC/g, autoScalingSpecYaml)
         .replace(/S3_BUCKET_NAME/g, s3BucketName)
         .replace(/AWS_REGION/g, s3Region)
         .replace(/MODEL_LOCATION/g, modelLocation)
@@ -977,16 +1002,20 @@ app.post('/api/deploy', async (req, res) => {
         .replace(/INTELLIGENT_ROUTING_SPEC/g, intelligentRoutingSpecYaml)
         .replace(/SESSION_KEY_ENV/g, sessionKeyEnvYaml);
 
-      // 生成 Service YAML（使用 EKSServiceHelper）
-      const serviceYaml = EKSServiceHelper.generateManagedInferenceService(
-        finalDeploymentTag,
-        serviceType,
-        port,  // 用户指定的对外暴露端口
-        nlbAnnotations
-      );
-      
-      // 将 Service YAML 附加到 InferenceEndpointConfig 后面
-      newYamlContent += serviceYaml;
+      // 生成 Service YAML（仅在 external 模式下）
+      // internal 模式使用 Inference Operator 自动创建的 routing-service
+      if (serviceType === 'external') {
+        const serviceYaml = EKSServiceHelper.generateManagedInferenceService(
+          finalDeploymentTag,
+          serviceType,
+          port,
+          nlbAnnotations
+        );
+        newYamlContent += serviceYaml;
+        console.log('Generated external Service for managed inference');
+      } else {
+        console.log('Internal mode: using Inference Operator routing-service, no additional Service generated');
+      }
 
       servEngine = 'managed-inf';
       console.log('Generated managed inference YAML with service type:', serviceType);
@@ -4415,22 +4444,37 @@ app.get('/api/deployments', async (req, res) => {
     const servicesOutput = await executeKubectl('get services -o json');
     const services = JSON.parse(servicesOutput);
 
+    // 获取所有 ScaledObject
+    let scaledObjects = [];
+    try {
+      const scaledObjectsOutput = await executeKubectl('get scaledobjects.keda.sh --all-namespaces -o json');
+      const scaledObjectsData = JSON.parse(scaledObjectsOutput);
+      scaledObjects = scaledObjectsData.items || [];
+      console.log(`Found ${scaledObjects.length} ScaledObjects`);
+    } catch (error) {
+      console.log('No ScaledObjects found or KEDA not installed:', error.message);
+    }
+
     // 显示所有deployment，不进行过滤（包含Router）
     const allDeployments = deployments.items;
 
-    // 为每个部署匹配对应的service
+    // 为每个部署匹配对应的service和ScaledObject
     const deploymentList = allDeployments.map(deployment => {
       const appLabel = deployment.metadata.labels?.app;
       const labels = deployment.metadata.labels || {};
       const deploymentName = deployment.metadata.name;
+      const deploymentNamespace = deployment.metadata.namespace;
 
       // 检测部署类型：优先通过service-type标签识别Router
       const serviceType = labels['service-type'];
       const deploymentType = labels['deployment-type'] || labels['model-type'];
+      const deployingService = labels['deploying-service'];
 
       let finalDeploymentType;
       if (serviceType === 'router') {
         finalDeploymentType = 'Router';
+      } else if (deployingService === 'hyperpod-inference') {
+        finalDeploymentType = 'InferenceOperator';
       } else if (deploymentType) {
         finalDeploymentType = deploymentType;
       } else {
@@ -4446,6 +4490,13 @@ app.get('/api/deployments', async (req, res) => {
         }
         // 普通模型deployment的service匹配逻辑
         return service.spec.selector?.app === appLabel;
+      });
+
+      // 匹配对应的 ScaledObject
+      const matchingScaledObject = scaledObjects.find(so => {
+        const targetName = so.spec?.scaleTargetRef?.name;
+        const targetNamespace = so.metadata?.namespace;
+        return targetName === deploymentName && targetNamespace === deploymentNamespace;
       });
 
       // 使用deployment名称作为modelTag
@@ -4488,7 +4539,16 @@ app.get('/api/deployments', async (req, res) => {
         containerPorts: containerPorts,  // 新增：container端口信息
         labels: labels,  // 添加标签信息供前端使用
         // Router专用字段
-        isRouter: finalDeploymentType === 'Router'
+        isRouter: finalDeploymentType === 'Router',
+        // ScaledObject 信息
+        scaledObject: matchingScaledObject ? {
+          name: matchingScaledObject.metadata.name,
+          namespace: matchingScaledObject.metadata.namespace,
+          minReplicas: matchingScaledObject.spec.minReplicaCount,
+          maxReplicas: matchingScaledObject.spec.maxReplicaCount,
+          ready: matchingScaledObject.status?.conditions?.find(c => c.type === 'Ready')?.status === 'True',
+          active: matchingScaledObject.status?.conditions?.find(c => c.type === 'Active')?.status === 'True'
+        } : null
       };
     });
     
@@ -9487,6 +9547,22 @@ app.get('/api/cluster/hami/status', async (req, res) => {
   }
 });
 
+// 获取 AMP Workspace URL
+app.get('/api/cluster/amp-workspace', async (req, res) => {
+  try {
+    const InferenceOperatorManager = require('./utils/inferenceOperatorManager');
+    const inferenceOpManager = new InferenceOperatorManager(clusterManager);
+    const result = await inferenceOpManager.getAmpWorkspace();
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching AMP workspace:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // 重置节点的 HAMi 配置
 app.post('/api/cluster/hami/reset', async (req, res) => {
   try {
@@ -9516,6 +9592,7 @@ app.post('/api/cluster/hami/reset', async (req, res) => {
 // ================================
 
 const KedaManager = require('./utils/kedaManager');
+const ManagedScalingManager = require('./utils/managedScalingManager');
 
 // 预览 KEDA YAML 配置 - TODO: 需要实现缺失的方法
 app.post('/api/keda/preview', async (req, res) => {
@@ -9702,13 +9779,60 @@ app.get('/api/keda/status', async (req, res) => {
   }
 });
 
+// 获取 HyperPod Inference Operator 部署列表
+app.get('/api/inference-operator/deployments', async (req, res) => {
+  try {
+    const { stdout } = await execAsync(
+      `kubectl get deployments -A -l deploying-service=hyperpod-inference -o json`
+    );
+    const result = JSON.parse(stdout);
+    
+    const deployments = result.items.map(item => ({
+      name: item.metadata.name,
+      namespace: item.metadata.namespace,
+      replicas: item.spec.replicas,
+      availableReplicas: item.status.availableReplicas || 0,
+      creationTimestamp: item.metadata.creationTimestamp
+    }));
+    
+    res.json({ success: true, deployments });
+  } catch (error) {
+    console.error('Error fetching inference operator deployments:', error);
+    res.status(500).json({ success: false, error: error.message, deployments: [] });
+  }
+});
+
+// Managed Inference Scaling - Preview ScaledObject YAML
+app.post('/api/keda/preview-scaledobject', async (req, res) => {
+  try {
+    const config = req.body;
+    const result = await ManagedScalingManager.previewScaledObject(config);
+    res.json(result);
+  } catch (error) {
+    console.error('Error generating ScaledObject preview:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Managed Inference Scaling - Deploy ScaledObject
+app.post('/api/keda/deploy-scaledobject', async (req, res) => {
+  try {
+    const config = req.body;
+    const result = await ManagedScalingManager.deployScaledObject(config);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deploying ScaledObject:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 删除 ScaledObject
 app.delete('/api/keda/scaledobject/:name', async (req, res) => {
   try {
     const { name } = req.params;
     const { namespace = 'default' } = req.query;
 
-    const result = await KedaManager.deleteScaledObject(name, namespace);
+    const result = await ManagedScalingManager.deleteScaledObject(name, namespace);
 
     if (result.success) {
       broadcast({
@@ -10059,6 +10183,76 @@ app.delete('/api/routers', async (req, res) => {
 });
 
 console.log('Advanced Scaling (SGLang Router) API loaded');
+
+// Generate KEDA ScaledObject YAML for Managed Inference
+// DEPRECATED: Moved to utils/managedScalingManager.js
+// Kept for reference only
+/*
+function generateManagedInferenceScaledObjectYAML(config) {
+  const {
+    deploymentName,
+    minReplicaCount = 1,
+    maxReplicaCount = 5,
+    pollingInterval = 30,
+    cooldownPeriod = 120,
+    scaleDownStabilizationTime = 60,
+    scaleUpStabilizationTime = 0,
+    promServerAddress,
+    promQuery,
+    promTargetValue = 5,
+    promActivationTargetValue = 2
+  } = config;
+
+  // Auto-generate ScaledObject name from deployment name
+  const scaledObjectName = `${deploymentName}-scaleobj`;
+
+  const scaledobject = {
+    apiVersion: 'keda.sh/v1alpha1',
+    kind: 'ScaledObject',
+    metadata: {
+      name: scaledObjectName,
+      namespace: 'default'
+    },
+    spec: {
+      scaleTargetRef: {
+        apiVersion: 'apps/v1',
+        kind: 'Deployment',
+        name: deploymentName
+      },
+      minReplicaCount: parseInt(minReplicaCount),
+      maxReplicaCount: parseInt(maxReplicaCount),
+      pollingInterval: parseInt(pollingInterval),
+      cooldownPeriod: parseInt(cooldownPeriod),
+      advanced: {
+        horizontalPodAutoscalerConfig: {
+          behavior: {
+            scaleDown: {
+              stabilizationWindowSeconds: parseInt(scaleDownStabilizationTime)
+            },
+            scaleUp: {
+              stabilizationWindowSeconds: parseInt(scaleUpStabilizationTime)
+            }
+          }
+        }
+      },
+      triggers: [
+        {
+          type: 'prometheus',
+          metadata: {
+            serverAddress: promServerAddress,
+            query: promQuery,
+            threshold: promTargetValue.toString(),
+            activationThreshold: promActivationTargetValue.toString(),
+            identityOwner: 'operator'
+          }
+        }
+      ]
+    }
+  };
+
+  return YAML.stringify(scaledobject);
+}
+*/
 
 app.listen(PORT, () => {
   console.log('🚀 ========================================');

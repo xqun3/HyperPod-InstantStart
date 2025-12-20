@@ -206,6 +206,7 @@ const ManagedInferencePanel = ({ onDeploy, deploymentStatus }) => {
     }
   }, [deploymentForm]);
 
+  // 获取 AMP Workspace URL
   // 组件挂载时获取数据
   useEffect(() => {
     fetchInstanceTypes();

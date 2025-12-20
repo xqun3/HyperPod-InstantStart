@@ -421,32 +421,59 @@ class InferenceOperatorManager {
 
     const trustPolicy = {
       Version: "2012-10-17",
-      Statement: [{
-        Effect: "Allow",
-        Principal: {
-          Federated: `arn:aws:iam::${accountId}:oidc-provider/oidc.eks.${region}.amazonaws.com/id/${oidcId}`
+      Statement: [
+        {
+          Effect: "Allow",
+          Principal: {
+            Federated: `arn:aws:iam::${accountId}:oidc-provider/oidc.eks.${region}.amazonaws.com/id/${oidcId}`
+          },
+          Action: "sts:AssumeRoleWithWebIdentity",
+          Condition: {
+            StringLike: {
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:sub`]: "system:serviceaccount:kube-system:keda-operator",
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:aud`]: "sts.amazonaws.com"
+            }
+          }
         },
-        Action: "sts:AssumeRoleWithWebIdentity",
-        Condition: {
-          StringLike: {
-            [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:sub`]: "system:serviceaccount:kube-system:keda-operator",
-            [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:aud`]: "sts.amazonaws.com"
+        {
+          Effect: "Allow",
+          Principal: {
+            Federated: `arn:aws:iam::${accountId}:oidc-provider/oidc.eks.${region}.amazonaws.com/id/${oidcId}`
+          },
+          Action: "sts:AssumeRoleWithWebIdentity",
+          Condition: {
+            StringLike: {
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:sub`]: "system:serviceaccount:hyperpod-inference-system:keda-operator",
+              [`oidc.eks.${region}.amazonaws.com/id/${oidcId}:aud`]: "sts.amazonaws.com"
+            }
           }
         }
-      }]
+      ]
     };
 
     const permissionPolicy = {
       Version: "2012-10-17",
-      Statement: [{
-        Effect: "Allow",
-        Action: [
-          "cloudwatch:GetMetricData",
-          "cloudwatch:GetMetricStatistics",
-          "cloudwatch:ListMetrics"
-        ],
-        Resource: "*"
-      }]
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: [
+            "cloudwatch:GetMetricData",
+            "cloudwatch:GetMetricStatistics",
+            "cloudwatch:ListMetrics"
+          ],
+          Resource: "*"
+        },
+        {
+          Effect: "Allow",
+          Action: [
+            "aps:QueryMetrics",
+            "aps:GetLabels",
+            "aps:GetSeries",
+            "aps:GetMetricMetadata"
+          ],
+          Resource: "*"
+        }
+      ]
     };
 
     const tmpDir = '/tmp';
@@ -797,6 +824,43 @@ class InferenceOperatorManager {
       }
     } catch (error) {
       console.log(`Failed to clean metadata: ${error.message}`);
+    }
+  }
+  /**
+   * 获取 AMP Workspace URL
+   */
+  async getAmpWorkspace() {
+    try {
+      // 检查 hyperpod-observability namespace 是否存在
+      const checkNamespace = `kubectl get namespace hyperpod-observability 2>/dev/null`;
+      try {
+        await execAsync(checkNamespace);
+      } catch (error) {
+        return { success: false, message: 'HyperPod Observability not installed' };
+      }
+
+      // 获取 ObservabilityConfig 中的 AMP URL
+      const getAmpUrl = `kubectl get observabilityconfig -n hyperpod-observability -o jsonpath='{.items[0].spec.amp.remoteWriteUrl}' 2>/dev/null`;
+      const { stdout } = await execAsync(getAmpUrl);
+      
+      if (stdout && stdout.trim()) {
+        // 将 remote_write URL 转换为 query URL
+        // https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-xxx/api/v1/remote_write
+        // -> https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-xxx
+        const remoteWriteUrl = stdout.trim();
+        const workspaceUrl = remoteWriteUrl.replace('/api/v1/remote_write', '');
+        
+        return { 
+          success: true, 
+          workspaceUrl: workspaceUrl,
+          remoteWriteUrl: remoteWriteUrl
+        };
+      } else {
+        return { success: false, message: 'AMP workspace not configured' };
+      }
+    } catch (error) {
+      console.error('Error fetching AMP workspace:', error);
+      return { success: false, error: error.message };
     }
   }
 }

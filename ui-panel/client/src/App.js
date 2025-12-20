@@ -8,6 +8,7 @@ import ThemeProvider from './components/ThemeProvider';
 import ConfigPanel from './components/ConfigPanel';
 import ServiceConfigPanel from './components/ServiceConfigPanel';
 import ManagedInferencePanel from './components/ManagedInferencePanel';
+import ManagedInferenceScalingPanel from './components/ManagedInferenceScalingPanel';
 import ClusterStatusV2Redux from './components/ClusterStatusV2Redux';
 import TestPanel from './components/TestPanel';
 import StatusMonitorRedux from './components/StatusMonitorRedux';
@@ -1027,17 +1028,20 @@ function App() {
                       // Managed Inference tab
                       {
                         key: 'managed-inference',
-                        label: (
-                          <Space>
-                            Managed Inference
-                            <Badge count="NEW" style={{ backgroundColor: '#ff4d4f' }} />
-                          </Space>
-                        ),
+                        label: 'Managed Inference',
                         children: (
                           <ManagedInferencePanel
                             onDeploy={handleDeploy}
                             deploymentStatus={deploymentStatus}
                           />
+                        )
+                      },
+                      // Managed Inference Auto-Scaling tab
+                      {
+                        key: 'managed-inference-scaling',
+                        label: 'Managed Scaling',
+                        children: (
+                          <ManagedInferenceScalingPanel />
                         )
                       }
                     ]}

@@ -710,6 +710,14 @@ const StatusMonitorRedux = ({ activeTab }) => {
       width: 300, // 设置固定宽度替代ellipsis
     },
     {
+      title: 'Namespace',
+      dataIndex: ['metadata', 'namespace'],
+      key: 'namespace',
+      render: (namespace) => (
+        <Tag color="blue">{namespace || 'default'}</Tag>
+      ),
+    },
+    {
       title: 'Type',
       dataIndex: ['spec', 'type'],
       key: 'type',
@@ -891,6 +899,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
       title: 'Deployment Name',
       dataIndex: 'deploymentName',
       key: 'deploymentName',
+      width: 250,
       render: (text) => (
         <strong style={{ fontFamily: 'monospace', fontSize: '12px' }}>
           {text}
@@ -911,6 +920,8 @@ const StatusMonitorRedux = ({ activeTab }) => {
               return <ThunderboltOutlined />;
             case 'Router':
               return <ApiOutlined />;
+            case 'InferenceOperator':
+              return <ContainerOutlined />;
             default:
               return <InfoCircleOutlined />;
           }
@@ -921,6 +932,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
             case 'VLLM': return 'blue';
             case 'SGLang': return 'green';
             case 'Router': return 'purple';
+            case 'InferenceOperator': return 'cyan';
             default: return 'default';
           }
         };
@@ -937,18 +949,6 @@ const StatusMonitorRedux = ({ activeTab }) => {
       dataIndex: 'status',
       key: 'status',
       render: (status, record) => {
-        // 继承原部署管理的状态图标和颜色
-        const getStatusIcon = (status) => {
-          switch (status) {
-            case 'Ready':
-              return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
-            case 'Pending':
-              return <ClockCircleOutlined style={{ color: '#faad14' }} />;
-            default:
-              return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
-          }
-        };
-
         const getStatusColor = (status) => {
           switch (status) {
             case 'Ready': return 'success';
@@ -958,15 +958,9 @@ const StatusMonitorRedux = ({ activeTab }) => {
         };
 
         return (
-          <Space>
-            {getStatusIcon(status)}
-            <Tag color={getStatusColor(status)}>
-              {status}
-            </Tag>
-            <span style={{ fontSize: '12px', color: '#666' }}>
-              {record.readyReplicas}/{record.replicas}
-            </span>
-          </Space>
+          <Tag color={getStatusColor(status)}>
+            {status} ({record.readyReplicas}/{record.replicas})
+          </Tag>
         );
       }
     },
@@ -1010,7 +1004,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
       title: 'Access & URL',
       dataIndex: 'externalIP',
       key: 'externalIP',
-      width: 200,
+      width: 160,
       render: (ip, record) => {
         // 访问类型标签的图标和颜色函数
         const getAccessIcon = (isExternal) => {
@@ -1096,6 +1090,24 @@ const StatusMonitorRedux = ({ activeTab }) => {
       },
     },
     {
+      title: 'ScaledObject',
+      dataIndex: 'scaledObject',
+      key: 'scaledObject',
+      width: 180,
+      render: (scaledObject) => {
+        if (!scaledObject) {
+          return <Text type="secondary">-</Text>;
+        }
+        return (
+          <Tooltip title={`Min: ${scaledObject.minReplicas}, Max: ${scaledObject.maxReplicas}`}>
+            <Text style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+              {scaledObject.name}
+            </Text>
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
@@ -1128,14 +1140,16 @@ const StatusMonitorRedux = ({ activeTab }) => {
     {
       title: 'Actions',
       key: 'actions',
+      width: 100,
       render: (_, record) => (
-        <Space>
+        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
           <Button
             type="default"
             size="small"
             icon={<ThunderboltOutlined />}
             loading={scalingDeployments.has(record.deploymentName)}
             onClick={() => showScaleModal(record)}
+            style={{ width: '90px' }}
           >
             Scale
           </Button>
@@ -1153,6 +1167,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
               size="small"
               icon={<DeleteOutlined />}
               loading={deletingDeployments.has(record.deploymentName)}
+              style={{ width: '90px' }}
             >
               Delete
             </Button>
@@ -1296,13 +1311,7 @@ const StatusMonitorRedux = ({ activeTab }) => {
       ),
     },
     {
-      title: 'Namespace',
-      dataIndex: 'namespace',
-      key: 'namespace',
-      render: (namespace) => <Tag color="blue">{namespace}</Tag>,
-    },
-    {
-      title: 'Model Name',
+      title: 'Deployment Tag',
       dataIndex: 'modelName',
       key: 'modelName',
     },
