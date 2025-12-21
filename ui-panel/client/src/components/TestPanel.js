@@ -50,89 +50,102 @@ const TestPanel = ({ services, onRefresh }) => {
       return false;
     }
     
+    const namespace = service.metadata?.namespace || 'default';
+    const serviceName = service.metadata?.name || '';
+    
+    // hyperpod-inference-system 的 routing service 特殊处理
+    const isHyperpodRouting = namespace === 'hyperpod-inference-system' && 
+                              serviceName.endsWith('-default-routing-service');
+    
     if (accessMode === 'loadbalancer') {
       // LoadBalancer 模式：只显示 LoadBalancer 类型的服务
       return service.spec?.type === 'LoadBalancer';
     } else {
-      // Port-Forward 模式：只显示 ClusterIP 类型的服务
-      return service.spec?.type === 'ClusterIP';
+      // Port-Forward 模式：显示 ClusterIP 类型的服务 + hyperpod routing service
+      return service.spec?.type === 'ClusterIP' || isHyperpodRouting;
     }
   });
 
   // 通过API直接获取真实的模型ID
   const fetchRealModelIdFromAPI = async (service) => {
-    if (!service) return 'N/A';
-    
-    const serviceUrl = getServiceUrl(service);
-    const modelType = detectModelType(service);
+    if (!service) return '';
     
     console.log('fetchRealModelIdFromAPI called:', {
       serviceName: service.metadata.name,
-      serviceUrl,
-      modelType
+      namespace: service.metadata.namespace,
+      accessMode
     });
     
     try {
-      let apiPath;
-      if (modelType === 'vllm') {
-        apiPath = '/v1/models';
-      } else if (modelType === 'sglang') {
-        apiPath = '/v1/models'; // SGLang也使用OpenAI兼容的API
-      } else if (modelType === 'ollama') {
-        apiPath = '/api/tags';
+      // 统一尝试 /v1/models API（OpenAI 兼容格式）
+      const apiPath = '/v1/models';
+      
+      let response, result;
+      
+      if (accessMode === 'portforward') {
+        // Port-Forward 模式：使用临时 port-forward
+        const servicePort = service.spec.ports?.[0]?.port || 8000;
+        const namespace = service.metadata.namespace || 'default';
+        const localPortValue = form.getFieldValue('localPort') || 2020;
+        const fullUrl = `http://localhost:${localPortValue}${apiPath}`;
+        
+        console.log('Calling /v1/models through temporary port-forward:', fullUrl);
+        
+        response = await fetch('/api/proxy-request-portforward', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: fullUrl,
+            method: 'GET',
+            portForward: {
+              enabled: true,
+              serviceName: service.metadata.name,
+              namespace: namespace,
+              servicePort: servicePort,
+              localPort: localPortValue
+            }
+          })
+        });
       } else {
-        console.error('Unknown model type:', modelType);
-        return 'N/A';
+        // LoadBalancer 模式：直接访问
+        const serviceUrl = getServiceUrl(service);
+        const fullUrl = `${serviceUrl}${apiPath}`;
+        
+        console.log('Calling /v1/models through proxy:', fullUrl);
+        
+        response = await fetch('/api/proxy-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: fullUrl,
+            method: 'GET'
+          })
+        });
       }
       
-      const fullUrl = `${serviceUrl}${apiPath}`;
-      console.log('Calling API through proxy:', fullUrl);
+      result = await response.json();
+      console.log('API response:', result);
       
-      // 通过后端代理调用API
-      const response = await fetch('/api/proxy-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: fullUrl,
-          method: 'GET' // 指定使用GET方法
-        }),
-      });
-      
-      const result = await response.json();
-      console.log('Proxy response:', result);
-      
-      if (result.success) {
+      if (result.success && result.data) {
         const data = result.data;
         
-        if (modelType === 'vllm') {
-          // VLLM: 从data.data[0].id获取
-          if (data.data && data.data.length > 0) {
-            const modelId = data.data[0].id;
-            console.log(`VLLM API returned model ID: ${modelId}`);
-            return modelId; // 例如: "/s3/Qwen-Qwen3-0.6B"
-          }
-        } else if (modelType === 'sglang') {
-          // SGLang: 也使用OpenAI兼容格式，从data.data[0].id获取
-          if (data.data && data.data.length > 0) {
-            const modelId = data.data[0].id;
-            console.log(`SGLang API returned model ID: ${modelId}`);
-            return modelId;
-          }
-        } else if (modelType === 'ollama') {
-          // Ollama: 从data.models[0].name获取
-          if (data.models && data.models.length > 0) {
-            const modelName = data.models[0].name;
-            console.log(`Ollama API returned model name: ${modelName}`);
-            return modelName; // 例如: "gpt-oss:20b"
-          }
+        // 尝试从 OpenAI 兼容格式获取 model ID
+        if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+          const modelId = data.data[0].id;
+          console.log(`Successfully fetched model ID: ${modelId}`);
+          return modelId;
         }
+        
+        // 如果没有找到，返回空字符串
+        console.log('No model ID found in response');
+        return '';
       } else {
-        console.error('Proxy request failed:', result.error);
+        console.log('API request failed:', result.error || 'Unknown error');
+        return '';
       }
     } catch (error) {
-      console.error(`Failed to fetch model ID from API for ${service.metadata.name}:`, error);
+      console.log(`Failed to fetch model ID:`, error.message || error);
+      return '';
     }
     
     // 如果API调用失败，返回N/A
@@ -263,18 +276,26 @@ const TestPanel = ({ services, onRefresh }) => {
     try {
       console.log('updateFormDefaults called with:', { type, serviceName: service?.metadata?.name });
       
-      // 注释掉自动获取模型 ID 的逻辑
-      // const realModelId = await getRealModelId(service);
-      // console.log('Got real model ID:', realModelId);
-      
-      // 使用空字符串作为 model 值
-      const realModelId = "";
+      // 尝试从 /v1/models API 获取模型 ID
+      let realModelId = "";
+      try {
+        const fetchedModelId = await fetchRealModelIdFromAPI(service);
+        // 如果成功获取到非空值，则使用
+        if (fetchedModelId) {
+          realModelId = fetchedModelId;
+          console.log('Successfully fetched model ID:', realModelId);
+        } else {
+          console.log('API returned empty, using empty string');
+        }
+      } catch (error) {
+        console.log('Failed to fetch model ID, using empty string:', error);
+      }
       
       // 统一使用相同的payload格式，只调整model参数
       form.setFieldsValue({
         apiPath: '/v1/chat/completions',
         payload: JSON.stringify({
-          model: realModelId, // 使用空字符串
+          model: realModelId, // 使用获取到的 model ID 或空字符串
           system: "You are an AI assistant.",
           messages: [
             {
@@ -587,11 +608,17 @@ curl -X POST "${fullUrl}" \\
                 const serviceType = detectModelType(service);
                 const status = getServiceStatus(service);
                 const statusColor = getStatusColor(status);
+                const namespace = service.metadata.namespace || 'default';
 
                 return (
                   <Option key={service.metadata.name} value={service.metadata.name}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>{service.metadata.name}</span>
+                      <span>
+                        {service.metadata.name}
+                        <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
+                          (ns: {namespace})
+                        </Text>
+                      </span>
                       <Space size="small">
                         <Text
                           style={{
@@ -627,7 +654,7 @@ curl -X POST "${fullUrl}" \\
       </Card>
 
       {/* 测试表单 */}
-      <Spin spinning={fetchingModelId} tip="正在获取模型信息...">
+      <Spin spinning={fetchingModelId} tip="Fetching model ID from service...">
         <Form
           form={form}
           layout="vertical"

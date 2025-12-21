@@ -358,14 +358,28 @@ const ManagedInferenceScalingPanel = () => {
           </Row>
 
           <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" icon={<RocketOutlined />} loading={loading}>
-                Deploy Scaling
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Button 
+                type="primary" 
+                htmlType="submit" 
+                icon={<RocketOutlined />} 
+                loading={loading}
+                block
+              >
+                Apply Scaler
               </Button>
-              <Button icon={<CodeOutlined />} onClick={handlePreview}>
+              <Button 
+                icon={<CodeOutlined />} 
+                onClick={handlePreview}
+                size="small"
+                style={{ display: 'none' }}
+              >
                 Preview YAML
               </Button>
-              <Button onClick={() => form.resetFields()}>
+              <Button 
+                onClick={() => form.resetFields()}
+                style={{ display: 'none' }}
+              >
                 Reset
               </Button>
             </Space>

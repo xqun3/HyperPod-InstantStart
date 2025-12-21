@@ -130,6 +130,7 @@ class AppStatusV2 {
 
   /**
    * 获取 Services 状态（带缓存）
+   * 同时获取 default 和 hyperpod-inference-system namespace 的服务
    */
   async getServices(forceRefresh = false) {
     if (!forceRefresh && this.isCacheValid('services')) {
@@ -141,15 +142,35 @@ class AppStatusV2 {
       console.log('Fetching fresh services data...');
       const startTime = Date.now();
       
-      const output = await this.executeKubectlWithDedup('get services -o json', 15000);
-      const servicesData = JSON.parse(output);
+      // 并行获取两个 namespace 的服务
+      const [defaultOutput, hyperpodOutput] = await Promise.allSettled([
+        this.executeKubectlWithDedup('get services -n default -o json', 15000),
+        this.executeKubectlWithDedup('get services -n hyperpod-inference-system -o json', 15000)
+      ]);
+
+      let allServices = [];
+      
+      // 处理 default namespace 的服务
+      if (defaultOutput.status === 'fulfilled') {
+        const defaultData = JSON.parse(defaultOutput.value);
+        allServices = allServices.concat(defaultData.items || []);
+      }
+      
+      // 处理 hyperpod-inference-system namespace 的服务（只保留 -default-routing-service 后缀的）
+      if (hyperpodOutput.status === 'fulfilled') {
+        const hyperpodData = JSON.parse(hyperpodOutput.value);
+        const routingServices = (hyperpodData.items || []).filter(svc => 
+          svc.metadata?.name?.endsWith('-default-routing-service')
+        );
+        allServices = allServices.concat(routingServices);
+      }
       
       // 预处理 Service 数据
-      const processedServices = this.processServices(servicesData.items || []);
+      const processedServices = this.processServices(allServices);
       
       const result = {
         services: processedServices,
-        rawServices: servicesData.items || [],
+        rawServices: allServices,
         fetchTime: Date.now() - startTime,
         timestamp: Date.now(),
         count: processedServices.length,
@@ -157,7 +178,7 @@ class AppStatusV2 {
       };
 
       this.updateCache('services', result);
-      console.log(`Services data fetched in ${result.fetchTime}ms: ${result.count} services`);
+      console.log(`Services data fetched in ${result.fetchTime}ms: ${result.count} services (default + hyperpod-inference-system routing)`);
       
       return result;
     } catch (error) {
