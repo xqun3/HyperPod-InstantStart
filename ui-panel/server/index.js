@@ -4433,13 +4433,45 @@ app.get('/api/deployments', async (req, res) => {
   try {
     console.log('Fetching deployments (including Routers)...');
 
-    // 获取所有deployment
+    // 获取 default namespace 的 deployment
     const deploymentsOutput = await executeKubectl('get deployments -o json');
-    const deployments = JSON.parse(deploymentsOutput);
+    const defaultDeployments = JSON.parse(deploymentsOutput);
 
-    // 获取所有service
+    // 获取 hyperpod-inference-system namespace 的 deployment（只要 router）
+    let hyperpodDeployments = [];
+    try {
+      const hyperpodDeploymentsOutput = await executeKubectl('get deployments -n hyperpod-inference-system -o json');
+      const hyperpodDeploymentsData = JSON.parse(hyperpodDeploymentsOutput);
+      hyperpodDeployments = (hyperpodDeploymentsData.items || []).filter(dep => 
+        dep.metadata?.name?.endsWith('-default-router')
+      );
+      console.log(`Found ${hyperpodDeployments.length} hyperpod router deployments`);
+    } catch (error) {
+      console.log('No hyperpod router deployments found:', error.message);
+    }
+
+    // 合并两个 namespace 的 deployments
+    const allDeploymentsItems = [...defaultDeployments.items, ...hyperpodDeployments];
+
+    // 获取 default namespace 的 service
     const servicesOutput = await executeKubectl('get services -o json');
-    const services = JSON.parse(servicesOutput);
+    const defaultServices = JSON.parse(servicesOutput);
+
+    // 获取 hyperpod-inference-system namespace 的 routing service
+    let hyperpodServices = [];
+    try {
+      const hyperpodServicesOutput = await executeKubectl('get services -n hyperpod-inference-system -o json');
+      const hyperpodServicesData = JSON.parse(hyperpodServicesOutput);
+      hyperpodServices = (hyperpodServicesData.items || []).filter(svc => 
+        svc.metadata?.name?.endsWith('-default-routing-service')
+      );
+      console.log(`Found ${hyperpodServices.length} hyperpod routing services`);
+    } catch (error) {
+      console.log('No hyperpod routing services found:', error.message);
+    }
+
+    // 合并两个 namespace 的 services
+    const allServices = [...defaultServices.items, ...hyperpodServices];
 
     // 获取所有 ScaledObject
     let scaledObjects = [];
@@ -4452,8 +4484,8 @@ app.get('/api/deployments', async (req, res) => {
       console.log('No ScaledObjects found or KEDA not installed:', error.message);
     }
 
-    // 显示所有deployment，不进行过滤（包含Router）
-    const allDeployments = deployments.items;
+    // 显示所有deployment，不进行过滤（包含Router和hyperpod router）
+    const allDeployments = allDeploymentsItems;
 
     // 为每个部署匹配对应的service和ScaledObject
     const deploymentList = allDeployments.map(deployment => {
@@ -4479,7 +4511,7 @@ app.get('/api/deployments', async (req, res) => {
       }
 
       // 匹配对应的service
-      const matchingService = services.items.find(service => {
+      const matchingService = allServices.find(service => {
         // Router的service匹配逻辑：查找包含deployment名称的service
         if (finalDeploymentType === 'Router') {
           return service.metadata.name.includes(deploymentName) ||
