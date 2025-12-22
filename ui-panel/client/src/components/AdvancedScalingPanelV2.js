@@ -89,11 +89,14 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
     try {
       console.log('Routing Config:', values);
 
+      // 自动生成 router deployment 名称：{targetDeployment}-sglgw
+      const routerDeploymentName = `${values.targetDeployment}-sglgw`;
+
       // 构建配置对象
       const config = {
         type: 'advanced-scaling',
         sglangRouter: {
-          deploymentName: values.deploymentName || 'sglang-router',
+          deploymentName: routerDeploymentName,
           routingPolicy: values.routingPolicy || 'cache_aware',
           routerPort: values.routerPort || 30000,
           metricsPort: values.metricsPort || 29000,
@@ -141,7 +144,6 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
         layout="vertical"
         onFinish={handleSubmit}
         initialValues={{
-          deploymentName: 'sglang-router',
           routingPolicy: 'cache_aware',
           routerPort: 30000,
           metricsPort: 29000,
@@ -166,29 +168,7 @@ const AdvancedScalingPanelV2 = ({ onDeploy, deploymentStatus }) => {
           style={{ marginBottom: 24 }}
         >
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label={
-                  <Space>
-                    Deployment Name
-                    <Tooltip title="Name for the SGLang Router deployment">
-                      <InfoCircleOutlined />
-                    </Tooltip>
-                  </Space>
-                }
-                name="deploymentName"
-                rules={[
-                  { required: true, message: 'Please input deployment name!' },
-                  { pattern: /^[a-z0-9-]+$/, message: 'Only lowercase letters, numbers and hyphens allowed' }
-                ]}
-              >
-                <Input
-                  placeholder="sglang-router"
-                  style={{ fontFamily: 'monospace' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item
                 label={
                   <Space>

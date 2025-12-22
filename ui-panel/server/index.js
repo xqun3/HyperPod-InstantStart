@@ -800,10 +800,15 @@ app.post('/api/deploy', async (req, res) => {
     });
 
     // 生成带时间戳的唯一标签（符合Kubernetes命名规范）
-    const timestamp = new Date().toISOString()
-      .replace(/[:.]/g, '-')     // 替换冒号和点号为连字符
-      .replace('T', '-')         // 替换T为连字符
-      .slice(0, 19);             // 截取到秒级
+    // 格式: 251222-021347 (YYMMDD-HHMMSS)
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${yy}${mm}${dd}-${hh}${min}${ss}`;
     const finalDeploymentTag = deploymentName ? `${deploymentName}-${timestamp}` : `model-${timestamp}`;
 
     console.log(`Generated deployment tag: "${finalDeploymentTag}"`);
@@ -4502,7 +4507,7 @@ app.get('/api/deployments', async (req, res) => {
       let finalDeploymentType;
       if (serviceType === 'router') {
         finalDeploymentType = 'Router';
-      } else if (deployingService === 'hyperpod-inference') {
+      } else if (deployingService === 'hyperpod-inference' || deploymentName.endsWith('-default-router')) {
         finalDeploymentType = 'InferenceOperator';
       } else if (deploymentType) {
         finalDeploymentType = deploymentType;
@@ -9828,6 +9833,24 @@ app.get('/api/inference-operator/deployments', async (req, res) => {
   } catch (error) {
     console.error('Error fetching inference operator deployments:', error);
     res.status(500).json({ success: false, error: error.message, deployments: [] });
+  }
+});
+
+// Get available metrics for Inference Operator deployment
+app.get('/api/inference-operator/deployment/:name/metrics', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const InferenceOperatorMetricsManager = require('./utils/inferenceOperatorMetricsManager');
+    const result = await InferenceOperatorMetricsManager.getDeploymentMetrics(name);
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching deployment metrics:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      businessMetrics: [],
+      vllmMetrics: []
+    });
   }
 });
 

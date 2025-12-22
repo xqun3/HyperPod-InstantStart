@@ -1709,7 +1709,14 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       {/* EC2 Karpenter Resources - 通过环境变量控制显示 */}
       {process.env.REACT_APP_SHOW_EC2_KARPENTER !== 'false' && (
       <Card
-        title="EC2 Karpenter Resources"
+        title={
+          <span>
+            EC2 Karpenter Resources{' '}
+            <Tag color="red" style={{ borderRadius: '10px', fontWeight: 'bold' }}>
+              OPT-IN
+            </Tag>
+          </span>
+        }
         size="small"
         style={{ marginTop: 16 }}
         extra={
@@ -1791,7 +1798,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
           }}>
             <Space align="center">
               <ToolOutlined style={{ color: '#fa8c16' }} />
-              <Text>Karpenter auto-scaling is not installed</Text>
+              <Text>EC2 Karpenter auto-scaling is not installed</Text>
             </Space>
             {hyperPodGroups.length === 0 && (
               <div style={{

@@ -14,7 +14,15 @@ class RoutingManager {
     } = config;
 
     // Generate timestamp for unique naming
-    const timestamp = Date.now();
+    // 格式: 251222021347 (YYMMDDHHMMSS) - 用于资源命名
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${yy}${mm}${dd}${hh}${min}${ss}`;
     const resourceName = `${deploymentName}-${timestamp}`;
 
     // 生成 Deployment 和相关 RBAC 资源
@@ -290,7 +298,15 @@ ${portsSection}`;
       }
 
       // Save YAML file with timestamp
-      const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
+      // 格式: 251222-021347 (YYMMDD-HHMMSS)
+      const now = new Date();
+      const yy = String(now.getFullYear()).slice(-2);
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      const timestamp = `${yy}${mm}${dd}-${hh}${min}${ss}`;
       const yamlPath = path.join(deploymentDir, `sglang-router-${timestamp}.yaml`);
 
       fs.writeFileSync(yamlPath, yaml);

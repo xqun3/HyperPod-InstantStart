@@ -221,8 +221,6 @@ const TestPanel = ({ services, onRefresh }) => {
       return 'sglang';
     } else if (modelType === 'vllm') {
       return 'vllm';
-    } else if (modelType === 'ollama') {
-      return 'ollama';
     }
     
     // 如果没有 model-type 标签，返回 other
@@ -605,7 +603,6 @@ curl -X POST "${fullUrl}" \\
               onChange={handleServiceChange}
             >
               {modelServices.map(service => {
-                const serviceType = detectModelType(service);
                 const status = getServiceStatus(service);
                 const statusColor = getStatusColor(status);
                 const namespace = service.metadata.namespace || 'default';
@@ -619,23 +616,12 @@ curl -X POST "${fullUrl}" \\
                           (ns: {namespace})
                         </Text>
                       </span>
-                      <Space size="small">
-                        <Text
-                          style={{
-                            fontSize: '11px',
-                            color: '#666',
-                            textTransform: 'uppercase'
-                          }}
-                        >
-                          {serviceType}
-                        </Text>
-                        <Text
-                          type={statusColor}
-                          style={{ fontSize: '10px' }}
-                        >
-                          ●
-                        </Text>
-                      </Space>
+                      <Text
+                        type={statusColor}
+                        style={{ fontSize: '10px' }}
+                      >
+                        ●
+                      </Text>
                     </div>
                   </Option>
                 );

@@ -1025,6 +1025,14 @@ function App() {
                           />
                         )
                       },
+                      // Visual divider (non-clickable separator between basic and managed features)
+                      {
+                        key: 'divider-managed',
+                        label: '|',
+                        disabled: true,
+                        className: 'tab-divider',
+                        children: <div />
+                      },
                       // Managed Inference tab
                       {
                         key: 'managed-inference',

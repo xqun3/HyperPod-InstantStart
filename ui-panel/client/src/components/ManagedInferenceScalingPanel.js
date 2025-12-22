@@ -14,14 +14,19 @@ import {
   message,
   Spin,
   Modal,
-  Select
+  Select,
+  Tabs,
+  Tooltip,
+  Tag
 } from 'antd';
 import {
   ThunderboltFilled,
   InfoCircleOutlined,
   RocketOutlined,
   CodeOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  EyeOutlined,
+  CopyOutlined
 } from '@ant-design/icons';
 
 const { Text, Paragraph } = Typography;
@@ -36,6 +41,11 @@ const ManagedInferenceScalingPanel = () => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [inferenceDeployments, setInferenceDeployments] = useState([]);
   const [deploymentsLoading, setDeploymentsLoading] = useState(false);
+  const [selectedDeployment, setSelectedDeployment] = useState(null);
+  const [metricsModalVisible, setMetricsModalVisible] = useState(false);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [availableMetrics, setAvailableMetrics] = useState({ business: [], vllm: [] });
+  const [metricsCache, setMetricsCache] = useState({}); // 缓存：{ deploymentName: { business: [], vllm: [] } }
 
   // 获取 HyperPod Inference Operator 部署列表
   const fetchInferenceDeployments = useCallback(async () => {
@@ -122,6 +132,60 @@ const ManagedInferenceScalingPanel = () => {
     }
   };
 
+  // Browse available metrics
+  const handleBrowseMetrics = async () => {
+    if (!selectedDeployment) {
+      message.warning('Please select a deployment first');
+      return;
+    }
+
+    setMetricsModalVisible(true);
+
+    // 检查缓存
+    if (metricsCache[selectedDeployment]) {
+      setAvailableMetrics(metricsCache[selectedDeployment]);
+      return;
+    }
+
+    // 无缓存，加载数据
+    setMetricsLoading(true);
+
+    try {
+      const response = await fetch(`/api/inference-operator/deployment/${selectedDeployment}/metrics`);
+      const data = await response.json();
+      
+      if (data.success) {
+        const metrics = {
+          business: data.businessMetrics || [],
+          vllm: data.vllmMetrics || []
+        };
+        
+        // 更新显示
+        setAvailableMetrics(metrics);
+        
+        // 保存到缓存
+        setMetricsCache(prev => ({
+          ...prev,
+          [selectedDeployment]: metrics
+        }));
+      } else {
+        message.error('Failed to fetch metrics');
+      }
+    } catch (error) {
+      console.error('Error fetching metrics:', error);
+      message.error('Failed to fetch metrics');
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
+  // Copy metric to clipboard
+  const handleCopyMetric = (metric) => {
+    const query = `avg(${metric}{resource_name="DEPLOYMENT_NAME"})`;
+    navigator.clipboard.writeText(query);
+    message.success('Copied to clipboard');
+  };
+
   return (
     <div style={{ padding: '24px' }}>
       <Alert
@@ -189,6 +253,7 @@ const ManagedInferenceScalingPanel = () => {
                   label: dep.name,
                   value: dep.name
                 }))}
+                onChange={(value) => setSelectedDeployment(value)}
               />
             </Form.Item>
             <Button
@@ -335,6 +400,28 @@ const ManagedInferenceScalingPanel = () => {
             />
           </Form.Item>
 
+          {/* Browse Metrics Button */}
+          <div style={{ marginTop: -16, marginBottom: 16 }}>
+            <Button 
+              icon={<EyeOutlined />}
+              size="small"
+              onClick={handleBrowseMetrics}
+              disabled={!selectedDeployment}
+            >
+              Browse Available Metrics
+            </Button>
+            {!selectedDeployment && (
+              <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+                Select a deployment first
+              </Text>
+            )}
+            {selectedDeployment && (
+              <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+                💡 Click copy button to get query template. DEPLOYMENT_NAME will be auto-replaced.
+              </Text>
+            )}
+          </div>
+
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -387,6 +474,116 @@ const ManagedInferenceScalingPanel = () => {
         <pre style={{ backgroundColor: '#f5f5f5', padding: 16, borderRadius: 4, maxHeight: 600, overflow: 'auto' }}>
           {yamlPreview}
         </pre>
+      </Modal>
+
+      {/* Metrics Browser Modal */}
+      <Modal
+        title="Available Metrics"
+        open={metricsModalVisible}
+        onCancel={() => setMetricsModalVisible(false)}
+        width={900}
+        footer={[
+          <Button key="close" onClick={() => setMetricsModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+      >
+        <Spin spinning={metricsLoading}>
+          <Tabs
+            items={[
+              {
+                key: 'business',
+                label: (
+                  <span>
+                    <RocketOutlined /> Inference Operator Metrics
+                    <Tag color="blue" style={{ marginLeft: 8 }}>{availableMetrics.business.length}</Tag>
+                  </span>
+                ),
+                children: (
+                  <div>
+                    <Paragraph type="secondary" style={{ fontSize: 12 }}>
+                      These metrics are exposed by the sidecar container (port 9113) and pushed to AMP.
+                      They track request-level performance.
+                    </Paragraph>
+                    {availableMetrics.business.length === 0 ? (
+                      <Alert type="warning" message="No metrics found" showIcon />
+                    ) : (
+                      <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+                        {availableMetrics.business.map(metric => (
+                          <div
+                            key={metric}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '6px 8px',
+                              backgroundColor: '#fafafa',
+                              borderRadius: 4,
+                              fontSize: 13,
+                              marginBottom: 4
+                            }}
+                          >
+                            <code style={{ flex: 1 }}>{metric}</code>
+                            <Tooltip title="Copy query template">
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<CopyOutlined />}
+                                onClick={() => handleCopyMetric(metric)}
+                                style={{ marginLeft: 8, flexShrink: 0 }}
+                              />
+                            </Tooltip>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              },
+              {
+                key: 'vllm',
+                label: (
+                  <span style={{ color: '#8c8c8c' }}>
+                    <CodeOutlined /> vLLM Engine Metrics
+                    <Tag color="default" style={{ marginLeft: 8 }}>{availableMetrics.vllm.length}</Tag>
+                  </span>
+                ),
+                children: (
+                  <div>
+                    <Alert
+                      type="warning"
+                      message="Local Metrics Only - Not Available in AMP"
+                      description="These metrics are exposed by the vLLM container (port 8000) but are NOT pushed to AMP. They cannot be used for KEDA auto-scaling. Use for debugging and analysis only."
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                    />
+                    {availableMetrics.vllm.length === 0 ? (
+                      <Alert type="warning" message="No metrics found" showIcon />
+                    ) : (
+                      <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
+                        {availableMetrics.vllm.map(metric => (
+                          <div
+                            key={metric}
+                            style={{
+                              padding: '6px 8px',
+                              backgroundColor: '#fafafa',
+                              borderRadius: 4,
+                              fontSize: 13,
+                              marginBottom: 4,
+                              color: '#8c8c8c'
+                            }}
+                          >
+                            <code>{metric}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+            ]}
+          />
+        </Spin>
       </Modal>
     </div>
   );
