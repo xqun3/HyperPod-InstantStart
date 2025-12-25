@@ -22,10 +22,12 @@ import {
 import {
   ReloadOutlined,
   CheckCircleOutlined,
+  CloseCircleOutlined,
   ExclamationCircleOutlined,
   ClusterOutlined,
   WarningOutlined,
-  PartitionOutlined
+  PartitionOutlined,
+  RollbackOutlined
 } from '@ant-design/icons';
 
 // Redux imports
@@ -60,6 +62,10 @@ const ClusterStatusV2Redux = () => {
   const [applyLoading, setApplyLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
+
+  // 节点操作状态
+  const [nodeActionModalVisible, setNodeActionModalVisible] = useState(false);
+  const [nodeActionLoading, setNodeActionLoading] = useState(false);
 
   // 初始化时获取数据（只执行一次）
   useEffect(() => {
@@ -102,6 +108,72 @@ const ClusterStatusV2Redux = () => {
     setSelectedNode(node);
     setPartitionModalVisible(true);
   }
+
+  // 节点操作
+  const handleNodeActionClick = (node) => {
+    setSelectedNode(node);
+    setNodeActionModalVisible(true);
+  };
+
+  const handleNodeReboot = async () => {
+    if (!selectedNode) return;
+    
+    try {
+      setNodeActionLoading(true);
+      
+      const response = await fetch('/api/cluster/hyperpod/node/reboot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId: selectedNode.nodeName
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        message.success(`Node ${selectedNode.nodeName} reboot initiated`);
+        setNodeActionModalVisible(false);
+        setSelectedNode(null);
+      } else {
+        message.error(result.message || 'Failed to reboot node');
+      }
+    } catch (error) {
+      console.error('Node reboot error:', error);
+      message.error('Failed to reboot node');
+    } finally {
+      setNodeActionLoading(false);
+    }
+  };
+
+  const handleNodeReplace = async () => {
+    if (!selectedNode) return;
+    
+    try {
+      setNodeActionLoading(true);
+      
+      const response = await fetch('/api/cluster/hyperpod/node/replace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId: selectedNode.nodeName
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        message.success(`Node ${selectedNode.nodeName} replacement initiated`);
+        setNodeActionModalVisible(false);
+        setSelectedNode(null);
+      } else {
+        message.error(result.message || 'Failed to replace node');
+      }
+    } catch (error) {
+      console.error('Node replace error:', error);
+      message.error('Failed to replace node');
+    } finally {
+      setNodeActionLoading(false);
+    }
+  };
 
   const handleEnableNode = async () => {
     try {
@@ -395,6 +467,30 @@ const ClusterStatusV2Redux = () => {
         );
       },
     },
+    {
+      title: 'Action',
+      key: 'action',
+      align: 'center',
+      width: '8%',
+      render: (_, record) => {
+        const labels = record.labels || {};
+        const isHyperPod = labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod';
+        
+        // 只对 HyperPod 节点显示
+        if (!isHyperPod) return <span style={{ color: '#d9d9d9' }}>-</span>;
+        
+        return (
+          <Tooltip title="Node Operations">
+            <Button 
+              type="text"
+              size="small" 
+              icon={<RollbackOutlined />}
+              onClick={() => handleNodeActionClick(record)}
+            />
+          </Tooltip>
+        );
+      },
+    },
   ];
 
   return (
@@ -536,33 +632,41 @@ const ClusterStatusV2Redux = () => {
             setPartitionModalVisible(false);
             setSelectedNode(null);
           }}
-          footer={[
-            <Button 
-              key="disable" 
-              danger
-              onClick={handleDisableNode}
-              loading={resetLoading}
-            >
-              Disable
-            </Button>,
-            <Button 
-              key="cancel" 
-              onClick={() => {
-                setPartitionModalVisible(false);
-                setSelectedNode(null);
-              }}
-            >
-              Cancel
-            </Button>,
-            <Button 
-              key="enable" 
-              type="primary" 
-              onClick={handleEnableNode}
-              loading={applyLoading}
-            >
-              Enable
-            </Button>
-          ]}
+          footer={
+            (() => {
+              const isEnabled = selectedNode?.labels?.gpu === 'on';
+              return [
+                <Button 
+                  key="cancel" 
+                  onClick={() => {
+                    setPartitionModalVisible(false);
+                    setSelectedNode(null);
+                  }}
+                >
+                  Cancel
+                </Button>,
+                isEnabled ? (
+                  <Button 
+                    key="disable" 
+                    danger
+                    onClick={handleDisableNode}
+                    loading={resetLoading}
+                  >
+                    Disable HAMi
+                  </Button>
+                ) : (
+                  <Button 
+                    key="enable" 
+                    type="primary" 
+                    onClick={handleEnableNode}
+                    loading={applyLoading}
+                  >
+                    Enable HAMi
+                  </Button>
+                )
+              ];
+            })()
+          }
           width={500}
         >
           <div style={{ marginBottom: 16 }}>
@@ -572,6 +676,22 @@ const ClusterStatusV2Redux = () => {
             <Text code style={{ fontSize: '13px' }}>
               {selectedNode?.nodeName || '-'}
             </Text>
+          </div>
+
+          {/* 当前状态显示 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 8 }}>
+              <Text strong>Current Status:</Text>
+            </div>
+            {selectedNode?.labels?.gpu === 'on' ? (
+              <Tag color="success" icon={<CheckCircleOutlined />}>
+                HAMi Enabled (gpu=on)
+              </Tag>
+            ) : (
+              <Tag color="default" icon={<CloseCircleOutlined />}>
+                HAMi Disabled
+              </Tag>
+            )}
           </div>
 
           <Alert
@@ -586,6 +706,69 @@ const ClusterStatusV2Redux = () => {
               </div>
             }
             type="info"
+            showIcon
+          />
+        </Modal>
+
+        {/* Node Action Modal */}
+        <Modal
+          title="HyperPod Node Operations"
+          open={nodeActionModalVisible}
+          centered
+          onCancel={() => {
+            setNodeActionModalVisible(false);
+            setSelectedNode(null);
+          }}
+          footer={[
+            <Button 
+              key="cancel" 
+              onClick={() => {
+                setNodeActionModalVisible(false);
+                setSelectedNode(null);
+              }}
+            >
+              Cancel
+            </Button>,
+            <Button 
+              key="reboot" 
+              type="primary"
+              onClick={handleNodeReboot}
+              loading={nodeActionLoading}
+            >
+              Reboot Node
+            </Button>,
+            <Button 
+              key="replace" 
+              danger
+              onClick={handleNodeReplace}
+              loading={nodeActionLoading}
+            >
+              Replace Node
+            </Button>
+          ]}
+          width={550}
+        >
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 8 }}>
+              <Text strong>Node Name (Instance ID):</Text>
+            </div>
+            <Text code style={{ fontSize: '13px' }}>
+              {selectedNode?.nodeName || '-'}
+            </Text>
+          </div>
+
+          <Alert
+            message="Node Operations"
+            description={
+              <div>
+                <p><strong>Reboot Node:</strong> Restart the node instance. The node will be temporarily unavailable during reboot.</p>
+                <p><strong>Replace Node:</strong> Terminate and replace the node with a new instance (If your cluster enabled spare nodes).</p>
+                <p style={{ marginTop: 8, marginBottom: 0 }}>
+                  <Text type="warning">⚠️ Warning: These operations will affect running workloads on this node.</Text>
+                </p>
+              </div>
+            }
+            type="warning"
             showIcon
           />
         </Modal>

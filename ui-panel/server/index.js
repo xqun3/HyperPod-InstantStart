@@ -9655,6 +9655,121 @@ app.post('/api/cluster/hami/node/disable', async (req, res) => {
   }
 });
 
+// HyperPod 节点 Reboot
+app.post('/api/cluster/hyperpod/node/reboot', async (req, res) => {
+  try {
+    const { nodeId } = req.body;
+    
+    if (!nodeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Node ID is required'
+      });
+    }
+
+    console.log(`Rebooting HyperPod node: ${nodeId}`);
+    
+    // 获取集群信息
+    const clusterInfo = clusterManager.getClusterInfo();
+    if (!clusterInfo || !clusterInfo.hyperPodCluster) {
+      return res.status(400).json({
+        success: false,
+        message: 'No HyperPod cluster found'
+      });
+    }
+
+    const clusterArn = clusterInfo.hyperPodCluster.ClusterArn;
+    const region = await AWSHelpers.getCurrentRegion();
+
+    // 执行 reboot 命令
+    const cmd = `aws sagemaker batch-update-cluster-nodes \
+      --cluster-name "${clusterArn}" \
+      --node-ids "${nodeId}" \
+      --region ${region}`;
+
+    const result = execSync(cmd, { encoding: 'utf8' });
+    console.log('Reboot result:', result);
+
+    // 广播 WebSocket 消息
+    broadcast({
+      type: 'hyperpod_node_reboot',
+      status: 'success',
+      nodeId: nodeId,
+      message: `Node ${nodeId} reboot initiated`
+    });
+
+    res.json({
+      success: true,
+      message: 'Node reboot initiated successfully',
+      nodeId: nodeId
+    });
+  } catch (error) {
+    console.error('HyperPod node reboot error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// HyperPod 节点 Replace
+app.post('/api/cluster/hyperpod/node/replace', async (req, res) => {
+  try {
+    const { nodeId } = req.body;
+    
+    if (!nodeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Node ID is required'
+      });
+    }
+
+    console.log(`Replacing HyperPod node: ${nodeId}`);
+    
+    // 获取集群信息
+    const clusterInfo = clusterManager.getClusterInfo();
+    if (!clusterInfo || !clusterInfo.hyperPodCluster) {
+      return res.status(400).json({
+        success: false,
+        message: 'No HyperPod cluster found'
+      });
+    }
+
+    const clusterArn = clusterInfo.hyperPodCluster.ClusterArn;
+    const region = await AWSHelpers.getCurrentRegion();
+
+    // 执行 replace 命令
+    const cmd = `aws sagemaker batch-update-cluster-nodes \
+      --cluster-name "${clusterArn}" \
+      --node-ids "${nodeId}" \
+      --node-recovery-mode Replace \
+      --region ${region}`;
+
+    const result = execSync(cmd, { encoding: 'utf8' });
+    console.log('Replace result:', result);
+
+    // 广播 WebSocket 消息
+    broadcast({
+      type: 'hyperpod_node_replace',
+      status: 'success',
+      nodeId: nodeId,
+      message: `Node ${nodeId} replacement initiated`
+    });
+
+    res.json({
+      success: true,
+      message: 'Node replacement initiated successfully',
+      nodeId: nodeId
+    });
+  } catch (error) {
+    console.error('HyperPod node replace error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 // 获取 AMP Workspace URL
 app.get('/api/cluster/amp-workspace', async (req, res) => {
   try {

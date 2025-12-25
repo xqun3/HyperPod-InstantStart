@@ -2213,9 +2213,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
 
                       <Form.Item 
                         name="hamiSplitCount" 
-                        label="Max Split Count"
+                        label="Max Split/Process Limits"
                         rules={[{ required: true, message: 'Please select split count' }]}
-                        tooltip="Number of virtual GPUs per physical GPU"
+                        tooltip="Only limits the Max number of GPU processes on one physical GPU"
                       >
                         <Select>
                           {[2,3,4,5,6,7,8,9,10].map(n => (
