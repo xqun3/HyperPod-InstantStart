@@ -76,7 +76,8 @@ function App() {
     // 动态构建WebSocket URL，使用当前访问的主机名
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const hostname = window.location.hostname;
-    const wsUrl = `${protocol}//${hostname}:3098`;
+    const wsPort = process.env.REACT_APP_WS_PORT || '3098';
+    const wsUrl = `${protocol}//${hostname}:${wsPort}`;
 
     console.log(`Connecting to WebSocket: ${wsUrl}`);
     const websocket = new WebSocket(wsUrl);

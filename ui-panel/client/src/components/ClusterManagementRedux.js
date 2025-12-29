@@ -515,7 +515,7 @@ const ClusterManagementRedux = () => {
                                 icon={<PlusOutlined />}
                                 onClick={createNewCluster}
                               >
-                                Create New Cluster
+                                Create EKS Cluster
                               </Button>
                             </Space>
                           </Col>

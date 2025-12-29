@@ -11,6 +11,9 @@ const https = require('https');
 const http = require('http');
 const { parse } = require('shell-quote');
 
+// 加载 user.env 配置文件
+require('dotenv').config({ path: path.join(__dirname, '../client/user.env') });
+
 // 引入工具模块
 const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
 const { getCurrentRegion } = require('./utils/awsHelpers');
@@ -35,8 +38,8 @@ const {
 } = require('./appStatusV2');
 
 const app = express();
-const PORT = 3001;
-const WS_PORT = 3098; // WebSocket独立端口
+const PORT = process.env.API_PORT || 3001;
+const WS_PORT = process.env.REACT_APP_WS_PORT || 3098; // WebSocket独立端口
 
 app.use(cors());
 app.use(express.json());

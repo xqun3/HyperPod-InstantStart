@@ -27,7 +27,7 @@ class WebSocketManager {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
-    const port = '3098'; // WebSocket专用端口
+    const port = process.env.REACT_APP_WS_PORT || '3098';
     const wsUrl = `${protocol}//${host}:${port}`;
 
     console.log(`Connecting to WebSocket at ${wsUrl}`);

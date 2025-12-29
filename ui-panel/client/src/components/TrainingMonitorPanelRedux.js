@@ -86,7 +86,8 @@ const TrainingMonitorPanelRedux = () => {
     const connectWebSocket = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const hostname = window.location.hostname;
-      const wsUrl = `${protocol}//${hostname}:3098`;
+      const wsPort = process.env.REACT_APP_WS_PORT || '3098';
+      const wsUrl = `${protocol}//${hostname}:${wsPort}`;
       
       console.log(`Training Monitor connecting to WebSocket: ${wsUrl}`);
       const ws = new WebSocket(wsUrl);

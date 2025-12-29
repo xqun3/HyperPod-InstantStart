@@ -67,7 +67,11 @@ const TrainingMonitorPanel = () => {
     setConnectionStatus('connecting');
     
     const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:3098');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const hostname = window.location.hostname;
+      const wsPort = process.env.REACT_APP_WS_PORT || '3098';
+      const wsUrl = `${protocol}//${hostname}:${wsPort}`;
+      const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         console.log('WebSocket connected for training monitor');
