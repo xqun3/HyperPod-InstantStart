@@ -270,10 +270,10 @@ class HyperPodDependencyManager {
 
     echo ""
     echo "=========================================="
-    echo "Step 4: Stabilization wait (120s)"
+    echo "Step 4: Stabilization wait (300s)"
     echo "=========================================="
-    echo "Waiting 120 seconds for cert-manager webhook to be fully accessible..."
-    sleep 120
+    echo "Waiting 300 seconds for cert-manager webhook to be fully accessible..."
+    sleep 300
 
     echo "✅ cert-manager is ready"
     '`;
@@ -368,7 +368,7 @@ class HyperPodDependencyManager {
             fi
 
             echo "Status: \$STATUS (\$i/60)"
-            sleep 5
+            sleep 10
         done
 
         if [ \$ATTEMPT -lt \$MAX_RETRIES ]; then
