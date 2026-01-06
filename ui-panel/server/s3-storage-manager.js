@@ -598,6 +598,83 @@ class S3StorageManager {
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '') || 'model';
   }
+
+  /**
+   * 应用增强的模型下载 Job
+   * 生成 YAML、保存文件、执行 kubectl apply
+   * @param {Object} config - 下载配置
+   * @param {string} config.modelId - 模型 ID
+   * @param {string} config.hfToken - HuggingFace Token
+   * @param {Object} config.resources - 资源配置 { cpu, memory }
+   * @param {string} config.s3Storage - S3 存储名称
+   * @param {string} config.instanceType - 实例类型（可选）
+   * @returns {Promise<Object>} { success, jobName, deploymentFile, error }
+   */
+  async applyEnhancedDownloadJob(config) {
+    const { modelId, hfToken, resources, s3Storage, instanceType } = config;
+
+    try {
+      console.log(`🚀 Starting enhanced model download: ${modelId}`);
+      console.log(`📊 Resources: CPU=${resources?.cpu}, Memory=${resources?.memory}GB`);
+      console.log(`💾 S3 Storage: ${s3Storage}`);
+      if (instanceType) console.log(`🖥️ Instance Type: ${instanceType}`);
+
+      // 生成增强的下载Job
+      const jobResult = await this.generateEnhancedDownloadJob({
+        modelId,
+        hfToken,
+        resources,
+        s3Storage,
+        instanceType
+      });
+
+      if (!jobResult.success) {
+        return { success: false, error: jobResult.error };
+      }
+
+      // 确保deployments目录存在
+      const deploymentsDir = path.join(__dirname, '..', 'deployments');
+      if (!fs.existsSync(deploymentsDir)) {
+        fs.mkdirSync(deploymentsDir, { recursive: true });
+      }
+
+      // 保存生成的YAML文件到deployments目录
+      const modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+      const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
+      const deploymentFile = path.join(deploymentsDir, `enhanced-model-download-${modelTag}-${timestamp}.yaml`);
+      await fs.writeFile(deploymentFile, jobResult.yamlContent);
+
+      console.log(`📁 Saved deployment template: ${deploymentFile}`);
+
+      // 应用Job到Kubernetes
+      const tempFile = `/tmp/enhanced-download-job-${Date.now()}.yaml`;
+      fs.writeFileSync(tempFile, jobResult.yamlContent);
+
+      try {
+        const { stdout, stderr } = await execAsync(`kubectl apply -f ${tempFile}`);
+        fs.removeSync(tempFile);
+
+        console.log('✅ Enhanced model download job created successfully');
+        return {
+          success: true,
+          message: 'Enhanced model download job created successfully',
+          jobName: jobResult.jobName,
+          deploymentFile: path.basename(deploymentFile)
+        };
+      } catch (kubectlError) {
+        fs.removeSync(tempFile);
+        console.error('❌ Failed to create enhanced download job:', kubectlError.stderr || kubectlError.message);
+        return {
+          success: false,
+          error: kubectlError.stderr || kubectlError.message
+        };
+      }
+
+    } catch (error) {
+      console.error('❌ Error in enhanced model download:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = S3StorageManager;

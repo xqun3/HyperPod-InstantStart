@@ -2568,172 +2568,25 @@ app.delete('/api/s3-storages/:name', async (req, res) => {
 
 // 增强的模型下载API
 app.post('/api/download-model-enhanced', async (req, res) => {
-  try {
-    const { modelId, hfToken, resources, s3Storage, instanceType } = req.body;
+  const { modelId } = req.body;
 
-    if (!modelId) {
-      return res.json({ success: false, error: 'Model ID is required' });
-    }
-
-    console.log(`🚀 Starting enhanced model download: ${modelId}`);
-    console.log(`📊 Resources: CPU=${resources.cpu}, Memory=${resources.memory}GB`);
-    console.log(`💾 S3 Storage: ${s3Storage}`);
-    if (instanceType) console.log(`🖥️ Instance Type: ${instanceType}`);
-
-    // 生成增强的下载Job
-    const jobResult = await s3StorageManager.generateEnhancedDownloadJob({
-      modelId,
-      hfToken,
-      resources,
-      s3Storage,
-      instanceType
-    });
-
-    if (!jobResult.success) {
-      return res.json({ success: false, error: jobResult.error });
-    }
-
-    // 确保deployments目录存在
-    const deploymentsDir = path.join(__dirname, '..', 'deployments');
-    if (!fs.existsSync(deploymentsDir)) {
-      fs.mkdirSync(deploymentsDir, { recursive: true });
-    }
-    
-    // 保存生成的YAML文件到deployments目录
-    const modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-    const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
-    const deploymentFile = path.join(deploymentsDir, `enhanced-model-download-${modelTag}-${timestamp}.yaml`);
-    await fs.writeFile(deploymentFile, jobResult.yamlContent);
-    
-    console.log(`📁 Saved deployment template: ${deploymentFile}`);
-
-    // 应用Job到Kubernetes
-    const tempFile = `/tmp/enhanced-download-job-${Date.now()}.yaml`;
-    fs.writeFileSync(tempFile, jobResult.yamlContent);
-
-    exec(`kubectl apply -f ${tempFile}`, (error, stdout, stderr) => {
-      fs.removeSync(tempFile);
-      
-      if (error) {
-        console.error('❌ Failed to create enhanced download job:', stderr);
-        broadcast({
-          type: 'model_download',
-          status: 'error',
-          message: `Failed to start enhanced model download: ${stderr}`
-        });
-        return res.json({ success: false, error: stderr });
-      }
-
-      console.log('✅ Enhanced model download job created successfully');
-      broadcast({
-        type: 'model_download',
-        status: 'success',
-        message: `Enhanced model download started: ${modelId}`,
-        jobName: jobResult.jobName
-      });
-
-      res.json({ 
-        success: true, 
-        message: 'Enhanced model download job created successfully',
-        jobName: jobResult.jobName,
-        deploymentFile: path.basename(deploymentFile)
-      });
-    });
-
-  } catch (error) {
-    console.error('❌ Error in enhanced model download:', error);
-    res.json({ success: false, error: error.message });
+  if (!modelId) {
+    return res.json({ success: false, error: 'Model ID is required' });
   }
-});
 
-// 模型下载API
-app.post('/api/download-model', async (req, res) => {
-  try {
-    const { modelId, hfToken } = req.body;
-    
-    if (!modelId) {
-      return res.json({ success: false, error: 'Model ID is required' });
-    }
-    
-    console.log(`Starting model download for: ${modelId}`);
-    
-    // 读取HF下载模板
-    const templatePath = path.join(__dirname, '..', 'templates', 'hf-download-template.yaml');
-    let template = await fs.readFile(templatePath, 'utf8');
-    
-    // 生成模型标签 (使用 S3StorageManager 的静态方法)
-    const modelTag = S3StorageManager.generateModelTag(modelId);
-    
-    // 替换基本变量
-    const replacements = {
-      'HF_MODEL_ID': modelId,
-      'MODEL_TAG': modelTag
-    };
-    
-    // 处理HF Token环境变量
-    if (hfToken && hfToken.trim()) {
-      const tokenEnv = `
-        - name: HF_TOKEN
-          value: "${hfToken.trim()}"`;
-      template = template.replace('env:HF_TOKEN_ENV', `env:${tokenEnv}`);
-      
-      // 同时在hf download命令中启用token
-      template = template.replace('#  --token=$HF_TOKEN', '          --token=$HF_TOKEN \\');
-    } else {
-      // 移除HF_TOKEN_ENV占位符，保留其他环境变量
-      template = template.replace('      env:HF_TOKEN_ENV', '      env:');
-    }
-    
-    // 替换其他变量
-    Object.keys(replacements).forEach(key => {
-      const regex = new RegExp(key, 'g');
-      template = template.replace(regex, replacements[key]);
-    });
-    
-    // 确保deployments目录存在
-    const deploymentsDir = path.join(__dirname, '..', 'deployments');
-    if (!fs.existsSync(deploymentsDir)) {
-      fs.mkdirSync(deploymentsDir, { recursive: true });
-    }
-    
-    // 保存生成的YAML文件
-    const deploymentFile = path.join(deploymentsDir, `model-download-${modelTag}.yaml`);
-    await fs.writeFile(deploymentFile, template);
-    
-    console.log(`Generated deployment file: ${deploymentFile}`);
-    
-    // 应用到Kubernetes
-    try {
-      const result = await executeKubectl(`apply -f "${deploymentFile}"`);
-      console.log('kubectl apply result:', result);
-      
-      // 广播部署状态更新
-      broadcast({
-        type: 'model_download',
-        status: 'success',
-        message: `Model download started for ${modelId}`,
-        modelId: modelId,
-        modelTag: modelTag
-      });
-      
-      res.json({ 
-        success: true, 
-        message: `Model download initiated for ${modelId}`,
-        modelTag: modelTag
-      });
-      
-    } catch (kubectlError) {
-      console.error('kubectl apply error:', kubectlError);
-      res.json({ 
-        success: false, 
-        error: `Failed to apply deployment: ${kubectlError.error || kubectlError}` 
-      });
-    }
-    
-  } catch (error) {
-    console.error('Model download error:', error);
-    res.json({ success: false, error: error.message });
-  }
+  const result = await s3StorageManager.applyEnhancedDownloadJob(req.body);
+
+  // 广播结果
+  broadcast({
+    type: 'model_download',
+    status: result.success ? 'success' : 'error',
+    message: result.success
+      ? `Enhanced model download started: ${modelId}`
+      : `Failed to start enhanced model download: ${result.error}`,
+    jobName: result.jobName
+  });
+
+  res.json(result);
 });
 
 // S3存储信息API - 从s3-pv PersistentVolume获取桶信息
@@ -4563,38 +4416,6 @@ app.delete('/api/keda/scaledobject/:name', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
-    });
-  }
-});
-
-// 获取可用的 Deployments
-app.get('/api/deployments', async (req, res) => {
-  try {
-    const { execSync } = require('child_process');
-
-    // 获取所有 deployments
-    const deploymentCmd = 'kubectl get deployments --all-namespaces -o json';
-    const result = execSync(deploymentCmd, { encoding: 'utf8' });
-    const deployments = JSON.parse(result);
-
-    const formattedDeployments = deployments.items.map(deployment => ({
-      name: deployment.metadata.name,
-      namespace: deployment.metadata.namespace,
-      replicas: deployment.status.replicas || 0,
-      readyReplicas: deployment.status.readyReplicas || 0,
-      creationTime: deployment.metadata.creationTimestamp
-    }));
-
-    res.json({
-      success: true,
-      deployments: formattedDeployments
-    });
-  } catch (error) {
-    console.error('Error getting deployments:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      deployments: []
     });
   }
 });
