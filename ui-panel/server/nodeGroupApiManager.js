@@ -172,7 +172,7 @@ router.get('/nodegroups', async (req, res) => {
 
     res.json({
       eksNodeGroups,
-      hyperPodGroups: hyperPodGroups
+      hyperPodInstanceGroups: hyperPodGroups
     });
   } catch (error) {
     console.error('Error fetching node groups:', error);

@@ -236,9 +236,9 @@ const nodeGroupsSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchNodeGroups.fulfilled, (state, action) => {
-        const { eksNodeGroups, hyperPodGroups } = action.payload;
+        const { eksNodeGroups, hyperPodInstanceGroups } = action.payload;
         state.eksNodeGroups = eksNodeGroups || [];
-        state.hyperPodGroups = hyperPodGroups || [];
+        state.hyperPodGroups = hyperPodInstanceGroups || [];
         state.loading = false;
       })
       .addCase(fetchNodeGroups.rejected, (state, action) => {
