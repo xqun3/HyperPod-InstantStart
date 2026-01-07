@@ -38,6 +38,9 @@ HyperPod-InstantStart provides a unified interface for managing ML infrastructur
 ### Distributed Verl Training with KubeRay
 ![verl](./resources/verl.gif)
 
+### Agentic Orchestration and AI Workloads
+![agentic](./resources/agentic.gif)
+
 ## Key Components in Web UI Panel
 
 - **Cluster Management**: Supports EKS cluster creation, importing existing EKS clusters, cluster environment configuration, HyperPod cluster creation and scaling, EKS Node Group creation
