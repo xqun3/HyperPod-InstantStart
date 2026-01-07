@@ -36,7 +36,7 @@ fi
 
 # 构建 Docker 镜像
 echo "Building Docker image..."
-docker build -t ${algorithm_name} -f Dockerfile.dev25 .
+docker build -t ${algorithm_name} -f Dockerfile.dev .
 
 # 推送到 ECR Public
 fullname="public.ecr.aws/${registry_alias}/${algorithm_name}:latest"

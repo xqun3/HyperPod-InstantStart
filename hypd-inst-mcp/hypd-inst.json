@@ -1,0 +1,31 @@
+{
+  "name": "hypd-inst",
+  "description": "HyperPod InstantStart agent",
+  "mcpServers": {
+    "hypd-inst": {
+      "command": "docker",
+      "args": ["exec", "-i", "ui-panel-dev", "python3", "/app/mcp-server/server.py"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  },
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash",
+    "use_aws",
+    "@hypd-inst"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "@hypd-inst/cluster_get_status",
+    "@hypd-inst/cluster_list_all",
+    "@hypd-inst/cluster_switch",
+    "@hypd-inst/inference_list_services",
+    "@hypd-inst/inference_list_public_services",
+    "@hypd-inst/job_get_status",
+    "@hypd-inst/job_list_all",
+    "@hypd-inst/s3_storage_list_contents"
+  ]
+}

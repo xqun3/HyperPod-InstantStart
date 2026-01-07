@@ -63,6 +63,7 @@ docker run -d \
   -v $(pwd)/tmp:/app/tmp \
   -v $(pwd)/mlflow:/app/mlflow \
   -v $(pwd)/managed_clusters_info:/app/managed_clusters_info \
+  -v $(pwd)/../hypd-inst-mcp:/app/mcp-server \
   -v $(pwd)/package.json:/app/package.json \
   -v $(pwd)/nodemon.json:/app/nodemon.json \
   -v /home/ubuntu/workspace/s3:/s3-workspace-metadata \

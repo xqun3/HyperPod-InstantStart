@@ -53,8 +53,5 @@ For detailed setup instructions, please refer to [Feishu Doc (zh_cn)](https://am
 
 | Type | Feature | Updated At | Target Date |
 |------|---------|-----------|-------------------|
-| Cluster Building | Unified Scaling | 2025-10-19 | DONE |
+| Agentic | MCP Server for HyperPod InstantStart | 2025-12-25 | AVAILABLE |
 | Training | TorchTitan Training Recipe Integration | 2025-10-17 | TBD |
-| Training | MS-Swift Training Recipe Integration | 2025-11-30 | DONE |
-| Inference | Intelligent Routing Support | 2025-10-19 | DONE |
-| Inference | HyperPod, EKS Node Group and Karpenter unified management | 2025-10-19 | DONE |
