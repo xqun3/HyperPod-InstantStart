@@ -72,7 +72,7 @@ class HyperPodDependencyManager {
       await this.configureHyperPodPodIdentity(configDir);
 
       // 安装HyperPod专用依赖
-      await this.installHyperPodDependencies(configDir);
+      // await this.installHyperPodDependencies(configDir);
 
       console.log(`Successfully configured HyperPod dependencies for cluster: ${clusterTag}`);
       return { success: true };

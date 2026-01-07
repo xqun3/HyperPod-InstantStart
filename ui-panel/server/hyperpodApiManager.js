@@ -970,7 +970,7 @@ router.get('/creating-hyperpod-clusters', async (req, res) => {
       }
     }
 
-    res.json({ success: true, clusters: getCreatingHyperPodClusters() });
+    res.json({ success: true, data: getCreatingHyperPodClusters() });
   } catch (error) {
     console.error('Error getting creating HyperPod clusters:', error);
     res.status(500).json({ success: false, error: error.message });

@@ -2448,7 +2448,6 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
             name="availabilityZone"
             label="Availability Zone"
             rules={[{ required: true, message: 'Please select availability zone' }]}
-            extra="Select AZ - subnet will be automatically detected or created"
           >
             <Select placeholder="Select availability zone" loading={!availabilityZones.length}>
               {availabilityZones.map(az => (
