@@ -3,7 +3,7 @@
 # 设置错误时退出
 set -e
 
-algorithm_name=hyperpod-instantstart-web25
+algorithm_name=hyperpod-instantstart-web
 
 region=us-east-1
 account=$(aws sts get-caller-identity --query Account --output text)

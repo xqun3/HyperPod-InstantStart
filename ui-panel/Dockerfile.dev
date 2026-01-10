@@ -33,22 +33,31 @@ WORKDIR /app
 # 创建node用户的目录并设置权限
 RUN mkdir -p /home/node/.kube /home/node/.aws && chown -R node:node /home/node
 
+# 复制 package.json 文件
 COPY package*.json ./
+
+# 复制客户端 package.json 文件
 COPY client/package*.json ./client/
 
+# 安装服务器端依赖
 RUN npm install
 
+# 安装客户端依赖（关键：确保完整安装）
 RUN cd client && npm install --no-package-lock
 
+# 复制并安装 Python 依赖（如果存在）
 COPY requirements.txt* ./
 RUN if [ -f requirements.txt ]; then \
     pip3 install --break-system-packages --force-reinstall -r requirements.txt; \
     fi
 
+# 创建必要的目录
 RUN mkdir -p logs tmp deployments managed_clusters_info
 
+# 确保node用户拥有所有必要的权限
 RUN chown -R node:node /app
 
+# 设置环境变量
 ENV KUBECONFIG=/home/node/.kube/config
 ENV HOME=/home/node
 

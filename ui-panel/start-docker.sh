@@ -1,10 +1,8 @@
 #!/bin/bash
 
-# REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web:latest"
-REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web25:latest"
+REMOTE_REPO="public.ecr.aws/t5u4s6i0/hyperpod-instantstart-web:latest"
 
 LOCAL_IMAGE="ui-panel-dev"
-
 
 echo "🐳 Starting Model Deployment UI with Docker (Development Mode)..."
 
@@ -36,7 +34,7 @@ else
         echo "🏷️ Tagged as $LOCAL_IMAGE"
     else
         echo "🔧 Failed to pull from remote repository, building locally..."
-        docker build -f Dockerfile.dev25 -t $LOCAL_IMAGE .
+        docker build -f Dockerfile.dev -t $LOCAL_IMAGE .
     fi
 fi
 
