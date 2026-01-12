@@ -49,6 +49,7 @@ HyperPod-InstantStart provides a unified interface for managing ML infrastructur
 - **Training**: Supports model training patterns including LlamaFactory, Verl, and Torch Script
 - **Training History**: Integration with SageMaker-managed MLFlow creation and display/sharing of training performance metrics
 - **(NEW)Agentic Orchestration**: Provides integrated MCP server for Natural language based AI task orchestration, e.g. Cluster Management, Inference, (Coming Soon) Training & Hosting
+- **(NEW)SandBox Service for RL Training**: Provides interactive SandBox Service within the Cluster for (Coding) RL Training
 
 For detailed setup instructions, please refer to [Feishu Doc (zh_cn)](https://amzn-chn.feishu.cn/docx/VZfAdXTJKor7TCxPrZdcbGYXnaf?from=from_copylink), or [Lark Doc (en)](https://amzn-chn.feishu.cn/wiki/KKgVwwfiuiof9KkAP0CcYXfnnqd?from=from_copylink)
 
@@ -58,4 +59,5 @@ For detailed setup instructions, please refer to [Feishu Doc (zh_cn)](https://am
 | Type | Feature | Updated At | Target Date |
 |------|---------|-----------|-------------------|
 | Agentic | MCP Server for HyperPod InstantStart | 2025-12-25 | AVAILABLE |
+| Training | RL SandBox as Cluster Service | 2025-12-25 | Done |
 | Training | TorchTitan Training Recipe Integration | 2025-10-17 | TBD |

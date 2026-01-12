@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Form, Input, Button, Card, Space, Collapse, message, Typography, Select, InputNumber, Row, Col } from 'antd';
-import { DownloadOutlined, KeyOutlined, RobotOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, Space, Collapse, message, Typography, Select, InputNumber, Row, Col, Radio } from 'antd';
+import { DownloadOutlined, KeyOutlined, RobotOutlined, SettingOutlined, ReloadOutlined, DatabaseOutlined } from '@ant-design/icons';
 import operationRefreshManager from '../hooks/useOperationRefresh';
 import resourceEventBus from '../utils/resourceEventBus';
 
@@ -14,6 +14,7 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
   const [storages, setStorages] = useState([]);
   const [instanceTypes, setInstanceTypes] = useState({ hyperpod: [], karpenterHyperPod: [], eksNodeGroup: [], karpenter: [] });
   const [instanceTypesLoading, setInstanceTypesLoading] = useState(false);
+  const [repoType, setRepoType] = useState('model'); // 'model' or 'dataset'
 
   // 获取可用的S3存储配置
   const fetchStorages = async () => {
@@ -86,8 +87,9 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
   const handleDownload = async (values) => {
     try {
       setLoading(true);
-      console.log('🚀 Starting model download with values:', values);
-      
+      const resourceLabel = repoType === 'dataset' ? 'dataset' : 'model';
+      console.log(`🚀 Starting ${resourceLabel} download with values:`, values);
+
       const response = await fetch('/api/download-model-enhanced', {
         method: 'POST',
         headers: {
@@ -95,6 +97,7 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
         },
         body: JSON.stringify({
           modelId: values.modelId,
+          repoType: repoType,
           hfToken: values.hfToken || null,
           resources: {
             cpu: values.cpu ?? -1,
@@ -104,11 +107,11 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
           instanceType: values.instanceType || null
         }),
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
-        message.success(`Model download job created: ${result.jobName}`);
+        message.success(`${repoType === 'dataset' ? 'Dataset' : 'Model'} download job created: ${result.jobName}`);
         
         // 触发操作刷新（旧机制，保留兼容）
         operationRefreshManager.triggerOperationRefresh('model-download', {
@@ -138,11 +141,11 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
   };
 
   return (
-    <Card 
+    <Card
       title={
         <Space>
-          <RobotOutlined />
-          Model Download
+          {repoType === 'dataset' ? <DatabaseOutlined /> : <RobotOutlined />}
+          HuggingFace Download
         </Space>
       }
       size="small"
@@ -157,15 +160,32 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
           s3Storage: 's3-claim'
         }}
       >
-        {/* S3存储选择 - 第一位 */}
+        {/* Resource Type 选择 */}
+        <Form.Item label="Resource Type" style={{ marginBottom: 12 }}>
+          <Radio.Group
+            value={repoType}
+            onChange={e => setRepoType(e.target.value)}
+            optionType="button"
+            buttonStyle="solid"
+          >
+            <Radio.Button value="model">
+              <Space size={4}><RobotOutlined />Model</Space>
+            </Radio.Button>
+            <Radio.Button value="dataset">
+              <Space size={4}><DatabaseOutlined />Dataset</Space>
+            </Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+
+        {/* S3存储选择 */}
         <Form.Item
           name="s3Storage"
           label={
             <Space>
               S3 Provision
-              <Button 
-                type="text" 
-                size="small" 
+              <Button
+                type="text"
+                size="small"
                 icon={<ReloadOutlined />}
                 onClick={fetchStorages}
                 title="Refresh storage list"
@@ -174,7 +194,7 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
           }
           rules={[{ required: true, message: 'Please select S3 provision' }]}
         >
-          <Select 
+          <Select
             placeholder="Select S3 provision configuration"
             onChange={(value) => onStorageChange && onStorageChange(value)}
           >
@@ -186,15 +206,17 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
           </Select>
         </Form.Item>
 
-        {/* Model ID - 第二位 */}
+        {/* Model/Dataset ID */}
         <Form.Item
           name="modelId"
-          label="Model ID"
-          rules={[{ required: true, message: 'Please input model ID' }]}
+          label={repoType === 'dataset' ? 'Dataset ID' : 'Model ID'}
+          rules={[{ required: true, message: `Please input ${repoType} ID` }]}
         >
-          <Input 
-            placeholder="e.g., microsoft/DialoGPT-medium, meta-llama/Llama-2-7b-hf"
-            prefix={<RobotOutlined />}
+          <Input
+            placeholder={repoType === 'dataset'
+              ? "e.g., HuggingFaceFW/fineweb, allenai/dolma"
+              : "e.g., meta-llama/Llama-2-7b-hf, Qwen/Qwen2-7B"}
+            prefix={repoType === 'dataset' ? <DatabaseOutlined /> : <RobotOutlined />}
           />
         </Form.Item>
 
@@ -285,14 +307,14 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
         </Collapse>
 
         <Form.Item>
-          <Button 
-            type="primary" 
-            htmlType="submit" 
+          <Button
+            type="primary"
+            htmlType="submit"
             loading={loading}
             icon={<DownloadOutlined />}
             block
           >
-            Download Model
+            Download {repoType === 'dataset' ? 'Dataset' : 'Model'}
           </Button>
         </Form.Item>
       </Form>

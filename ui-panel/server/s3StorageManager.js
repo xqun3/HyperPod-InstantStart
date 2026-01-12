@@ -517,10 +517,10 @@ class S3StorageManager {
     });
   }
 
-  // 生成增强的模型下载Job
+  // 生成增强的模型/数据集下载Job
   async generateEnhancedDownloadJob(config) {
     try {
-      const { modelId, resources, s3Storage, hfToken, instanceType } = config;
+      const { modelId, resources, s3Storage, hfToken, instanceType, repoType } = config;
 
       // 生成短的模型标签，限制长度
       let modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
@@ -530,7 +530,9 @@ class S3StorageManager {
 
       // 生成短的时间戳
       const timestamp = Date.now().toString().slice(-8); // 只取最后8位
-      const jobName = `model-dl-${modelTag}-${timestamp}`;
+      // Job名称根据类型区分: model-dl 或 dataset-dl
+      const jobPrefix = repoType === 'dataset' ? 'dataset-dl' : 'model-dl';
+      const jobName = `${jobPrefix}-${modelTag}-${timestamp}`;
 
       // 确保名称不超过63字符
       const finalJobName = jobName.length > 63 ? jobName.substring(0, 63) : jobName;
@@ -539,9 +541,13 @@ class S3StorageManager {
       const templatePath = path.join(__dirname, '../templates/hf-download-configurable-template.yaml');
       let yamlContent = fs.readFileSync(templatePath, 'utf8');
 
+      // 处理 repo-type 参数 (dataset 需要 --repo-type dataset)
+      const repoTypeArg = repoType === 'dataset' ? '--repo-type dataset ' : '';
+
       // 替换占位符
       yamlContent = yamlContent
         .replace(/MODEL_TAG/g, finalJobName)
+        .replace(/REPO_TYPE_ARG/g, repoTypeArg)
         .replace(/HF_MODEL_ID/g, modelId)
         .replace(/S3_PVC_NAME/g, s3Storage);
 
@@ -611,12 +617,14 @@ class S3StorageManager {
    * @returns {Promise<Object>} { success, jobName, deploymentFile, error }
    */
   async applyEnhancedDownloadJob(config) {
-    const { modelId, hfToken, resources, s3Storage, instanceType } = config;
+    const { modelId, hfToken, resources, s3Storage, instanceType, repoType } = config;
 
     try {
-      console.log(`🚀 Starting enhanced model download: ${modelId}`);
+      const resourceLabel = repoType === 'dataset' ? 'dataset' : 'model';
+      console.log(`🚀 Starting enhanced ${resourceLabel} download: ${modelId}`);
       console.log(`📊 Resources: CPU=${resources?.cpu}, Memory=${resources?.memory}GB`);
       console.log(`💾 S3 Storage: ${s3Storage}`);
+      console.log(`📦 Repo Type: ${repoType || 'model'}`);
       if (instanceType) console.log(`🖥️ Instance Type: ${instanceType}`);
 
       // 生成增强的下载Job
@@ -625,23 +633,24 @@ class S3StorageManager {
         hfToken,
         resources,
         s3Storage,
-        instanceType
+        instanceType,
+        repoType
       });
 
       if (!jobResult.success) {
         return { success: false, error: jobResult.error };
       }
 
-      // 确保deployments目录存在
-      const deploymentsDir = path.join(__dirname, '..', 'deployments');
+      // 确保deployments/storage目录存在
+      const deploymentsDir = path.join(__dirname, '..', 'deployments', 'storage');
       if (!fs.existsSync(deploymentsDir)) {
         fs.mkdirSync(deploymentsDir, { recursive: true });
       }
 
-      // 保存生成的YAML文件到deployments目录
+      // 保存生成的YAML文件到deployments/storage目录
       const modelTag = modelId.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
       const timestamp = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14);
-      const deploymentFile = path.join(deploymentsDir, `enhanced-model-download-${modelTag}-${timestamp}.yaml`);
+      const deploymentFile = path.join(deploymentsDir, `hf-download-${modelTag}-${timestamp}.yaml`);
       await fs.writeFile(deploymentFile, jobResult.yamlContent);
 
       console.log(`📁 Saved deployment template: ${deploymentFile}`);

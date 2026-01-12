@@ -71,8 +71,8 @@ const TestPanel = ({ services, onRefresh }) => {
       }
       
       // 白名单：推理引擎关键词
-      const inferenceEngines = ['vllm', 'sglang', 'ollama', 'sglgw', 'router'];
-      const hasInferenceEngine = inferenceEngines.some(engine => 
+      const inferenceEngines = ['vllm', 'sglang', 'sglgw', 'router', 'hypd-custom'];
+      const hasInferenceEngine = inferenceEngines.some(engine =>
         serviceName.toLowerCase().includes(engine)
       );
       

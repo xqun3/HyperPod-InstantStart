@@ -159,7 +159,7 @@ router.post('/undeploy', async (req, res) => {
       const possibleServices = [];
 
       // 尝试解析 servEngine (vllm, sglang, 等)
-      const knownEngines = ['vllm', 'sglang', 'custom'];
+      const knownEngines = ['vllm', 'sglang', 'hypd-custom'];
       let servEngine = null;
       let originalTag = null;
 
@@ -974,18 +974,30 @@ router.post('/deploy/container', async (req, res) => {
     const hybridNodeSelectorTerms = generateHybridNodeSelectorTerms(instanceTypes);
     console.log('Generated hybrid node selector terms');
 
-    // 解析部署命令
-    const parsedCommand = parseInferenceCommand(deploymentCommand);
-    console.log('Parsed command:', parsedCommand);
+    // 处理部署命令
+    let parsedCommand = null;
+    let servEngine = 'hypd-custom';
+    let commandYaml = '# Using image default ENTRYPOINT/CMD';
 
-    // 确定服务引擎类型
-    let servEngine;
-    if (parsedCommand.commandType === 'sglang') {
-      servEngine = 'sglang';
-    } else if (parsedCommand.commandType === 'vllm') {
-      servEngine = 'vllm';
+    if (deploymentCommand && deploymentCommand.trim()) {
+      // 有命令：解析并生成 command 字段
+      parsedCommand = parseInferenceCommand(deploymentCommand);
+      console.log('Parsed command:', parsedCommand);
+
+      // 确定服务引擎类型
+      if (parsedCommand.commandType === 'sglang') {
+        servEngine = 'sglang';
+      } else if (parsedCommand.commandType === 'vllm') {
+        servEngine = 'vllm';
+      } else {
+        servEngine = 'hypd-custom';
+      }
+
+      // 生成 command YAML
+      commandYaml = `command: ${JSON.stringify(parsedCommand.fullCommand)}`;
     } else {
-      servEngine = 'custom';
+      // 无命令：使用镜像默认 ENTRYPOINT/CMD
+      console.log('No command specified, using image default ENTRYPOINT/CMD');
     }
     console.log(`Using service engine: ${servEngine}`);
 
@@ -1017,7 +1029,7 @@ router.post('/deploy/container', async (req, res) => {
       .replace(/GPU_COUNT/g, gpuCount.toString())
       .replace(/HYBRID_NODE_SELECTOR_TERMS/g, hybridNodeSelectorTerms)
       .replace(/HF_TOKEN_ENV/g, hfTokenEnv)
-      .replace(/ENTRY_CMD/g, JSON.stringify(parsedCommand.fullCommand))
+      .replace(/COMMAND_YAML/g, commandYaml)
       .replace(/DOCKER_IMAGE/g, dockerImage)
       .replace(/PORT_NUMBER/g, port || 8000)
       .replace(/RESOURCES_SECTION/g, resourcesSection)

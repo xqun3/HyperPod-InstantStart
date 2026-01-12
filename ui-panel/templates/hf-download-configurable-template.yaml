@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: model-download-job-MODEL_TAG
+  name: hf-download-job-MODEL_TAG
 spec:
   ttlSecondsAfterFinished: 60
   backoffLimit: 3
@@ -9,7 +9,7 @@ spec:
   template:
     metadata:
       labels:
-        app: model-download-job-MODEL_TAG
+        app: hf-download-job-MODEL_TAG
     spec:
       # nodeSelector:
       #   sagemaker.amazonaws.com/compute-type: hyperpod
@@ -29,12 +29,13 @@ spec:
             - |
               echo "Installing HF CLI ..."
               pip install -U "huggingface_hub[cli,hf_transfer]"
-              echo "Downloading HF model..."
+              echo "Downloading from HuggingFace..."
               #  --token=$HF_TOKEN
-              hf download HF_MODEL_ID --local-dir /nvme/HF_MODEL_ID --cache-dir /root/.cache/HF_MODEL_ID
+              hf download REPO_TYPE_ARGHF_MODEL_ID --local-dir /nvme/HF_MODEL_ID --cache-dir /root/.cache/HF_MODEL_ID
               echo "Downloading Complete ..."
               rm -rf /nvme/HF_MODEL_ID/.cache
-              cp -r /nvme/HF_MODEL_ID /s3/$(echo HF_MODEL_ID | tr '/' '-')
+              mkdir -p /s3/$(echo HF_MODEL_ID | tr '/' '-')
+              cp -r /nvme/HF_MODEL_ID/* /s3/$(echo HF_MODEL_ID | tr '/' '-')/
               echo "Transfer to S3 Complete ..."
           volumeMounts:
             - name: persistent-storage-s3

@@ -39,7 +39,7 @@ const EnhancedModelManagement = () => {
       {/* 左侧：配置面板 */}
       <Col xs={24} lg={12}>
         <Card
-          title="Model Management Configuration"
+          title="Storage Configuration"
           className="theme-card storage"
           style={{ height: '60vh', overflow: 'auto' }}
         >
@@ -51,7 +51,7 @@ const EnhancedModelManagement = () => {
               tab={
                 <Space>
                   <DownloadOutlined />
-                  Model Download
+                  HuggingFace Download
                 </Space>
               }
               key="enhanced-download"

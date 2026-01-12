@@ -165,11 +165,12 @@ const ConfigPanel = ({ deploymentStatus }) => {
 
   // 校验Container Entry命令格式
   const validateDeploymentCommand = (_, value) => {
-    if (!value) {
-      return Promise.reject(new Error('Please input entry command!'));
+    // 允许留空，使用容器镜像的默认 ENTRYPOINT/CMD
+    if (!value || !value.trim()) {
+      return Promise.resolve();
     }
 
-    // 只检查命令是否为空，不限制命令格式
+    // 如果有值，检查命令是否有效
     const cleanCommand = value
       .replace(/\\\s*\n/g, ' ')  // 处理反斜杠换行
       .replace(/\s+/g, ' ')      // 合并多个空格
@@ -211,7 +212,11 @@ const ConfigPanel = ({ deploymentStatus }) => {
       const deploymentConfig = {
         ...values,
         // 处理实例类型，确保后端接收到纯实例类型数组
-        instanceTypes: processInstanceTypes(values.instanceTypes)
+        instanceTypes: processInstanceTypes(values.instanceTypes),
+        // 如果未填写命令，传递空字符串，后端将使用镜像默认 ENTRYPOINT/CMD
+        deploymentCommand: values.deploymentCommand && values.deploymentCommand.trim()
+          ? values.deploymentCommand
+          : ''
       };
 
       console.log('deploymentConfig:', deploymentConfig);
@@ -357,7 +362,7 @@ const ConfigPanel = ({ deploymentStatus }) => {
             label={
               <Space>
                 GPU Count (per replica)
-                <Tooltip title="Number of GPUs allocated per replica">
+                <Tooltip title="Number of GPUs allocated per replica. Set to 0 for CPU-only deployment">
                   <InfoCircleOutlined />
                 </Tooltip>
               </Space>
@@ -365,12 +370,12 @@ const ConfigPanel = ({ deploymentStatus }) => {
             name="gpuCount"
             rules={[
               { required: true, message: 'Please input GPU count!' },
-              { type: 'number', min: 1, max: 8, message: 'GPU count must be between 1 and 8' }
+              { type: 'number', min: 0, max: 8, message: 'GPU count must be between 0 and 8' }
             ]}
           >
-            <InputNumber 
-              min={1} 
-              max={8} 
+            <InputNumber
+              min={0}
+              max={8}
               style={{ width: '100%' }}
               placeholder="Number of GPUs per replica"
             />
@@ -537,8 +542,8 @@ const ConfigPanel = ({ deploymentStatus }) => {
         label={
           <Space>
             <CodeOutlined />
-            EntryPoint Command
-            <Tooltip title="Any EntryPoint and parameters, e.g. python3 -m project.main --model HuggingfaceID">
+            EntryPoint Command (Optional)
+            <Tooltip title="Leave empty to use container's default ENTRYPOINT/CMD. Or specify custom command, e.g. python3 -m project.main --model HuggingfaceID">
               <InfoCircleOutlined />
             </Tooltip>
           </Space>
@@ -548,7 +553,7 @@ const ConfigPanel = ({ deploymentStatus }) => {
       >
         <TextArea
           rows={8}
-          placeholder="Select Docker image first, default command will be auto-generated"
+          placeholder="Leave empty to use container's default ENTRYPOINT/CMD, or enter custom command..."
           style={{ fontFamily: 'monospace', fontSize: '12px' }}
         />
       </Form.Item>

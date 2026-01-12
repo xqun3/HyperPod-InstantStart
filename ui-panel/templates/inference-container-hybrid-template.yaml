@@ -48,7 +48,7 @@ HYBRID_NODE_SELECTOR_TERMS
         - name: SERVENGINE
           image: DOCKER_IMAGE
           RESOURCES_SECTION
-          command: ENTRY_CMD
+          COMMAND_YAML
           ports:
             - containerPort: PORT_NUMBER
               name: http

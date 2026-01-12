@@ -892,7 +892,7 @@ function App() {
                 label: (
                   <Space>
                     <DatabaseOutlined />
-                    Model Management
+                    Storage
                   </Space>
                 ),
               },

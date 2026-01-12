@@ -129,24 +129,24 @@ const S3StoragePanel = ({ selectedStorage = 'default' }) => {
           </div>
           
           {bucketInfo && (
-            <Card size="small" style={{ backgroundColor: '#f0f9ff', border: '1px solid #91d5ff' }}>
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <Text style={{ fontSize: '16px', fontWeight: 'bold' }}>
+            <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #91d5ff', borderRadius: '4px', padding: '8px 12px' }}>
+              <Space split={<span style={{ color: '#d9d9d9' }}>|</span>} wrap>
+                <Text>
                   <strong>Bucket:</strong> <span style={{ color: '#1890ff' }}>{bucketInfo.bucket}</span>
                 </Text>
-                <Text style={{ fontSize: '11px' }}>
+                <Text>
                   <strong>Region:</strong> {bucketInfo.region || 'Unknown'}
                 </Text>
-                <Text style={{ fontSize: '11px' }}>
-                  <strong>Total Items:</strong> {s3Data.length}
+                <Text>
+                  <strong>Items:</strong> {s3Data.length}
                 </Text>
                 {lastRefresh && (
-                  <Text style={{ fontSize: '11px' }}>
-                    <strong>Last Refresh:</strong> {lastRefresh}
+                  <Text>
+                    <strong>Refresh:</strong> {lastRefresh}
                   </Text>
                 )}
               </Space>
-            </Card>
+            </div>
           )}
         </Space>
       </div>
