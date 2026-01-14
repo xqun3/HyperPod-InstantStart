@@ -310,7 +310,7 @@ router.post('/create-hyperpod', async (req, res) => {
       NodeRecovery: 'None',
       UseContinuousNodeProvisioningMode: 'true',
       CreateAcceleratedInstanceGroup: 'true',
-      AcceleratedInstanceGroupName: `accelerated-${clusterTag}`,
+      AcceleratedInstanceGroupName: `hpig-${clusterTag}`,
       AcceleratedInstanceType: userConfig.AcceleratedInstanceType,
       AcceleratedInstanceCount: userConfig.AcceleratedInstanceCount,
       AcceleratedEBSVolumeSize: userConfig.AcceleratedEBSVolumeSize,
@@ -319,6 +319,11 @@ router.post('/create-hyperpod', async (req, res) => {
       EnableInstanceStressCheck: 'false',
       EnableInstanceConnectivityCheck: 'false'
     };
+
+    // 如果用户提供了 compute subnet，使用它
+    if (userConfig.computeSubnetId) {
+      hyperPodConfig.ExistingPrivateSubnetId = userConfig.computeSubnetId;
+    }
 
     const stackResult = await CloudFormationManager.createHyperPodStack(
       hyperPodStackName,

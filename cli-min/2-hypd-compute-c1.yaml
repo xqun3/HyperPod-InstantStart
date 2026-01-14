@@ -1,0 +1,385 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  HyperPod Stack with optional existing subnet support.
+  - If ExistingPrivateSubnetId is provided, use it directly (skip subnet creation)
+  - If not provided, create new subnet with naming pattern: hp-compute-{AvailabilityZoneId}
+
+Parameters:
+  # Existing resources
+  ExistingVpcId:
+    Type: String
+    Default: vpc-0123456789
+
+  ExistingSecurityGroupId:
+    Type: String
+    Default: sg-0123456789
+
+  ExistingEKSClusterName:
+    Type: String
+    Default: eks-cluster
+
+  ExistingSageMakerRoleName:
+    Type: String
+    Default: SageMaker-Exec-Role-us-west-2
+
+  ExistingS3BucketName:
+    Type: String
+    Default: bucket-0123456789-us-west-2
+
+  ExistingNatGatewayId:
+    Type: String
+    Default: nat-0123456789
+    Description: Required only when creating new subnet
+
+  # New parameter for existing subnet
+  ExistingPrivateSubnetId:
+    Type: String
+    Default: ""
+    Description: Optional - existing private subnet ID. If provided, skip subnet creation.
+
+  # Resource naming (kept for backward compatibility, not used in this template)
+  ResourceNamePrefix:
+    Type: String
+    Default: hyperpod-stack
+    Description: Kept for backward compatibility
+
+  # Subnet naming prefix
+  SubnetNamePrefix:
+    Type: String
+    Default: hp-compute
+    Description: Prefix for subnet naming. Subnet will be named {prefix}-{AvailabilityZoneId}
+
+  # Configuration
+  AvailabilityZoneId:
+    Type: String
+    Default: usw2-az2
+    Description: Required when creating new subnet
+
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.91.20.0/24
+    Description: Required when creating new subnet
+
+  HyperPodClusterName:
+    Type: String
+    Default: hyperpod-cluster
+
+  NodeRecovery:
+    Type: String
+    Default: Automatic
+    AllowedValues: [Automatic, None]
+
+  UseContinuousNodeProvisioningMode:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  # Accelerated Instance Group
+  CreateAcceleratedInstanceGroup:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  AcceleratedInstanceGroupName:
+    Type: String
+    Default: accelerated-instance-group
+
+  AcceleratedInstanceType:
+    Type: String
+    Default: ml.g5.8xlarge
+
+  AcceleratedInstanceCount:
+    Type: Number
+    Default: 1
+
+  AcceleratedEBSVolumeSize:
+    Type: Number
+    Default: 500
+
+  AcceleratedThreadsPerCore:
+    Type: Number
+    Default: 1
+    AllowedValues: [1, 2]
+
+  EnableInstanceStressCheck:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  EnableInstanceConnectivityCheck:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  AcceleratedLifeCycleConfigOnCreate:
+    Type: String
+    Default: on_create.sh
+
+  AcceleratedTrainingPlanArn:
+    Type: String
+    Default: ""
+
+  AcceleratedImageId:
+    Type: String
+    Default: ""
+
+  # General Purpose Instance Group
+  CreateGeneralPurposeInstanceGroup:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+  GeneralPurposeInstanceGroupName:
+    Type: String
+    Default: general-purpose-instance-group
+
+  GeneralPurposeInstanceType:
+    Type: String
+    Default: ml.m5.2xlarge
+
+  GeneralPurposeInstanceCount:
+    Type: Number
+    Default: 1
+
+  GeneralPurposeEBSVolumeSize:
+    Type: Number
+    Default: 500
+
+  GeneralPurposeThreadsPerCore:
+    Type: Number
+    Default: 1
+    AllowedValues: [1, 2]
+
+  GeneralPurposeLifeCycleConfigOnCreate:
+    Type: String
+    Default: on_create.sh
+
+  GeneralPurposeImageId:
+    Type: String
+    Default: ""
+
+  # Restricted Instance Group
+  CreateRestrictedInstanceGroup:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+  RestrictedInstanceGroupName:
+    Type: String
+    Default: restricted-instance-group
+
+  RestrictedInstanceType:
+    Type: String
+    Default: ml.g5.8xlarge
+
+  RestrictedInstanceCount:
+    Type: Number
+    Default: 1
+
+  RestrictedPerUnitStorageThroughput:
+    Type: Number
+    Default: 250
+
+  RestrictedSizeInGiB:
+    Type: Number
+    Default: 1200
+
+  RestrictedEBSVolumeSize:
+    Type: Number
+    Default: 500
+
+  EnableRestrictedInstanceStressCheck:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  EnableRestrictedInstanceConnectivityCheck:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+
+  RestrictedThreadsPerCore:
+    Type: Number
+    Default: 1
+    AllowedValues: [1, 2]
+
+  RestrictedTrainingPlanArn:
+    Type: String
+    Default: ""
+
+Conditions:
+  CreatePrivateSubnet: !Equals [!Ref ExistingPrivateSubnetId, ""]
+
+Mappings:
+  AssetS3Buckets: 
+    eu-north-1:
+      BucketName: ws-assets-prod-iad-r-arn-580aeca3990cef5a
+    ap-south-1:
+      BucketName: ws-assets-prod-iad-r-bom-431207042d319a2d
+    eu-west-3:
+      BucketName: ws-assets-prod-iad-r-cdg-9e76383c31ad6229
+    us-east-2:
+      BucketName: ws-assets-prod-iad-r-cmh-8d6e9c21a4dec77d
+    eu-west-1:
+      BucketName: ws-assets-prod-iad-r-dub-85e3be25bd827406
+    eu-central-1:
+      BucketName: ws-assets-prod-iad-r-fra-b129423e91500967
+    sa-east-1:
+      BucketName: ws-assets-prod-iad-r-gru-527b8c19222c1182
+    us-east-1:
+      BucketName: ws-assets-prod-iad-r-iad-ed304a55c2ca1aee
+    ap-northeast-2:
+      BucketName: ws-assets-prod-iad-r-icn-ced060f0d38bc0b0
+    ap-northeast-3:
+      BucketName: ws-assets-prod-iad-r-kix-c2a28ad4e55ea53a
+    eu-west-2:
+      BucketName: ws-assets-prod-iad-r-lhr-cc4472a651221311
+    ap-northeast-1:
+      BucketName: ws-assets-prod-iad-r-nrt-2cb4b4649d0e0f94
+    us-west-2:
+      BucketName: ws-assets-prod-iad-r-pdx-f3b3f9f1a7d6a3d0
+    us-west-1:
+      BucketName: ws-assets-prod-iad-r-sfo-f61fc67057535f1b
+    ap-southeast-1:
+      BucketName: ws-assets-prod-iad-r-sin-694a125e41645312
+    ap-southeast-2:
+      BucketName: ws-assets-prod-iad-r-syd-b04c62a5f16f7b2e
+    ca-central-1:
+      BucketName: ws-assets-prod-iad-r-yul-5c2977cd61bca1f3
+
+Resources:
+  # ============ Private Subnet Resources (conditional) ============
+  # Aligned with ComputeSubnetManager: Subnet + RouteTable + Route + S3 Endpoint
+  
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: CreatePrivateSubnet
+    Properties:
+      VpcId: !Ref ExistingVpcId
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZoneId: !Ref AvailabilityZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneId}"
+        - Key: karpenter.sh/discovery
+          Value: !Ref ExistingEKSClusterName
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreatePrivateSubnet
+    Properties:
+      VpcId: !Ref ExistingVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneId}-rt"
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreatePrivateSubnet
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Condition: CreatePrivateSubnet
+    DependsOn: PrivateSubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ExistingNatGatewayId
+
+  S3VpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreatePrivateSubnet
+    Properties:
+      VpcId: !Ref ExistingVpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+
+  # ============ HyperPod Cluster Stack ============
+  HyperPodClusterStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Sub:
+        - "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/2433d39e-ccfe-4c00-9d3d-9917b729258e/hyperpod-cluster-stack.yaml"
+        - BucketName: !FindInMap [AssetS3Buckets, !Ref 'AWS::Region', BucketName]
+      Parameters:
+        HyperPodClusterName: !Ref HyperPodClusterName
+        NodeRecovery: !Ref NodeRecovery
+        UseContinuousNodeProvisioningMode: !Ref UseContinuousNodeProvisioningMode
+        CreateAcceleratedInstanceGroup: !Ref CreateAcceleratedInstanceGroup
+        AcceleratedInstanceGroupName: !Ref AcceleratedInstanceGroupName
+        AcceleratedInstanceType: !Ref AcceleratedInstanceType
+        AcceleratedInstanceCount: !Ref AcceleratedInstanceCount
+        AcceleratedEBSVolumeSize: !Ref AcceleratedEBSVolumeSize
+        AcceleratedThreadsPerCore: !Ref AcceleratedThreadsPerCore
+        EnableInstanceStressCheck: !Ref EnableInstanceStressCheck
+        EnableInstanceConnectivityCheck: !Ref EnableInstanceConnectivityCheck
+        AcceleratedLifeCycleConfigOnCreate: !Ref AcceleratedLifeCycleConfigOnCreate
+        AcceleratedTrainingPlanArn: !Ref AcceleratedTrainingPlanArn
+        AcceleratedImageId: !Ref AcceleratedImageId
+        CreateGeneralPurposeInstanceGroup: !Ref CreateGeneralPurposeInstanceGroup
+        GeneralPurposeInstanceGroupName: !Ref GeneralPurposeInstanceGroupName
+        GeneralPurposeInstanceType: !Ref GeneralPurposeInstanceType
+        GeneralPurposeInstanceCount: !Ref GeneralPurposeInstanceCount
+        GeneralPurposeEBSVolumeSize: !Ref GeneralPurposeEBSVolumeSize
+        GeneralPurposeThreadsPerCore: !Ref GeneralPurposeThreadsPerCore
+        GeneralPurposeLifeCycleConfigOnCreate: !Ref GeneralPurposeLifeCycleConfigOnCreate
+        GeneralPurposeImageId: !Ref GeneralPurposeImageId
+        CreateRestrictedInstanceGroup: !Ref CreateRestrictedInstanceGroup
+        RestrictedInstanceGroupName: !Ref RestrictedInstanceGroupName
+        RestrictedInstanceType: !Ref RestrictedInstanceType
+        RestrictedInstanceCount: !Ref RestrictedInstanceCount
+        RestrictedPerUnitStorageThroughput: !Ref RestrictedPerUnitStorageThroughput
+        RestrictedSizeInGiB: !Ref RestrictedSizeInGiB
+        RestrictedEBSVolumeSize: !Ref RestrictedEBSVolumeSize
+        EnableRestrictedInstanceStressCheck: !Ref EnableRestrictedInstanceStressCheck
+        EnableRestrictedInstanceConnectivityCheck: !Ref EnableRestrictedInstanceConnectivityCheck
+        RestrictedThreadsPerCore: !Ref RestrictedThreadsPerCore
+        RestrictedTrainingPlanArn: !Ref RestrictedTrainingPlanArn
+        HelmChartStatus: HelmChartNotRequired
+        SageMakerIAMRoleName: !Ref ExistingSageMakerRoleName
+        PrivateSubnetId: !If
+          - CreatePrivateSubnet
+          - !Ref PrivateSubnet
+          - !Ref ExistingPrivateSubnetId
+        SecurityGroupId: !Ref ExistingSecurityGroupId
+        EKSClusterName: !Ref ExistingEKSClusterName
+        S3BucketName: !Ref ExistingS3BucketName
+
+Outputs:
+  HyperPodClusterName:
+    Value: !GetAtt HyperPodClusterStack.Outputs.HyperPodClusterName
+    Description: HyperPod cluster name
+
+  HyperPodClusterArn:
+    Value: !GetAtt HyperPodClusterStack.Outputs.HyperPodClusterArn
+    Description: HyperPod cluster ARN
+
+  PrivateSubnetId:
+    Value: !If
+      - CreatePrivateSubnet
+      - !Ref PrivateSubnet
+      - !Ref ExistingPrivateSubnetId
+    Description: Private subnet ID used by HyperPod
+
+  PrivateRouteTableId:
+    Condition: CreatePrivateSubnet
+    Value: !Ref PrivateRouteTable
+    Description: Private route table ID (only when subnet is created)
+
+  VpcId:
+    Value: !Ref ExistingVpcId
+    Description: VPC ID used by HyperPod cluster
+
+  SecurityGroupId:
+    Value: !Ref ExistingSecurityGroupId
+    Description: Security group ID used by HyperPod cluster
+
+  SubnetCreated:
+    Value: !If [CreatePrivateSubnet, "true", "false"]
+    Description: Whether a new subnet was created

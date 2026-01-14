@@ -2174,6 +2174,20 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
           >
             <Input placeholder="arn:aws:sagemaker:region:account:training-plan/..." />
           </Form.Item>
+
+          <Divider style={{ margin: '16px 0 8px 0' }} />
+          
+          <details style={{ marginBottom: 8 }}>
+            <summary style={{ cursor: 'pointer', color: '#1890ff', marginBottom: 8 }}>
+              (Optional) Compute Subnet ID
+            </summary>
+            <Form.Item
+              name="computeSubnetId"
+              style={{ marginTop: 8, marginBottom: 0 }}
+            >
+              <Input placeholder="subnet-0123456789abcdef0" />
+            </Form.Item>
+          </details>
         </Form>
       </Modal>
 

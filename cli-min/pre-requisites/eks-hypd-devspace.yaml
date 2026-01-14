@@ -48,6 +48,14 @@ Parameters:
     Type: String
     Default: ""
     Description: Name of existing S3 bucket to use (leave empty to create a new bucket)
+
+  UseMinimalIAMPolicy:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Use minimal IAM policy instead of AdministratorAccess (true for fine-grained permissions)
     
   LatestUbuntu2204AMI:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -64,6 +72,8 @@ Conditions:
     - !Condition HasSecurityGroupId
   UseDefaultVpc: !Not [!Condition UseCustomVpc]
   CreateNewBucket: !Equals [!Ref ExistingS3BucketName, ""]
+  UseMinimalPolicy: !Equals [!Ref UseMinimalIAMPolicy, "true"]
+  UseAdminPolicy: !Equals [!Ref UseMinimalIAMPolicy, "false"]
 
 Resources:
   # S3 Bucket for HYPD resources (only created if ExistingS3BucketName is empty)
@@ -94,24 +104,163 @@ Resources:
       RoleName: !Sub '${ResourceTag}-admin-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-                - ecr.amazonaws.com
-                - eks.amazonaws.com
-                - bedrock.amazonaws.com
-                - cloudformation.amazonaws.com
-                - sagemaker.amazonaws.com
-            Action:
-              - sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AdministratorAccess
+        Statement: !If
+          - UseMinimalPolicy
+          # Minimal: only EC2 can assume
+          - - Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+              Action:
+                - sts:AssumeRole
+          # Admin: multiple services + root account can assume
+          - - Effect: Allow
+              Principal:
+                Service:
+                  - ec2.amazonaws.com
+                  - ecr.amazonaws.com
+                  - eks.amazonaws.com
+                  - bedrock.amazonaws.com
+                  - cloudformation.amazonaws.com
+                  - sagemaker.amazonaws.com
+              Action:
+                - sts:AssumeRole
+            - Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action: sts:AssumeRole
+      ManagedPolicyArns: !If
+        - UseAdminPolicy
+        - - arn:aws:iam::aws:policy/AdministratorAccess
+        - !Ref AWS::NoValue
+      Policies: !If
+        - UseMinimalPolicy
+        - - PolicyName: HyperPodMinimalPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: CloudFormation
+                  Effect: Allow
+                  Action:
+                    - cloudformation:CreateStack
+                    - cloudformation:UpdateStack
+                    - cloudformation:DeleteStack
+                    - cloudformation:DescribeStacks
+                    - cloudformation:DescribeStackEvents
+                    - cloudformation:DescribeStackResources
+                    - cloudformation:GetTemplate
+                    - cloudformation:ListStacks
+                    - cloudformation:ValidateTemplate
+                  Resource: "*"
+                - Sid: S3ReadNestedTemplates
+                  Effect: Allow
+                  Action:
+                    - s3:GetObject
+                  Resource: arn:aws:s3:::ws-assets-prod-*/*
+                - Sid: S3UserBucket
+                  Effect: Allow
+                  Action:
+                    - s3:*
+                  Resource:
+                    - arn:aws:s3:::*hyperpod*
+                    - arn:aws:s3:::*hyperpod*/*
+                    - arn:aws:s3:::*sagemaker*
+                    - arn:aws:s3:::*sagemaker*/*
+                    - !If
+                      - CreateNewBucket
+                      - !Sub arn:aws:s3:::${ResourceTag}-s3-${AWS::Region}
+                      - !Sub arn:aws:s3:::${ExistingS3BucketName}
+                    - !If
+                      - CreateNewBucket
+                      - !Sub arn:aws:s3:::${ResourceTag}-s3-${AWS::Region}/*
+                      - !Sub arn:aws:s3:::${ExistingS3BucketName}/*
+                - Sid: IAMPassRole
+                  Effect: Allow
+                  Action:
+                    - iam:PassRole
+                    - iam:GetRole
+                  Resource: "*"
+                - Sid: IAMCreateRolesForCF
+                  Effect: Allow
+                  Action:
+                    - iam:CreateRole
+                    - iam:DeleteRole
+                    - iam:TagRole
+                    - iam:PutRolePolicy
+                    - iam:DeleteRolePolicy
+                    - iam:GetRolePolicy
+                    - iam:AttachRolePolicy
+                    - iam:DetachRolePolicy
+                    - iam:ListRolePolicies
+                    - iam:ListAttachedRolePolicies
+                    - iam:CreateInstanceProfile
+                    - iam:DeleteInstanceProfile
+                    - iam:GetInstanceProfile
+                    - iam:AddRoleToInstanceProfile
+                    - iam:RemoveRoleFromInstanceProfile
+                    - iam:CreateServiceLinkedRole
+                  Resource:
+                    - arn:aws:iam::*:role/*hyperpod*
+                    - arn:aws:iam::*:role/*sagemaker*
+                    - arn:aws:iam::*:role/*eks*
+                    - arn:aws:iam::*:role/*LifeCycleScript*
+                    - arn:aws:iam::*:instance-profile/*
+                    - arn:aws:iam::*:role/aws-service-role/*.amazonaws.com/*
+                - Sid: EKS
+                  Effect: Allow
+                  Action:
+                    - eks:*
+                  Resource: "*"
+                - Sid: EC2VPC
+                  Effect: Allow
+                  Action:
+                    - ec2:*Vpc*
+                    - ec2:*Subnet*
+                    - ec2:*Gateway*
+                    - ec2:*Route*
+                    - ec2:*SecurityGroup*
+                    - ec2:*Address*
+                    - ec2:*NetworkInterface*
+                    - ec2:*Endpoint*
+                    - ec2:*Tags*
+                    - ec2:Describe*
+                  Resource: "*"
+                - Sid: SageMakerHyperPod
+                  Effect: Allow
+                  Action:
+                    - sagemaker:CreateCluster
+                    - sagemaker:DeleteCluster
+                    - sagemaker:UpdateCluster
+                    - sagemaker:DescribeCluster
+                    - sagemaker:DescribeClusterNode
+                    - sagemaker:ListClusters
+                    - sagemaker:ListClusterNodes
+                    - sagemaker:UpdateClusterSoftware
+                    - sagemaker:BatchDeleteClusterNodes
+                    - sagemaker:AddTags
+                    - sagemaker:ListTags
+                  Resource: "*"
+                - Sid: Lambda
+                  Effect: Allow
+                  Action:
+                    - lambda:*
+                  Resource:
+                    - arn:aws:lambda:*:*:function:*hyperpod*
+                    - arn:aws:lambda:*:*:function:*sagemaker*
+                    - arn:aws:lambda:*:*:function:*LifeCycleScript*
+                    - arn:aws:lambda:*:*:layer:*
+                - Sid: CloudWatchLogs
+                  Effect: Allow
+                  Action:
+                    - logs:*
+                  Resource: "*"
+                - Sid: SSM
+                  Effect: Allow
+                  Action:
+                    - ssm:GetParameter
+                    - ssm:GetParameters
+                  Resource: arn:aws:ssm:*:*:parameter/aws/*
+        - !Ref AWS::NoValue
 
   # Instance Profile
   HYPDInstanceProfile:
