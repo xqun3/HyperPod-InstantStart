@@ -162,10 +162,6 @@ Resources:
                   Action:
                     - s3:*
                   Resource:
-                    - arn:aws:s3:::*hyperpod*
-                    - arn:aws:s3:::*hyperpod*/*
-                    - arn:aws:s3:::*sagemaker*
-                    - arn:aws:s3:::*sagemaker*/*
                     - !If
                       - CreateNewBucket
                       - !Sub arn:aws:s3:::${ResourceTag}-s3-${AWS::Region}
@@ -206,6 +202,13 @@ Resources:
                     - arn:aws:iam::*:role/*LifeCycleScript*
                     - arn:aws:iam::*:instance-profile/*
                     - arn:aws:iam::*:role/aws-service-role/*.amazonaws.com/*
+                - Sid: IAMOIDCProvider
+                  Effect: Allow
+                  Action:
+                    - iam:CreateOpenIDConnectProvider
+                    - iam:GetOpenIDConnectProvider
+                    - iam:TagOpenIDConnectProvider
+                  Resource: arn:aws:iam::*:oidc-provider/*
                 - Sid: EKS
                   Effect: Allow
                   Action:

@@ -708,7 +708,7 @@ const ClusterManagementRedux = () => {
           </Form.Item>
 
           <Form.Item
-            label="HyperPod Cluster Name (Associated)"
+            label="HyperPod Cluster Name (Optional)"
             name="hyperPodClusters"
             extra="Enter the HyperPod cluster name associated with this EKS cluster"
           >

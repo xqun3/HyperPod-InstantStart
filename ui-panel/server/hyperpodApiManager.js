@@ -241,26 +241,27 @@ router.post('/create-hyperpod', async (req, res) => {
     const availabilityZoneId = azResult.trim();
 
     // 确保目标 AZ 有 Public Subnet
-    console.log(`\n🔍 Ensuring public subnet exists in ${userConfig.availabilityZone}...`);
-    try {
-      const publicSubnetResult = await SubnetManager.ensurePublicSubnet({
-        vpcId: eksInfrastructureInfo.VPC_ID,
-        availabilityZone: userConfig.availabilityZone,
-        clusterTag: activeCluster,
-        region: region
-      });
+    // 注释掉自动创建，避免 CIDR 冲突问题
+    // console.log(`\n🔍 Ensuring public subnet exists in ${userConfig.availabilityZone}...`);
+    // try {
+    //   const publicSubnetResult = await SubnetManager.ensurePublicSubnet({
+    //     vpcId: eksInfrastructureInfo.VPC_ID,
+    //     availabilityZone: userConfig.availabilityZone,
+    //     clusterTag: activeCluster,
+    //     region: region
+    //   });
 
-      console.log(`✅ Public subnet ready: ${publicSubnetResult.subnetId} (${publicSubnetResult.subnetName})`);
-      if (publicSubnetResult.created) {
-        console.log(`   Created new subnet with CIDR: ${publicSubnetResult.cidrBlock}`);
-      }
-    } catch (subnetError) {
-      console.error('❌ Failed to ensure public subnet:', subnetError);
-      return res.status(500).json({
-        success: false,
-        error: `Failed to ensure public subnet in ${userConfig.availabilityZone}: ${subnetError.message}`
-      });
-    }
+    //   console.log(`✅ Public subnet ready: ${publicSubnetResult.subnetId} (${publicSubnetResult.subnetName})`);
+    //   if (publicSubnetResult.created) {
+    //     console.log(`   Created new subnet with CIDR: ${publicSubnetResult.cidrBlock}`);
+    //   }
+    // } catch (subnetError) {
+    //   console.error('❌ Failed to ensure public subnet:', subnetError);
+    //   return res.status(500).json({
+    //     success: false,
+    //     error: `Failed to ensure public subnet in ${userConfig.availabilityZone}: ${subnetError.message}`
+    //   });
+    // }
 
     // 验证必需的基础设施信息
     if (!eksInfrastructureInfo.VPC_ID || !eksInfrastructureInfo.SECURITY_GROUP_ID) {
@@ -320,9 +321,20 @@ router.post('/create-hyperpod', async (req, res) => {
       EnableInstanceConnectivityCheck: 'false'
     };
 
-    // 如果用户提供了 compute subnet，使用它
+    // 确定使用的 compute subnet：用户指定 > 自动检测已存在的 > CF 自动创建
     if (userConfig.computeSubnetId) {
+      // 用户明确指定了 subnet
       hyperPodConfig.ExistingPrivateSubnetId = userConfig.computeSubnetId;
+      console.log(`Using user-specified compute subnet: ${userConfig.computeSubnetId}`);
+    } else if (userConfig.availabilityZone) {
+      // 检测 hp-compute-{az} 是否已存在
+      const existingSubnet = await NetworkManager.findComputeSubnet(
+        eksInfrastructureInfo.VPC_ID, userConfig.availabilityZone, region
+      );
+      if (existingSubnet) {
+        hyperPodConfig.ExistingPrivateSubnetId = existingSubnet.subnetId;
+        console.log(`Using existing compute subnet: ${existingSubnet.subnetId} (hp-compute-${userConfig.availabilityZone})`);
+      }
     }
 
     const stackResult = await CloudFormationManager.createHyperPodStack(
@@ -617,37 +629,36 @@ router.post('/hyperpod/add-instance-group', async (req, res) => {
       newInstanceGroup.CapacityRequirements = { Spot: {} };
     }
 
-    // 如果指定了 availabilityZone，使用 NetworkManager 自动查找/创建 subnet
-    if (userConfig.availabilityZone) {
+    // Compute Subnet 选择优先级：用户指定 > 自动检测已存在 > 自动创建
+    if (userConfig.subnetId || userConfig.availabilityZone) {
       const vpcId = clusterData.VpcConfig?.Subnets?.[0] ?
         (() => {
           const subnetCmd = `aws ec2 describe-subnets --region ${region} --subnet-ids ${clusterData.VpcConfig.Subnets[0]} --query "Subnets[0].VpcId" --output text`;
           return execSync(subnetCmd, { encoding: 'utf8' }).trim();
         })() : clusterInfo.cloudFormation?.outputs?.OutputVpcId;
 
-      const eksClusterName = clusterInfo.cloudFormation?.outputs?.OutputEKSClusterName || activeClusterName;
-
-      const { subnetId: computeSubnetId, created } = await NetworkManager.ensureComputeSubnet(
-        vpcId, userConfig.availabilityZone, region, eksClusterName
-      );
-      console.log(`Using compute subnet: ${computeSubnetId} (created: ${created})`);
-
       const securityGroupId = clusterData.VpcConfig?.SecurityGroupIds?.[0] ||
                              clusterInfo.eksCluster?.securityGroupId;
+
+      let computeSubnetId;
+
+      if (userConfig.subnetId) {
+        // 用户明确指定
+        computeSubnetId = userConfig.subnetId;
+        console.log(`Using user-specified compute subnet: ${computeSubnetId}`);
+      } else {
+        // 自动检测/创建
+        const eksClusterName = clusterInfo.cloudFormation?.outputs?.OutputEKSClusterName || activeClusterName;
+        const result = await NetworkManager.ensureComputeSubnet(
+          vpcId, userConfig.availabilityZone, region, eksClusterName
+        );
+        computeSubnetId = result.subnetId;
+        console.log(`Using compute subnet: ${computeSubnetId} (created: ${result.created})`);
+      }
 
       newInstanceGroup.OverrideVpcConfig = {
         SecurityGroupIds: [securityGroupId],
         Subnets: [computeSubnetId]
-      };
-    }
-    // 向后兼容：如果直接指定了 subnetId
-    else if (userConfig.subnetId) {
-      const securityGroupId = clusterData.VpcConfig?.SecurityGroupIds?.[0] ||
-                             clusterInfo.eksCluster?.securityGroupId;
-
-      newInstanceGroup.OverrideVpcConfig = {
-        SecurityGroupIds: [securityGroupId],
-        Subnets: [userConfig.subnetId]
       };
     }
 
