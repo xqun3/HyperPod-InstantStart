@@ -265,7 +265,8 @@ class MetadataUtils {
       // 获取账户ID和当前角色
       const accountId = execSync('aws sts get-caller-identity --query Account --output text', { encoding: 'utf8' }).trim();
       const roleArn = execSync('aws sts get-caller-identity --query Arn --output text', { encoding: 'utf8' }).trim();
-      const roleName = roleArn.split('/').pop();
+      // ARN 格式: arn:aws:sts::123:assumed-role/RoleName/SessionName → split('/')[1] = RoleName
+      const roleName = roleArn.split('/')[1];
       
       // 获取HyperPod计算节点信息（容错处理）
       let hyperPodClusterData = null;
