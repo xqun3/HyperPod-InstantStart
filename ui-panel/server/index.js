@@ -1512,33 +1512,18 @@ app.get('/api/cluster/subnets', async (req, res) => {
     // 获取子网信息（仍需要动态获取，因为子网信息不在metadata中）
     const subnetInfo = await CloudFormationManager.fetchSubnetInfo(vpcId, region);
     
-    // 获取HyperPod使用的子网和Security Group
+    // 从metadata获取HyperPod使用的子网和Security Group
     let hyperPodSubnets = [];
     let hyperPodSecurityGroup = null;
-    try {
-      // 从metadata获取实际的HyperPod集群名称
-      if (clusterInfo.hyperPodCluster && clusterInfo.hyperPodCluster.ClusterName) {
-        const hpClusterName = clusterInfo.hyperPodCluster.ClusterName;
-        
-        // 使用兼容的查询命令获取计算节点子网
-        const hpCmd = `aws sagemaker describe-cluster --cluster-name ${hpClusterName} --region ${region} --query 'InstanceGroups[0].OverrideVpcConfig.Subnets[] || VpcConfig.Subnets[]' --output text`;
-        const hpResult = await execAsync(hpCmd);
-        const subnetText = hpResult.stdout.trim();
-        if (subnetText) {
-          hyperPodSubnets = subnetText.split(/\s+/).filter(s => s.length > 0);
-        }
-        console.log('Found HyperPod compute subnets:', hyperPodSubnets);
-        
-        // 获取HyperPod Security Groups
-        const hyperPodSecurityGroups = await CloudFormationManager.getHyperPodSecurityGroups(eksClusterName, region);
-        if (hyperPodSecurityGroups.length > 0) {
-          hyperPodSecurityGroup = hyperPodSecurityGroups[0];
-        }
-      } else {
-        console.log('No HyperPod cluster found in metadata');
-      }
-    } catch (error) {
-      console.log('Error fetching HyperPod compute subnet info:', error.message);
+    if (clusterInfo.hyperPodCluster) {
+      const hpData = clusterInfo.hyperPodCluster;
+      // 优先从 InstanceGroups[0].OverrideVpcConfig 获取子网，回退到 VpcConfig
+      const overrideSubnets = hpData.InstanceGroups?.[0]?.OverrideVpcConfig?.Subnets;
+      hyperPodSubnets = overrideSubnets || hpData.VpcConfig?.Subnets || [];
+      hyperPodSecurityGroup = hpData.VpcConfig?.SecurityGroupIds?.[0] || null;
+      console.log('Found HyperPod compute subnets:', hyperPodSubnets);
+    } else {
+      console.log('No HyperPod cluster found in metadata');
     }
     
     // 标记HyperPod使用的子网
