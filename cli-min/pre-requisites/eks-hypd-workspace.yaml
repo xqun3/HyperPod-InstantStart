@@ -97,6 +97,7 @@ Resources:
                 - bedrock.amazonaws.com
                 - cloudformation.amazonaws.com
                 - sagemaker.amazonaws.com
+                - lambda.amazonaws.com
             Action:
               - sts:AssumeRole
           - Effect: Allow
