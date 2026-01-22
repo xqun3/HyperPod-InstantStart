@@ -2805,14 +2805,14 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         <div style={{ marginBottom: 16 }}>
           <Text>Select HyperPod Instance Groups:</Text>
         </div>
-        <Checkbox.Group
-          value={selectedInstanceGroups}
-          onChange={setSelectedInstanceGroups}
+        <Radio.Group
+          value={selectedInstanceGroups[0]}
+          onChange={e => setSelectedInstanceGroups([e.target.value])}
           style={{ width: '100%' }}
         >
           <Space direction="vertical" style={{ width: '100%' }}>
             {hyperPodGroups.map(group => (
-              <Checkbox key={group.name} value={group.name}>
+              <Radio key={group.name} value={group.name}>
                 <Space>
                   <Text strong>{group.name}</Text>
                   <Tag>{group.instanceType}</Tag>
@@ -2821,10 +2821,10 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   </Tag>
                   <Text type="secondary">({group.currentCount} nodes)</Text>
                 </Space>
-              </Checkbox>
+              </Radio>
             ))}
           </Space>
-        </Checkbox.Group>
+        </Radio.Group>
         {hyperPodGroups.length === 0 && (
           <Text type="secondary">No instance groups available</Text>
         )}

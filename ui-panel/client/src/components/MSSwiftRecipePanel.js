@@ -33,7 +33,7 @@ const { TextArea } = Input;
 const { Panel } = Collapse;
 const { Text } = Typography;
 
-const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading }) => {
+const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, instanceTypesLoading, refreshInstanceTypes }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -190,10 +190,10 @@ const MSSwiftRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes,
               size="small"
             />
           </Tooltip>
-          <Tooltip title="Reload Configuration">
+          <Tooltip title="Reload Configuration and Refresh Instance Types">
             <Button 
               icon={<ReloadOutlined />} 
-              onClick={loadSavedConfig}
+              onClick={() => { loadSavedConfig(); if (refreshInstanceTypes) refreshInstanceTypes(); }}
               size="small"
             />
           </Tooltip>
