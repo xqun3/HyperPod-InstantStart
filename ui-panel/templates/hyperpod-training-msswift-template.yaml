@@ -39,8 +39,8 @@ spec:
                 value: "warning"
               - name: FI_PROVIDER
                 value: "efa"
-              - name: FI_EFA_USE_DEVICE_RDMA
-                value: "1"
+              # - name: FI_EFA_USE_DEVICE_RDMA
+              #   value: "1"
               - name: NCCL_DEBUG
                 value: "DEBUG"
               - name: NCCL_SOCKET_IFNAME

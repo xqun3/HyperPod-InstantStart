@@ -41,8 +41,8 @@ spec:
                 value: "warning"
               - name: FI_PROVIDER
                 value: "efa"
-              - name: FI_EFA_USE_DEVICE_RDMA
-                value: "1"
+              # - name: FI_EFA_USE_DEVICE_RDMA
+              #   value: "1"
               # - name: TORCH_DISTRIBUTED_DEBUG
               #   value: "DETAIL"
               # - name: TORCH_NCCL_ENABLE_MONITORING
