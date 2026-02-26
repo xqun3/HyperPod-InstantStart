@@ -3,10 +3,10 @@ const { exec } = require('child_process');
 /**
  * 集群状态服务 V2 - 优化版本
  * 主要改进：
- * 1. 并行处理节点查询
- * 2. 添加超时机制
- * 3. 实现缓存策略
- * 4. 更高效的GPU信息获取
+ * 1. 批量查询：只调用 2 次 kubectl（nodes + pods），而非每节点多次
+ * 2. 内存计算：在内存中计算每个节点的 GPU 使用情况
+ * 3. 添加超时机制
+ * 4. 实现缓存策略
  * 5. 更好的错误处理
  */
 
@@ -47,170 +47,87 @@ class ClusterStatusV2 {
   }
 
   /**
-   * 获取单个节点的GPU信息（优化版本）
+   * 计算 Pod 的 GPU 请求数
    */
-  async getNodeGPUInfo(node, hyperPodCapacityTypeMap = {}) {
-    const nodeName = node.metadata.name;
-    const nodeReady = node.status?.conditions?.find(c => c.type === 'Ready')?.status === 'True';
+  getPodGPURequest(pod) {
+    if (!pod.spec?.containers) return 0;
+    return pod.spec.containers.reduce((sum, container) => {
+      const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
+      return sum + (parseInt(gpuRequest) || 0);
+    }, 0);
+  }
+
+  /**
+   * 批量获取所有节点的 GPU 信息（优化版本）
+   * 只需要传入已获取的 nodes 和 pods 数据，在内存中计算
+   */
+  getAllNodesGPUInfoBatch(nodes, allPods, hyperPodCapacityTypeMap = {}) {
+    console.log(`Processing GPU info for ${nodes.length} nodes (batch mode)...`);
     
-    // 获取节点实例类型（通常在labels中）
-    const instanceType = node.metadata?.labels?.['node.kubernetes.io/instance-type'] || 
-                        node.metadata?.labels?.['beta.kubernetes.io/instance-type'] ||
-                        'Unknown';
+    // 按节点名分组 Pod
+    const podsByNode = {};
+    const pendingPods = [];
     
-    // 获取节点标签信息用于分类
-    const labels = node.metadata?.labels || {};
-    
-    // 获取 HyperPod 节点的 capacity type
-    let capacityType = null;
-    if (labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod') {
-      const instanceGroupName = labels['sagemaker.amazonaws.com/instance-group-name'];
-      if (instanceGroupName && hyperPodCapacityTypeMap[instanceGroupName]) {
-        capacityType = hyperPodCapacityTypeMap[instanceGroupName];
+    for (const pod of allPods) {
+      const nodeName = pod.spec?.nodeName;
+      if (nodeName) {
+        if (!podsByNode[nodeName]) podsByNode[nodeName] = [];
+        podsByNode[nodeName].push(pod);
+      } else if (pod.status?.phase === 'Pending') {
+        pendingPods.push(pod);
       }
     }
-    
-    try {
-      // 并行获取节点信息，使用更高效的查询
-      const [capacityInfo, allocatableInfo, podsInfo] = await Promise.all([
-        // 获取节点GPU容量
-        this.executeKubectlWithTimeout(
-          `get node ${nodeName} -o "jsonpath={.status.capacity['nvidia\\.com/gpu']}"`, 
-          10000
-        ).catch(() => '0'),
-        
-        // 获取节点GPU可分配数量
-        this.executeKubectlWithTimeout(
-          `get node ${nodeName} -o "jsonpath={.status.allocatable['nvidia\\.com/gpu']}"`, 
-          10000
-        ).catch(() => '0'),
-        
-        // 获取该节点上所有已调度的 Pod（不限制 phase）
-        this.executeKubectlWithTimeout(
-          `get pods --field-selector spec.nodeName=${nodeName} -o json`,
-          15000
-        ).catch(() => '{"items":[]}')
-      ]);
 
-      const totalGPU = parseInt(capacityInfo) || 0;
-      const allocatableGPU = parseInt(allocatableInfo) || 0;
+    // 处理每个节点
+    return nodes.map(node => {
+      const nodeName = node.metadata.name;
+      const labels = node.metadata?.labels || {};
+      const nodeReady = node.status?.conditions?.find(c => c.type === 'Ready')?.status === 'True';
       
-      // 计算已使用的GPU - 统计所有已调度且未完成的 Pod
-      let usedGPU = 0;
-      let pendingGPU = 0;
+      const instanceType = labels['node.kubernetes.io/instance-type'] || 
+                          labels['beta.kubernetes.io/instance-type'] || 'Unknown';
       
-      try {
-        const podsData = JSON.parse(podsInfo);
-        if (podsData.items && Array.isArray(podsData.items)) {
-          // 统计已调度且未完成的 Pod（排除 Succeeded 和 Failed）
-          usedGPU = podsData.items
-            .filter(pod => !['Succeeded', 'Failed'].includes(pod.status?.phase))
-            .reduce((sum, pod) => {
-              if (pod.spec?.containers) {
-                return sum + pod.spec.containers.reduce((containerSum, container) => {
-                  const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
-                  return containerSum + (parseInt(gpuRequest) || 0);
-                }, 0);
-              }
-              return sum;
-            }, 0);
+      // HyperPod capacity type
+      let capacityType = null;
+      if (labels['sagemaker.amazonaws.com/compute-type'] === 'hyperpod') {
+        const igName = labels['sagemaker.amazonaws.com/instance-group-name'];
+        if (igName && hyperPodCapacityTypeMap[igName]) {
+          capacityType = hyperPodCapacityTypeMap[igName];
         }
-        
-        // 统计未调度的 Pending Pod（没有 nodeName 的）
-        const allPendingPodsInfo = await this.executeKubectlWithTimeout(
-          `get pods --field-selector status.phase=Pending -o json`,
-          10000
-        ).catch(() => '{"items":[]}');
-        
-        const allPendingPodsData = JSON.parse(allPendingPodsInfo);
-        if (allPendingPodsData.items && Array.isArray(allPendingPodsData.items)) {
-          // 只统计未调度且 nodeSelector 匹配当前节点的 Pending Pod
-          pendingGPU = allPendingPodsData.items
-            .filter(pod => !pod.spec?.nodeName)
-            .filter(pod => {
-              const selector = pod.spec?.nodeSelector;
-              if (!selector) return true;
-              return Object.entries(selector).every(([k, v]) => labels[k] === v);
-            })
-            .reduce((sum, pod) => {
-              if (pod.spec?.containers) {
-                return sum + pod.spec.containers.reduce((containerSum, container) => {
-                  const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
-                  return containerSum + (parseInt(gpuRequest) || 0);
-                }, 0);
-              }
-              return sum;
-            }, 0);
-        }
-      } catch (parseError) {
-        console.warn(`Failed to parse pods JSON for node ${nodeName}:`, parseError.message);
-        usedGPU = 0;
-        pendingGPU = 0;
       }
+
+      // GPU 容量（从 node 对象直接获取）
+      const totalGPU = parseInt(node.status?.capacity?.['nvidia.com/gpu']) || 0;
+      const allocatableGPU = parseInt(node.status?.allocatable?.['nvidia.com/gpu']) || 0;
+
+      // 计算已使用 GPU（排除 Succeeded/Failed）
+      const nodePods = podsByNode[nodeName] || [];
+      const usedGPU = nodePods
+        .filter(pod => !['Succeeded', 'Failed'].includes(pod.status?.phase))
+        .reduce((sum, pod) => sum + this.getPodGPURequest(pod), 0);
+
+      // 计算 Pending GPU（nodeSelector 匹配当前节点的）
+      const pendingGPU = pendingPods
+        .filter(pod => {
+          const selector = pod.spec?.nodeSelector;
+          if (!selector) return true;
+          return Object.entries(selector).every(([k, v]) => labels[k] === v);
+        })
+        .reduce((sum, pod) => sum + this.getPodGPURequest(pod), 0);
 
       return {
         nodeName,
         instanceType,
-        labels, // 添加标签信息
-        capacityType, // HyperPod 节点的 capacity type
+        labels,
+        capacityType,
         totalGPU,
         usedGPU,
         availableGPU: Math.max(0, allocatableGPU - usedGPU),
         allocatableGPU,
-        pendingGPU, // 新增：Pending状态Pod请求的GPU数量（用于调试）
+        pendingGPU,
         nodeReady,
         fetchTime: Date.now()
       };
-    } catch (error) {
-      console.error(`Error fetching GPU info for node ${nodeName}:`, error.message);
-      return {
-        nodeName,
-        instanceType: 'Unknown',
-        labels, // 添加标签信息
-        capacityType: null,
-        totalGPU: 0,
-        usedGPU: 0,
-        availableGPU: 0,
-        allocatableGPU: 0,
-        pendingGPU: 0,
-        nodeReady,
-        error: error.message || 'Unable to fetch GPU info',
-        fetchTime: Date.now()
-      };
-    }
-  }
-
-  /**
-   * 并行获取所有节点的GPU信息
-   */
-  async getAllNodesGPUInfo(nodes, hyperPodCapacityTypeMap = {}) {
-    console.log(`Fetching GPU info for ${nodes.length} nodes in parallel...`);
-    
-    // 创建所有节点的查询Promise
-    const nodePromises = nodes.map(node => this.getNodeGPUInfo(node, hyperPodCapacityTypeMap));
-    
-    // 使用Promise.allSettled确保即使部分节点失败也能返回结果
-    const results = await Promise.allSettled(nodePromises);
-    
-    return results.map((result, index) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      } else {
-        console.error(`Failed to fetch info for node ${nodes[index]?.metadata?.name}:`, result.reason);
-        return {
-          nodeName: nodes[index]?.metadata?.name || 'unknown',
-          instanceType: 'Unknown',
-          capacityType: null,
-          totalGPU: 0,
-          usedGPU: 0,
-          availableGPU: 0,
-          allocatableGPU: 0,
-          pendingGPU: 0,
-          nodeReady: false,
-          error: 'Failed to fetch node info',
-          fetchTime: Date.now()
-        };
-      }
     });
   }
 
@@ -305,7 +222,7 @@ class ClusterStatusV2 {
   }
 
   /**
-   * 主要的集群状态获取方法
+   * 主要的集群状态获取方法（优化版：只调用 2 次 kubectl）
    */
   async getClusterStatus(forceRefresh = false) {
     const startTime = Date.now();
@@ -317,22 +234,31 @@ class ClusterStatusV2 {
     }
 
     try {
-      console.log('Fetching fresh cluster status...');
+      console.log('Fetching fresh cluster status (batch mode)...');
       
-      // 获取所有节点信息
-      const nodesOutput = await this.executeKubectlWithTimeout('get nodes -o json', 15000);
+      // 并行获取所有节点和所有 Pod（只调用 2 次 kubectl）
+      const [nodesOutput, podsOutput] = await Promise.all([
+        this.executeKubectlWithTimeout('get nodes -o json', 15000),
+        this.executeKubectlWithTimeout('get pods -A -o json', 15000)
+      ]);
+      
       const nodesData = JSON.parse(nodesOutput);
+      const podsData = JSON.parse(podsOutput);
       
       if (!nodesData.items || nodesData.items.length === 0) {
         console.log('No nodes found in cluster, returning empty result');
-        return { nodes: [], fetchTime: Date.now() - startTime, timestamp: Date.now(), nodeCount: 0, version: 'v2' };
+        return { nodes: [], fetchTime: Date.now() - startTime, timestamp: Date.now(), nodeCount: 0, version: 'v2-batch' };
       }
 
       // 获取 HyperPod capacity type 映射
       const hyperPodCapacityTypeMap = await this.getHyperPodCapacityTypeMap();
 
-      // 并行获取所有节点的GPU信息
-      const gpuUsage = await this.getAllNodesGPUInfo(nodesData.items, hyperPodCapacityTypeMap);
+      // 在内存中计算所有节点的 GPU 信息（无额外 kubectl 调用）
+      const gpuUsage = this.getAllNodesGPUInfoBatch(
+        nodesData.items, 
+        podsData.items || [], 
+        hyperPodCapacityTypeMap
+      );
       
       const fetchTime = Date.now() - startTime;
       const result = {
@@ -340,13 +266,13 @@ class ClusterStatusV2 {
         fetchTime,
         timestamp: Date.now(),
         nodeCount: gpuUsage.length,
-        version: 'v2'
+        version: 'v2-batch'
       };
       
       // 更新缓存
       this.updateCache(result);
       
-      console.log(`Cluster status V2 fetched in ${fetchTime}ms: ${gpuUsage.length} nodes`);
+      console.log(`Cluster status V2 (batch) fetched in ${fetchTime}ms: ${gpuUsage.length} nodes`);
       return result;
       
     } catch (error) {
@@ -355,15 +281,15 @@ class ClusterStatusV2 {
         error: error.message || 'Failed to fetch cluster status',
         timestamp: Date.now(),
         fetchTime: Date.now() - startTime,
-        version: 'v2'
+        version: 'v2-batch'
       };
     }
   }
 
   /**
-   * 获取集群统计信息
+   * 获取集群统计信息（使用已有数据，无额外 kubectl 调用）
    */
-  async getClusterStats(nodes) {
+  getClusterStats(nodes, allPods = []) {
     // 计算节点相关的统计
     const nodeStats = nodes.reduce((stats, node) => ({
       totalNodes: stats.totalNodes + 1,
@@ -383,30 +309,10 @@ class ClusterStatusV2 {
       errorNodes: 0
     });
 
-    // 单独计算全局Pending GPU（与节点无关）
-    let pendingGPUs = 0;
-    try {
-      const allPendingPodsInfo = await this.executeKubectlWithTimeout(
-        `get pods --field-selector status.phase=Pending -o json`,
-        10000
-      );
-      
-      const allPendingPodsData = JSON.parse(allPendingPodsInfo);
-      if (allPendingPodsData.items && Array.isArray(allPendingPodsData.items)) {
-        pendingGPUs = allPendingPodsData.items.reduce((sum, pod) => {
-          if (pod.spec?.containers) {
-            return sum + pod.spec.containers.reduce((containerSum, container) => {
-              const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'];
-              return containerSum + (parseInt(gpuRequest) || 0);
-            }, 0);
-          }
-          return sum;
-        }, 0);
-      }
-    } catch (error) {
-      console.warn('Failed to get pending pods:', error.message);
-      pendingGPUs = 0;
-    }
+    // 计算全局 Pending GPU（从已有的 pods 数据）
+    const pendingGPUs = allPods
+      .filter(pod => pod.status?.phase === 'Pending')
+      .reduce((sum, pod) => sum + this.getPodGPURequest(pod), 0);
 
     return {
       ...nodeStats,
