@@ -500,51 +500,57 @@ router.delete('/delete-service/:serviceName', async (req, res) => {
 router.get('/deployments', async (req, res) => {
   try {
     console.log('Fetching deployments (including Routers)...');
-    const startTime = Date.now();
 
-    // 并行获取所有数据（5 次 kubectl 并行执行）
-    const [
-      deploymentsOutput,
-      hyperpodDeploymentsOutput,
-      servicesOutput,
-      hyperpodServicesOutput,
-      scaledObjectsOutput
-    ] = await Promise.all([
-      executeKubectl('get deployments -o json'),
-      executeKubectl('get deployments -n hyperpod-inference-system -o json').catch(() => '{"items":[]}'),
-      executeKubectl('get services -o json'),
-      executeKubectl('get services -n hyperpod-inference-system -o json').catch(() => '{"items":[]}'),
-      executeKubectl('get scaledobjects.keda.sh --all-namespaces -o json').catch(() => '{"items":[]}')
-    ]);
-
-    // 解析 deployments
+    // 获取 default namespace 的 deployment
+    const deploymentsOutput = await executeKubectl('get deployments -o json');
     const defaultDeployments = JSON.parse(deploymentsOutput);
-    const hyperpodDeploymentsData = JSON.parse(hyperpodDeploymentsOutput);
-    const hyperpodDeployments = (hyperpodDeploymentsData.items || []).filter(dep =>
-      dep.metadata?.name?.endsWith('-default-router')
-    );
-    console.log(`Found ${hyperpodDeployments.length} hyperpod router deployments`);
+
+    // 获取 hyperpod-inference-system namespace 的 deployment（只要 router）
+    let hyperpodDeployments = [];
+    try {
+      const hyperpodDeploymentsOutput = await executeKubectl('get deployments -n hyperpod-inference-system -o json');
+      const hyperpodDeploymentsData = JSON.parse(hyperpodDeploymentsOutput);
+      hyperpodDeployments = (hyperpodDeploymentsData.items || []).filter(dep =>
+        dep.metadata?.name?.endsWith('-default-router')
+      );
+      console.log(`Found ${hyperpodDeployments.length} hyperpod router deployments`);
+    } catch (error) {
+      console.log('No hyperpod router deployments found:', error.message);
+    }
 
     // 合并两个 namespace 的 deployments
     const allDeploymentsItems = [...defaultDeployments.items, ...hyperpodDeployments];
 
-    // 解析 services
+    // 获取 default namespace 的 service
+    const servicesOutput = await executeKubectl('get services -o json');
     const defaultServices = JSON.parse(servicesOutput);
-    const hyperpodServicesData = JSON.parse(hyperpodServicesOutput);
-    const hyperpodServices = (hyperpodServicesData.items || []).filter(svc =>
-      svc.metadata?.name?.endsWith('-default-routing-service')
-    );
-    console.log(`Found ${hyperpodServices.length} hyperpod routing services`);
+
+    // 获取 hyperpod-inference-system namespace 的 routing service
+    let hyperpodServices = [];
+    try {
+      const hyperpodServicesOutput = await executeKubectl('get services -n hyperpod-inference-system -o json');
+      const hyperpodServicesData = JSON.parse(hyperpodServicesOutput);
+      hyperpodServices = (hyperpodServicesData.items || []).filter(svc =>
+        svc.metadata?.name?.endsWith('-default-routing-service')
+      );
+      console.log(`Found ${hyperpodServices.length} hyperpod routing services`);
+    } catch (error) {
+      console.log('No hyperpod routing services found:', error.message);
+    }
 
     // 合并两个 namespace 的 services
     const allServices = [...defaultServices.items, ...hyperpodServices];
 
-    // 解析 scaledObjects
-    const scaledObjectsData = JSON.parse(scaledObjectsOutput);
-    const scaledObjects = scaledObjectsData.items || [];
-    console.log(`Found ${scaledObjects.length} ScaledObjects`);
-
-    console.log(`Parallel fetch completed in ${Date.now() - startTime}ms`);
+    // 获取所有 ScaledObject
+    let scaledObjects = [];
+    try {
+      const scaledObjectsOutput = await executeKubectl('get scaledobjects.keda.sh --all-namespaces -o json');
+      const scaledObjectsData = JSON.parse(scaledObjectsOutput);
+      scaledObjects = scaledObjectsData.items || [];
+      console.log(`Found ${scaledObjects.length} ScaledObjects`);
+    } catch (error) {
+      // KEDA 未安装时静默处理
+    }
 
     // 显示所有deployment，不进行过滤（包含Router和hyperpod router）
     const allDeployments = allDeploymentsItems;

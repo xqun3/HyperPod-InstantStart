@@ -1242,12 +1242,12 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         fetchHyperPodKarpenterResources(), // 加载HyperPod Karpenter资源
         fetchAvailableInstanceTypes(), // 加载实例类型
         fetchHyperPodSubnets(), // 加载HyperPod子网
-        fetchSubnets() // 加载所有子网（用于 Add Instance Group）
+        // fetchSubnets() // 注释：加载所有子网 - 数据未被使用，节省 ~4.6s (2026-02-26)
       ]);
     } catch (error) {
       console.error('Error in complete refresh:', error);
     }
-  }, [dispatch, fetchKarpenterStatus, fetchKarpenterResources, fetchHyperPodKarpenterStatus, fetchHyperPodKarpenterResources, fetchAvailableInstanceTypes, fetchHyperPodSubnets, fetchSubnets]);
+  }, [dispatch, fetchKarpenterStatus, fetchKarpenterResources, fetchHyperPodKarpenterStatus, fetchHyperPodKarpenterResources, fetchAvailableInstanceTypes, fetchHyperPodSubnets]);
 
   // 注册到全局刷新管理器
   useEffect(() => {
