@@ -86,12 +86,12 @@ class ClusterStatusV2 {
   getAllNodesGPUInfoBatch(nodes, allPods, hyperPodCapacityTypeMap = {}) {
     console.log(`Processing GPU info for ${nodes.length} nodes (batch mode)...`);
     
-    // 按节点名分组 Pod
+    // 按节点名分组 Pod（使用精简后的 pod.nodeName）
     const podsByNode = {};
     const pendingPods = [];
     
     for (const pod of allPods) {
-      const nodeName = pod.spec?.nodeName;
+      const nodeName = pod.nodeName;
       if (nodeName) {
         if (!podsByNode[nodeName]) podsByNode[nodeName] = [];
         podsByNode[nodeName].push(pod);
@@ -313,6 +313,7 @@ class ClusterStatusV2 {
 
   /**
    * 获取集群统计信息（使用已有数据，无额外 kubectl 调用）
+   * 注意：allPods 应该是精简后的数据格式
    */
   getClusterStats(nodes, allPods = []) {
     // 计算节点相关的统计
@@ -334,9 +335,9 @@ class ClusterStatusV2 {
       errorNodes: 0
     });
 
-    // 计算全局 Pending GPU（从已有的 pods 数据）
+    // 计算全局 Pending GPU（使用精简后的 pod.phase）
     const pendingGPUs = allPods
-      .filter(pod => pod.status?.phase === 'Pending')
+      .filter(pod => pod.phase === 'Pending')
       .reduce((sum, pod) => sum + this.getPodGPURequest(pod), 0);
 
     return {
