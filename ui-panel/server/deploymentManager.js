@@ -661,7 +661,7 @@ router.post('/deploy-service', async (req, res) => {
     const {
       serviceName,
       modelPool,
-      serviceType = 'external'
+      serviceType = 'clusterip'
     } = req.body;
 
     console.log('Binding service deployment request:', {
@@ -932,7 +932,7 @@ router.post('/deploy/container', async (req, res) => {
       gpuCount,
       gpuMemory = -1,
       instanceTypes = [],
-      serviceType = 'external',
+      serviceType = 'clusterip',
       deploymentName,
       dockerImage = 'vllm/vllm-openai:latest',
       port = 8000,
@@ -1146,7 +1146,7 @@ router.post('/deploy/managed-inference', async (req, res) => {
       replicas,
       gpuCount,
       gpuMemory = -1,
-      serviceType = 'external',
+      serviceType = 'clusterip',
       deploymentName,
       dockerImage,
       port = 8000,

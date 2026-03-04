@@ -8,12 +8,27 @@ import httpx
 import json
 import subprocess
 
+import asyncio
+
 mcp = FastMCP(
     name="hyperpod-manager",
     instructions="HyperPod InstantStart 集群管理工具，提供集群创建、推理部署、训练作业等功能"
 )
 
 BASE_URL = "http://localhost:3001"
+
+# ============ 通用工具 ============
+
+@mcp.tool()
+async def wait_seconds(seconds: int) -> str:
+    """等待指定秒数（用于轮询间隔）
+
+    Args:
+        seconds: 等待秒数（最大 300）
+    """
+    seconds = min(seconds, 300)
+    await asyncio.sleep(seconds)
+    return json.dumps({"success": True, "message": f"Waited {seconds} seconds"})
 
 # ============ 集群管理工具 ============
 
@@ -30,34 +45,27 @@ async def cluster_create_eks(clusterTag: str = None, region: str = None, vpcCidr
     """创建新的 EKS 集群（需要 8-12 分钟）
     
     Args:
-        clusterTag: 集群标签（可选，默认自动生成如 hypd-1222）
+        clusterTag: 集群标签（可选，默认自动生成如 hypd-0303）
         region: AWS 区域（可选，默认使用当前配置的区域）
         vpcCidr: VPC CIDR 块（可选，默认自动生成）
     """
     try:
-        # 如果没有指定 region，从后端获取当前 region
         if not region:
             async with httpx.AsyncClient() as client:
                 region_resp = await client.get(f"{BASE_URL}/api/aws/current-region")
                 if region_resp.status_code == 200:
-                    region_data = region_resp.json()
-                    region = region_data.get("region")
+                    region = region_resp.json().get("region")
         
         if not region:
-            return json.dumps({
-                "success": False,
-                "error": "Cannot determine AWS region. Please specify region parameter."
-            }, indent=2, ensure_ascii=False)
+            return json.dumps({"success": False, "error": "Cannot determine AWS region. Please specify region parameter."}, indent=2, ensure_ascii=False)
         
-        # 如果没有指定 clusterTag，生成默认值
         if not clusterTag:
             from datetime import datetime
-            timestamp = datetime.now().strftime("%m%d")
-            clusterTag = f"hypd-{timestamp}"
+            clusterTag = f"hypd-{datetime.now().strftime('%m%d')}"
         
-        payload = {"clusterTag": clusterTag, "region": region}
+        payload = {"clusterTag": clusterTag, "awsRegion": region}
         if vpcCidr:
-            payload["vpcCidr"] = vpcCidr
+            payload["customVpcCidr"] = vpcCidr
         
         async with httpx.AsyncClient(timeout=300) as client:
             response = await client.post(f"{BASE_URL}/api/cluster/create-eks", json=payload)
@@ -71,16 +79,13 @@ async def cluster_create_eks(clusterTag: str = None, region: str = None, vpcCidr
                     "clusterTag": clusterTag,
                     "region": region,
                     "estimatedTime": "8-12 minutes",
-                    "tip": "Use 'cluster_get_status' to monitor progress"
+                    "tip": "Use 'cluster_get_eks_creation_status' to monitor progress, then 'cluster_switch' to switch to the new cluster"
                 }, indent=2, ensure_ascii=False)
             else:
                 return json.dumps(result, indent=2, ensure_ascii=False)
                 
     except Exception as e:
-        return json.dumps({
-            "success": False,
-            "error": str(e)
-        }, indent=2, ensure_ascii=False)
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
 @mcp.tool()
 async def cluster_list_all() -> str:
@@ -132,7 +137,303 @@ async def cluster_nodegroup_delete(nodeGroupName: str) -> str:
         response.raise_for_status()
         return json.dumps(response.json(), indent=2, ensure_ascii=False)
 
+@mcp.tool()
+async def cluster_get_eks_creation_status() -> str:
+    """获取正在创建的 EKS 集群状态（CloudFormation stack 状态）"""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{BASE_URL}/api/cluster/creating-clusters")
+        response.raise_for_status()
+        data = response.json()
+        clusters = data.get("clusters", {})
+        if not clusters:
+            return json.dumps({"success": True, "message": "No EKS clusters currently being created", "clusters": {}}, indent=2, ensure_ascii=False)
+        return json.dumps({"success": True, "clusters": clusters}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def cluster_configure_dependencies() -> str:
+    """为当前活跃的 EKS 集群安装和配置依赖（如 GPU 插件、存储驱动等）。
+    EKS 集群创建完成并切换到该集群后，需要先配置依赖才能创建 HyperPod 集群。
+    """
+    try:
+        async with httpx.AsyncClient(timeout=600) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/configure-dependencies")
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": "✅ Dependency configuration started",
+                    "clusterTag": result.get("clusterTag"),
+                    "tip": "Use 'cluster_get_dependency_status' to monitor progress. Once completed, you can create a HyperPod cluster."
+                }, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def cluster_get_dependency_status(clusterTag: str = None) -> str:
+    """获取集群依赖配置状态
+    
+    Args:
+        clusterTag: 集群标签（可选，默认使用当前活跃集群）
+    """
+    try:
+        if not clusterTag:
+            async with httpx.AsyncClient() as client:
+                status_resp = await client.get(f"{BASE_URL}/api/cluster-status")
+                if status_resp.status_code == 200:
+                    data = status_resp.json()
+                    clusterTag = data.get("clusterTag") or data.get("activeCluster")
+        if not clusterTag:
+            return json.dumps({"success": False, "error": "No active cluster found. Please specify clusterTag."}, indent=2, ensure_ascii=False)
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BASE_URL}/api/cluster/{clusterTag}/dependencies/status")
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_create(
+    hyperPodTag: str,
+    AcceleratedInstanceType: str,
+    AcceleratedInstanceCount: int,
+    availabilityZone: str,
+    AcceleratedEBSVolumeSize: int = 500,
+    AcceleratedTrainingPlanArn: str = "",
+    computeSubnetId: str = ""
+) -> str:
+    """创建 HyperPod 集群（需要先完成 EKS 集群创建和依赖配置）
+    
+    Args:
+        hyperPodTag: HyperPod 标签名称
+        AcceleratedInstanceType: GPU 实例类型，如 ml.g5.xlarge, ml.p4d.24xlarge
+        AcceleratedInstanceCount: GPU 实例数量
+        availabilityZone: 可用区，如 us-west-2a
+        AcceleratedEBSVolumeSize: EBS 卷大小 GB（默认 500）
+        AcceleratedTrainingPlanArn: Training Plan ARN（可选）
+        computeSubnetId: 计算子网 ID（可选，自动检测）
+    """
+    try:
+        userConfig = {
+            "hyperPodTag": hyperPodTag,
+            "AcceleratedInstanceType": AcceleratedInstanceType,
+            "AcceleratedInstanceCount": AcceleratedInstanceCount,
+            "AcceleratedEBSVolumeSize": AcceleratedEBSVolumeSize,
+            "availabilityZone": availabilityZone,
+        }
+        if AcceleratedTrainingPlanArn:
+            userConfig["AcceleratedTrainingPlanArn"] = AcceleratedTrainingPlanArn
+        if computeSubnetId:
+            userConfig["computeSubnetId"] = computeSubnetId
+        
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/create-hyperpod", json={"userConfig": userConfig})
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": "✅ HyperPod cluster creation started",
+                    "stackName": result.get("stackName"),
+                    "tip": "Use 'hyperpod_get_creation_status' to monitor progress"
+                }, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_get_creation_status(clusterTag: str = None) -> str:
+    """获取 HyperPod 集群创建状态
+    
+    Args:
+        clusterTag: 集群标签（可选，默认使用当前活跃集群）
+    """
+    try:
+        if not clusterTag:
+            async with httpx.AsyncClient() as client:
+                status_resp = await client.get(f"{BASE_URL}/api/cluster-status")
+                if status_resp.status_code == 200:
+                    data = status_resp.json()
+                    clusterTag = data.get("clusterTag") or data.get("activeCluster")
+        if not clusterTag:
+            return json.dumps({"success": False, "error": "No active cluster found"}, indent=2, ensure_ascii=False)
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BASE_URL}/api/cluster/hyperpod-creation-status/{clusterTag}")
+            response.raise_for_status()
+            result = response.json()
+            status = result.get("status")
+            if not status:
+                return json.dumps({"success": True, "message": "No HyperPod cluster currently being created", "clusterTag": clusterTag}, indent=2, ensure_ascii=False)
+            return json.dumps({"success": True, "clusterTag": clusterTag, "status": status}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def cluster_get_available_instances() -> str:
+    """获取当前集群可用的实例类型列表（用于创建 HyperPod 或节点组时选择实例类型）"""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{BASE_URL}/api/cluster/cluster-available-instance")
+        response.raise_for_status()
+        return json.dumps(response.json(), indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def cluster_get_availability_zones() -> str:
+    """获取当前集群可用的可用区列表"""
+    try:
+        async with httpx.AsyncClient() as client:
+            # 先获取当前集群的 region
+            status_resp = await client.get(f"{BASE_URL}/api/cluster-status")
+            status_resp.raise_for_status()
+            region = status_resp.json().get("region")
+            if not region:
+                region_resp = await client.get(f"{BASE_URL}/api/aws/current-region")
+                region_resp.raise_for_status()
+                region = region_resp.json().get("region")
+            if not region:
+                return json.dumps({"success": False, "error": "Cannot determine region"}, indent=2, ensure_ascii=False)
+            response = await client.get(f"{BASE_URL}/api/cluster/availability-zones", params={"region": region})
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def karpenter_install() -> str:
+    """安装 HyperPod Karpenter（无需参数，使用当前活跃集群）"""
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/karpenter/install", json={})
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": "✅ Karpenter installation started",
+                    "clusterTag": result.get("clusterTag"),
+                    "tip": "Use 'karpenter_get_status' to check installation progress"
+                }, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def karpenter_get_status() -> str:
+    """获取 Karpenter 安装和运行状态"""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(f"{BASE_URL}/api/cluster/karpenter/status")
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_get_advanced_features() -> str:
+    """获取 HyperPod 集群的高级功能配置状态（Tiered Storage、Inference Operator、Training Operator）"""
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(f"{BASE_URL}/api/cluster/hyperpod/advanced-features")
+        response.raise_for_status()
+        return json.dumps(response.json(), indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_update_advanced_features(
+    tieredStorage: dict = None,
+    inferenceOperator: dict = None,
+    trainingOperator: dict = None
+) -> str:
+    """更新 HyperPod 集群的高级功能配置（开启/关闭 Tiered Storage、Inference Operator、Training Operator）
+    
+    Args:
+        tieredStorage: Tiered Storage 配置，如 {"enabled": true, "configMode": "default"} 或 {"enabled": true, "configMode": "custom", "percentage": 80}，设为 {"enabled": false} 关闭
+        inferenceOperator: Inference Operator 配置，如 {"enabled": true} 或 {"enabled": false}
+        trainingOperator: Training Operator 配置，如 {"enabled": true} 或 {"enabled": false}
+    """
+    try:
+        payload = {}
+        if tieredStorage is not None:
+            payload["tieredStorage"] = tieredStorage
+        if inferenceOperator is not None:
+            payload["inferenceOperator"] = inferenceOperator
+        if trainingOperator is not None:
+            payload["trainingOperator"] = trainingOperator
+        
+        if not payload:
+            return json.dumps({"success": False, "error": "At least one feature must be specified"}, indent=2, ensure_ascii=False)
+        
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/hyperpod/advanced-features", json=payload)
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
 # ============ S3 存储管理工具 ============
+
+@mcp.tool()
+async def s3_storage_get_defaults() -> str:
+    """获取 S3 存储挂载的默认配置（claim 名称、S3 桶名称、区域）"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BASE_URL}/api/s3-storage-defaults")
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def s3_storage_create(name: str = None, bucketName: str = None, region: str = None) -> str:
+    """创建 S3 存储挂载（PV + PVC）
+
+    Args:
+        name: PVC claim 名称（可选，默认 s3-claim）
+        bucketName: S3 桶名称（可选，默认使用系统检测的桶）
+        region: AWS 区域（可选，默认使用系统检测的区域）
+    """
+    try:
+        # 获取默认值填充未提供的参数
+        async with httpx.AsyncClient() as client:
+            defaults_resp = await client.get(f"{BASE_URL}/api/s3-storage-defaults")
+            defaults_resp.raise_for_status()
+            defaults = defaults_resp.json().get("defaults", {})
+
+        payload = {
+            "name": name or defaults.get("name", "s3-claim"),
+            "bucketName": bucketName or defaults.get("bucketName", ""),
+            "region": region or defaults.get("region", ""),
+        }
+
+        if not payload["bucketName"]:
+            return json.dumps({"success": False, "error": "No S3 bucket name provided and no default detected. Please specify bucketName."}, indent=2, ensure_ascii=False)
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(f"{BASE_URL}/api/s3-storages", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": f"✅ S3 storage '{payload['name']}' created successfully",
+                    "name": payload["name"],
+                    "bucketName": payload["bucketName"],
+                    "region": payload["region"],
+                    "pvcName": result.get("pvcName"),
+                    "pvName": result.get("pvName")
+                }, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
 @mcp.tool()
 async def s3_storage_list_contents(storage: str = None) -> str:
@@ -374,6 +675,76 @@ async def job_list_all() -> str:
 # ============ 推理调用工具 ============
 
 @mcp.tool()
+async def inference_deploy_container(
+    deploymentCommand: str,
+    gpuCount: int,
+    dockerImage: str = "vllm/vllm-openai:latest",
+    deploymentName: str = "",
+    replicas: int = 1,
+    instanceTypes: str = "",
+    serviceType: str = "clusterip",
+    port: int = 8000,
+    huggingFaceToken: str = "",
+    gpuMemory: int = -1,
+    cpuRequest: int = -1,
+    memoryRequest: int = -1
+) -> str:
+    """部署容器化推理服务（vLLM、SGLang 等）
+
+    Args:
+        deploymentCommand: 部署命令，如 'vllm serve /s3/model --tensor-parallel-size 1'
+        gpuCount: GPU 数量
+        dockerImage: Docker 镜像（默认 vllm/vllm-openai:latest）
+        deploymentName: 部署名称（可选，自动生成）
+        replicas: 副本数（默认 1）
+        instanceTypes: 调度到指定机型，逗号分隔如 'ml.g5.xlarge,ml.g5.2xlarge'（可选）
+        serviceType: 服务类型，必须是以下值之一: clusterip / external / modelpool（默认 clusterip）
+        port: 容器端口（默认 8000）
+        huggingFaceToken: HuggingFace Token（可选，私有模型用）
+        gpuMemory: GPU 显存限制（默认 -1 不限制）
+        cpuRequest: CPU 请求（默认 -1 自动）
+        memoryRequest: 内存请求 GB（默认 -1 自动）
+    """
+    try:
+        payload = {
+            "deploymentCommand": deploymentCommand,
+            "gpuCount": gpuCount,
+            "dockerImage": dockerImage,
+            "replicas": replicas,
+            "serviceType": serviceType,
+            "port": port,
+            "gpuMemory": gpuMemory,
+            "cpuRequest": cpuRequest,
+            "memoryRequest": memoryRequest,
+        }
+        if deploymentName:
+            payload["deploymentName"] = deploymentName
+        if instanceTypes:
+            payload["instanceTypes"] = [t.strip() for t in instanceTypes.split(",")]
+        if huggingFaceToken:
+            payload["huggingFaceToken"] = huggingFaceToken
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(f"{BASE_URL}/api/deploy/container", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": f"✅ Deployment '{result.get('deploymentTag')}' created successfully",
+                    "deploymentTag": result.get("deploymentTag"),
+                    "deploymentType": result.get("deploymentType"),
+                    "accessType": result.get("accessType"),
+                    "tip": "Use 'inference_list_services' to check service status"
+                }, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
 async def inference_list_services() -> str:
     """列出所有推理服务（包括内部 ClusterIP 和外部 LoadBalancer）"""
     try:
@@ -553,7 +924,7 @@ async def inference_call_model(
             
             # 构造请求 payload
             payload = {
-                "model": "default",
+                "model": "",
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": max_tokens,
                 "temperature": temperature
@@ -570,11 +941,11 @@ async def inference_call_model(
                     }, indent=2, ensure_ascii=False)
                 
                 host = ingress[0].get("hostname") or ingress[0].get("ip")
-                service_url = f"http://{host}:{service_port}/v1/chat/completions"
+                base_url = f"http://{host}:{service_port}"
                 
                 proxy_resp = await client.post(
                     f"{BASE_URL}/api/proxy-request",
-                    json={"url": service_url, "payload": payload, "method": "POST"}
+                    json={"url": f"{base_url}/v1/chat/completions", "payload": payload, "method": "POST"}
                 )
                 
             elif service_type == "ClusterIP":
@@ -632,42 +1003,31 @@ async def inference_call_model(
 # ============ HyperPod 节点操作工具 ============
 
 @mcp.tool()
+async def _hyperpod_node_action(action: str, nodeId: str) -> dict:
+    """内部辅助：调用 HyperPod 节点操作 API"""
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            f"{BASE_URL}/api/cluster/hyperpod/node/{action}",
+            json={"nodeId": nodeId}
+        )
+        result = response.json()
+        if response.status_code >= 400:
+            return {"success": False, "error": result.get("message", f"Failed to {action} node"), "errorCode": result.get("errorCode")}
+        if result.get("success"):
+            return {"success": True, "message": result.get("message"), "nodeId": nodeId, "apiResponse": result.get("apiResponse")}
+        return {"success": False, "error": result.get("message", f"Failed to {action} node")}
+
+@mcp.tool()
 async def hyperpod_node_reboot(nodeId: str) -> str:
     """重启 HyperPod 集群中的指定节点
     
     Args:
         nodeId: 节点 ID（格式：hyperpod-i-xxxxxxxxx 或 i-xxxxxxxxx）
-    
-    Returns:
-        操作结果，包括成功状态和消息
     """
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{BASE_URL}/api/cluster/hyperpod/node/reboot",
-                json={"nodeId": nodeId}
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            if result.get("success"):
-                return json.dumps({
-                    "success": True,
-                    "message": f"✅ Node {nodeId} reboot initiated successfully",
-                    "nodeId": result.get("nodeId"),
-                    "tip": "The node will be temporarily unavailable during reboot"
-                }, indent=2, ensure_ascii=False)
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": result.get("message", "Failed to reboot node")
-                }, indent=2, ensure_ascii=False)
-                
+        return json.dumps(await _hyperpod_node_action("reboot", nodeId), indent=2, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({
-            "success": False,
-            "error": str(e)
-        }, indent=2, ensure_ascii=False)
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
 @mcp.tool()
 async def hyperpod_node_replace(nodeId: str) -> str:
@@ -676,40 +1036,89 @@ async def hyperpod_node_replace(nodeId: str) -> str:
     Args:
         nodeId: 节点 ID（格式：hyperpod-i-xxxxxxxxx 或 i-xxxxxxxxx）
     
-    Returns:
-        操作结果，包括成功状态和消息
-    
     Warning:
         ⚠️ 替换节点会永久删除所有实例卷数据，请确保已备份重要数据
     """
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{BASE_URL}/api/cluster/hyperpod/node/replace",
-                json={"nodeId": nodeId}
-            )
+        result = await _hyperpod_node_action("replace", nodeId)
+        if result.get("success"):
+            result["warning"] = "⚠️ All instance volumes will be permanently deleted"
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_node_delete(nodeId: str) -> str:
+    """删除 HyperPod 集群中的指定节点
+    
+    Args:
+        nodeId: 节点 ID（格式：hyperpod-i-xxxxxxxxx 或 i-xxxxxxxxx）
+    
+    Warning:
+        ⚠️ 删除节点会永久移除该节点及其所有数据，此操作不可逆
+    """
+    try:
+        result = await _hyperpod_node_action("delete", nodeId)
+        if result.get("success"):
+            result["warning"] = "⚠️ Node permanently deleted"
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_add_instance_group(
+    instanceGroupName: str,
+    instanceType: str,
+    instanceCount: int,
+    availabilityZone: str,
+    volumeSize: int = 500,
+    trainingPlanArn: str = "",
+    isSpot: bool = False
+) -> str:
+    """向现有 HyperPod 集群添加新的实例组
+
+    Args:
+        instanceGroupName: 实例组名称
+        instanceType: 实例类型，如 ml.g5.xlarge, ml.p4d.24xlarge
+        instanceCount: 实例数量
+        availabilityZone: 可用区，如 us-east-1c
+        volumeSize: EBS 卷大小 GB（默认 500）
+        trainingPlanArn: Training Plan ARN（可选，用于预留容量）
+        isSpot: 是否使用 Spot 实例（默认 false）
+    """
+    try:
+        userConfig = {
+            "instanceGroupName": instanceGroupName,
+            "instanceType": instanceType,
+            "instanceCount": instanceCount,
+            "availabilityZone": availabilityZone,
+            "volumeSize": volumeSize,
+            "isSpot": isSpot,
+        }
+        if trainingPlanArn:
+            userConfig["trainingPlanArn"] = trainingPlanArn
+
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/hyperpod/add-instance-group", json={"userConfig": userConfig})
             response.raise_for_status()
             result = response.json()
-            
             if result.get("success"):
                 return json.dumps({
                     "success": True,
-                    "message": f"✅ Node {nodeId} replacement initiated successfully",
-                    "nodeId": result.get("nodeId"),
-                    "warning": "⚠️ All instance volumes will be permanently deleted",
-                    "tip": "Ensure your data is backed up to S3 or FSx before replacement"
+                    "message": f"✅ Instance group '{instanceGroupName}' addition initiated",
+                    "instanceType": instanceType,
+                    "instanceCount": instanceCount,
+                    "availabilityZone": availabilityZone,
+                    "isSpot": isSpot,
+                    "tip": "Use 'hyperpod_get_creation_status' to monitor progress"
                 }, indent=2, ensure_ascii=False)
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": result.get("message", "Failed to replace node")
-                }, indent=2, ensure_ascii=False)
-                
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({
-            "success": False,
-            "error": str(e)
-        }, indent=2, ensure_ascii=False)
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

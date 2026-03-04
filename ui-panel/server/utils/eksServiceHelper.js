@@ -131,7 +131,7 @@ spec:
   /**
    * 生成 Managed Inference Service YAML
    * @param {string} deploymentName - InferenceEndpointConfig 的名称
-   * @param {string} serviceType - 服务类型 ('external', 'internal')
+   * @param {string} serviceType - 服务类型 ('external', 'clusterip')
    * @param {number} port - 对外暴露的端口
    * @param {string} nlbAnnotations - NLB注解 (仅external类型需要)
    * @returns {string} Service YAML字符串
@@ -182,8 +182,8 @@ spec:
         return ''; // Model Pool不需要Service
 
       default:
-        console.warn(`Unknown service type: ${serviceType}, defaulting to external`);
-        return this.generateExternalService(servEngine, modelTag, port, nlbAnnotations);
+        console.warn(`Unknown service type: ${serviceType}, defaulting to clusterip`);
+        return this.generateClusterIPService(servEngine, modelTag, port);
     }
   }
 }

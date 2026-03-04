@@ -527,14 +527,16 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
         isRawEKS = importMetadata.importType === 'eks' || !importMetadata.hasHyperPod;
       }
       
-      if (clusterType === 'imported' && !isRawEKS) {
-        // 导入的已有 HyperPod 的集群使用简化流程
-        return await this.configureImportedClusterDependencies(clusterTag, clusterManager);
-      } else {
-        // 创建的集群或导入的 raw EKS 集群使用完整流程（包含 HyperPod Helm Chart）
-        console.log(`Using full dependency configuration for ${clusterType === 'imported' ? 'imported raw EKS' : 'created'} cluster: ${clusterTag}`);
-        return await this.configureCreatedClusterDependencies(clusterTag, clusterManager);
-      }
+      // NOTE: 统一使用完整配置流程，简化流程暂时不使用
+      // if (clusterType === 'imported' && !isRawEKS) {
+      //   // 导入的已有 HyperPod 的集群使用简化流程
+      //   return await this.configureImportedClusterDependencies(clusterTag, clusterManager);
+      // } else {
+      //   console.log(`Using full dependency configuration for ${clusterType === 'imported' ? 'imported raw EKS' : 'created'} cluster: ${clusterTag}`);
+      //   return await this.configureCreatedClusterDependencies(clusterTag, clusterManager);
+      // }
+      console.log(`Using full dependency configuration for ${clusterType === 'imported' ? (isRawEKS ? 'imported raw EKS' : 'imported EKS+HyperPod') : 'created'} cluster: ${clusterTag}`);
+      return await this.configureCreatedClusterDependencies(clusterTag, clusterManager);
       
     } catch (error) {
       console.error(`Error configuring cluster dependencies for ${clusterTag}:`, error);

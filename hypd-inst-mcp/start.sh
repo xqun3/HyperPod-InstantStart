@@ -1,1 +1,1 @@
-kiro-cli chat --agent hypd-inst
+kiro-cli chat --agent hypd-inst-agent

@@ -1,0 +1,58 @@
+{
+  "name": "hypd-inst-agent",
+  "description": "HyperPod InstantStart management agent for cluster operations, model deployment, and inference",
+  "mcpServers": {
+    "hypd-inst": {
+      "command": "docker",
+      "args": ["exec", "-i", "ui-panel-dev", "python3", "/app/mcp-server/server.py"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  },
+  "tools": [
+    "read",
+    "write",
+    "shell",
+    "aws",
+    "@hypd-inst"
+  ],
+  "allowedTools": [
+    "read",
+    "@hypd-inst/cluster_get_status",
+    "@hypd-inst/cluster_list_all",
+    "@hypd-inst/cluster_get_eks_creation_status",
+    "@hypd-inst/cluster_get_dependency_status",
+    "@hypd-inst/cluster_get_available_instances",
+    "@hypd-inst/cluster_get_availability_zones",
+    "@hypd-inst/hyperpod_get_creation_status",
+    "@hypd-inst/hyperpod_get_advanced_features",
+    "@hypd-inst/inference_list_services",
+    "@hypd-inst/inference_list_public_services",
+    "@hypd-inst/job_get_status",
+    "@hypd-inst/job_list_all",
+    "@hypd-inst/s3_storage_list_contents",
+    "@hypd-inst/wait_seconds",
+    "@hypd-inst/karpenter_get_status"
+  ],
+  "resources": [
+    "skill://.kiro/skills/**/SKILL.md"
+  ],
+  "toolsSettings": {
+    "aws": {
+      "allowedServices": ["s3", "s3api", "eks", "sagemaker", "cloudformation", "ec2", "iam", "sts"],
+      "autoAllowReadonly": true
+    },
+    "shell": {
+      "allowedCommands": ["kubectl get.*", "kubectl describe.*", "kubectl logs.*", "kubectl top.*", "kubectl cluster-info.*", "docker ps.*", "docker logs.*", "curl.*localhost.*", "grep.*", "cat.*", "ls.*", "find.*", "head.*", "tail.*", "wc.*", "echo.*", "which.*", "whoami", "pwd", "env", "printenv.*", "hostname", "date", "uname.*", "df.*", "du.*", "ps.*", "id"],
+      "deniedCommands": ["kubectl (apply|delete|create|patch|replace|edit|scale|drain|cordon|taint).*"],
+      "autoAllowReadonly": true
+    },
+    "write": {
+      "allowedPaths": [".kiro/**", "hypd-inst-mcp/**"]
+    }
+  },
+  "keyboardShortcut": "ctrl+h",
+  "welcomeMessage": "HyperPod InstantStart agent ready. What would you like to do?",
+  "includeMcpJson": true
+}
