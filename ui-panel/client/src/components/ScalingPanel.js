@@ -654,7 +654,16 @@ const ScalingPanel = ({ onDeploy, deploymentStatus }) => {
             type="primary"
             icon={<SaveOutlined />}
             onClick={() => {
-              navigator.clipboard.writeText(generatedYaml);
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(generatedYaml);
+              } else {
+                const t = document.createElement('textarea');
+                t.value = generatedYaml;
+                document.body.appendChild(t);
+                t.select();
+                document.execCommand('copy');
+                document.body.removeChild(t);
+              }
             }}
           >
             Copy to Clipboard

@@ -182,7 +182,16 @@ const ManagedInferenceScalingPanel = () => {
   // Copy metric to clipboard
   const handleCopyMetric = (metric) => {
     const query = `avg(${metric}{resource_name="DEPLOYMENT_NAME"})`;
-    navigator.clipboard.writeText(query);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(query);
+    } else {
+      const t = document.createElement('textarea');
+      t.value = query;
+      document.body.appendChild(t);
+      t.select();
+      document.execCommand('copy');
+      document.body.removeChild(t);
+    }
     message.success('Copied to clipboard');
   };
 
