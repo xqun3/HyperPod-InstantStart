@@ -1430,7 +1430,8 @@ app.get('/api/cluster/info', async (req, res) => {
       activeCluster,
       eksClusterName: clusterInfo.eksCluster?.name || null,
       region: clusterInfo.region || null,
-      vpcId: clusterInfo.eksCluster?.vpcId || null
+      vpcId: clusterInfo.eksCluster?.vpcId || null,
+      isTerraform: clusterInfo.isTerraform || false
     });
   } catch (error) {
     console.error('Error getting cluster info:', error);

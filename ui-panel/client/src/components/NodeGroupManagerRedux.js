@@ -50,7 +50,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
   const [eksDeleteLoading, setEksDeleteLoading] = useState(false);
   const [eksDeleteTarget, setEksDeleteTarget] = useState(null);
   const [addInstanceGroupLoading, setAddInstanceGroupLoading] = useState(false);
-  const [clusterInfo, setClusterInfo] = useState({ eksClusterName: '', region: '' });
+  const [clusterInfo, setClusterInfo] = useState({ eksClusterName: '', region: '', isTerraform: false });
   const [availabilityZones, setAvailabilityZones] = useState([]);
   const [scaleModalVisible, setScaleModalVisible] = useState(false);
   const [createHyperPodModalVisible, setCreateHyperPodModalVisible] = useState(false);
@@ -142,7 +142,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       if (response.ok) {
         setClusterInfo({
           eksClusterName: data.eksClusterName || '',
-          region: data.region || ''
+          region: data.region || '',
+          isTerraform: data.isTerraform || false
         });
 
         // 获取真实的可用区列表
@@ -1355,6 +1356,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       <Button
         size="small"
         icon={<EditOutlined />}
+        disabled={clusterInfo.isTerraform}
+        title={clusterInfo.isTerraform ? "Instance groups are managed by Terraform" : ""}
         onClick={() => handleScale(record, 'hyperpod')}
       >
         Scale
@@ -1364,6 +1367,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         icon={<DeleteOutlined />}
         danger
         loading={deleteLoading && deleteTarget === record.name}
+        disabled={clusterInfo.isTerraform}
+        title={clusterInfo.isTerraform ? "Instance groups are managed by Terraform" : ""}
         onClick={() => handleDeleteInstanceGroup(record)}
       >
         Delete
@@ -1509,6 +1514,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                 fetchClusterInfo(); // 确保获取最新信息
               }}
               disabled={
+                clusterInfo.isTerraform ||   // Terraform 管理时禁用
                 !!hyperPodCreationStatus ||  // 创建中时禁用
                 !!hyperPodDeletionStatus ||  // 删除中时禁用
                 hyperPodGroups.length === 0 ||   // 没有HyperPod时禁用
@@ -1516,7 +1522,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
               }
               loading={addInstanceGroupLoading}
               title={
-                hyperPodCreationStatus
+                clusterInfo.isTerraform
+                  ? "Instance groups are managed by Terraform"
+                  : hyperPodCreationStatus
                   ? "HyperPod creation in progress"
                   : hyperPodDeletionStatus
                     ? "HyperPod deletion in progress"
