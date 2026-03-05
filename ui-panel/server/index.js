@@ -832,6 +832,19 @@ const hyperPodStatusCheckInterval = setInterval(async () => {
           else if (stackStatus.includes('FAILED') || stackStatus.includes('ROLLBACK')) {
             console.log(`[Auto-Check] HyperPod cluster ${clusterTag} creation failed: ${stackStatus}`);
 
+            // [FIX] 清理创建时写入的 hyperpod-config.json，避免残留影响下次创建
+            // 相关：hyperpodApiManager.js saveHyperPodConfig() 在创建发起时写入此文件
+            try {
+              const metadataDir = path.join(__dirname, '../managed_clusters_info', clusterTag, 'metadata');
+              const hpConfigPath = path.join(metadataDir, 'hyperpod-config.json');
+              if (fs.existsSync(hpConfigPath)) {
+                fs.unlinkSync(hpConfigPath);
+                console.log(`[Auto-Check] Cleaned up residual hyperpod-config.json for ${clusterTag}`);
+              }
+            } catch (cleanupError) {
+              console.warn(`[Auto-Check] Failed to cleanup hyperpod-config.json: ${cleanupError.message}`);
+            }
+
             broadcast({
               type: 'hyperpod_creation_failed',
               status: 'error',
