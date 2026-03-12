@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hypd-inst": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["exec", "-i", "ui-panel-dev", "python3", "/app/mcp-server/server.py"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

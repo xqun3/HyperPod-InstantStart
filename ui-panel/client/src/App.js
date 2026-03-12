@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Row, Col, Card, message, Tabs, Space, Badge, Button } from 'antd';
+import { Layout, Row, Col, Card, message, Tabs, Space, Badge, Button, Select } from 'antd';
 import { useDispatch, useSelector } from 'react-redux';
-import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, SettingOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ContainerOutlined, ApiOutlined, RocketOutlined, ExperimentOutlined, DatabaseOutlined, SettingOutlined, ReloadOutlined, ThunderboltOutlined, DownloadOutlined, CloudServerOutlined, FireOutlined, CodeOutlined, CloudOutlined } from '@ant-design/icons';
 import AppHeader from './components/AppHeader';
 import { refreshAllAppStatus } from './store/slices/appStatusSlice';
 import { selectAppPods, selectAppServices } from './store/selectors';
@@ -14,7 +14,13 @@ import ClusterStatusV2Redux from './components/ClusterStatusV2Redux';
 import TestPanel from './components/TestPanel';
 import StatusMonitorRedux from './components/StatusMonitorRedux';
 // 备份：原部署管理组件已迁移到StatusMonitorRedux
-import HyperPodRecipes from './components/HyperPodRecipes';
+import TrainingConfigPanel from './components/TrainingConfigPanel';
+import MSSwiftRecipePanel from './components/MSSwiftRecipePanel';
+import VerlRecipePanel from './components/VerlRecipePanel';
+import TorchRecipePanel from './components/TorchRecipePanel';
+import ScriptRecipePanel from './components/ScriptRecipePanel';
+import SageMakerJobPanel from './components/SageMakerJobPanel';
+import { useHyperPodInstanceTypes } from './utils/hyperPodInstanceTypes';
 import TrainingMonitorPanel from './components/TrainingMonitorPanelRedux';
 import TrainingHistoryPanel from './components/TrainingHistoryPanel';
 // import ModelDownloadPanel from './components/ModelDownloadPanel'; // 未使用
@@ -23,7 +29,10 @@ import TrainingHistoryPanel from './components/TrainingHistoryPanel';
 import ClusterManagement from './components/ClusterManagementRedux';
 import GlobalRefreshButtonRedux from './components/GlobalRefreshButtonRedux';
 // import OperationFeedback from './components/OperationFeedback'; // 已移除：右上角详细卡片
-import EnhancedModelManagement from './components/EnhancedModelManagement';
+import EnhancedModelDownloadPanel from './components/EnhancedModelDownloadPanel';
+import S3StorageManager from './components/S3StorageManager';
+import FSxStorageManager from './components/FSxStorageManager';
+import S3StoragePanel from './components/S3StoragePanel';
 // 🎨 PREVIEW ONLY - Remove this import to clean up preview
 import AdvancedScalingPanelV2 from './components/AdvancedScalingPanelV2';
 import ScalingPanel from './components/ScalingPanel';
@@ -56,6 +65,13 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState('model-management'); // 新增主标签状态
   const [configTab, setConfigTab] = useState('model-config'); // 配置标签页状态
+  const [selectedStorage, setSelectedStorage] = useState('s3-claim'); // Storage页面选中的存储
+  const [availableStorages, setAvailableStorages] = useState([]); // 可用存储列表
+  const [recipeTab, setRecipeTab] = useState('torch'); // Training Recipes标签页状态
+
+  // Training Recipes: 预加载实例类型 + Script Recipe开关
+  const { instanceTypes: hyperPodInstanceTypes, loading: instanceTypesLoading, refresh: refreshInstanceTypes } = useHyperPodInstanceTypes();
+  const showScriptRecipe = process.env.REACT_APP_SHOW_SCRIPT_RECIPE === 'true';
 
   // 🔄 全局App Status刷新函数
   const handleAppStatusRefresh = useCallback(async () => {
@@ -556,6 +572,22 @@ function App() {
     }
   };
 
+  // 获取可用的存储配置
+  const fetchAvailableStorages = async () => {
+    try {
+      const response = await fetch('/api/s3-storages');
+      const result = await response.json();
+      if (result.success) {
+        setAvailableStorages(result.storages || []);
+        if (result.storages.length > 0 && !result.storages.find(s => s.pvcName === selectedStorage)) {
+          setSelectedStorage(result.storages[0].pvcName);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching storages:', error);
+    }
+  };
+
   const fetchPodsAndServices = useCallback(async () => {
     try {
       setRefreshing(true);
@@ -993,9 +1025,87 @@ function App() {
                 className="theme-card compute"
                 style={{ height: '60vh', overflow: 'auto' }}
               >
-                <HyperPodRecipes 
-                  onLaunch={handleTrainingLaunch}
-                  deploymentStatus={deploymentStatus}
+                <Tabs
+                  activeKey={recipeTab}
+                  onChange={setRecipeTab}
+                  size="small"
+                  items={[
+                    ...(showScriptRecipe ? [{
+                      key: 'script',
+                      label: <Space><CodeOutlined />Script Recipe</Space>,
+                      children: (
+                        <ScriptRecipePanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                          hyperPodInstanceTypes={hyperPodInstanceTypes}
+                          instanceTypesLoading={instanceTypesLoading}
+                          refreshInstanceTypes={refreshInstanceTypes}
+                        />
+                      )
+                    }] : []),
+                    {
+                      key: 'torch',
+                      label: <Space><FireOutlined />Torch Recipe</Space>,
+                      children: (
+                        <TorchRecipePanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                          hyperPodInstanceTypes={hyperPodInstanceTypes}
+                          instanceTypesLoading={instanceTypesLoading}
+                          refreshInstanceTypes={refreshInstanceTypes}
+                        />
+                      )
+                    },
+                    {
+                      key: 'llamafactory',
+                      label: <Space><ExperimentOutlined />LlamaFactory Recipe</Space>,
+                      children: (
+                        <TrainingConfigPanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                          hyperPodInstanceTypes={hyperPodInstanceTypes}
+                          instanceTypesLoading={instanceTypesLoading}
+                          refreshInstanceTypes={refreshInstanceTypes}
+                        />
+                      )
+                    },
+                    {
+                      key: 'msswift',
+                      label: <Space><ThunderboltOutlined />MS-Swift Recipe</Space>,
+                      children: (
+                        <MSSwiftRecipePanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                          hyperPodInstanceTypes={hyperPodInstanceTypes}
+                          instanceTypesLoading={instanceTypesLoading}
+                          refreshInstanceTypes={refreshInstanceTypes}
+                        />
+                      )
+                    },
+                    {
+                      key: 'verl',
+                      label: <Space><RocketOutlined />Verl Recipe</Space>,
+                      children: (
+                        <VerlRecipePanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                          hyperPodInstanceTypes={hyperPodInstanceTypes}
+                          instanceTypesLoading={instanceTypesLoading}
+                          refreshInstanceTypes={refreshInstanceTypes}
+                        />
+                      )
+                    },
+                    {
+                      key: 'sagemaker',
+                      label: <Space><CloudOutlined />SageMakerJob</Space>,
+                      children: (
+                        <SageMakerJobPanel
+                          onLaunch={handleTrainingLaunch}
+                          deploymentStatus={deploymentStatus}
+                        />
+                      )
+                    }
+                  ]}
                 />
               </Card>
             </Col>
@@ -1019,7 +1129,87 @@ function App() {
           </div>
           
           <div style={{ display: activeMainTab === 'model-management' ? 'block' : 'none' }}>
-            <EnhancedModelManagement />
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={12}>
+                <Card
+                  title="Storage Configuration"
+                  className="theme-card storage"
+                  style={{ height: '60vh', overflow: 'auto' }}
+                >
+                  <Tabs
+                    defaultActiveKey="enhanced-download"
+                    size="small"
+                    items={[
+                      {
+                        key: 'enhanced-download',
+                        label: (
+                          <Space>
+                            <DownloadOutlined />
+                            HuggingFace Download
+                          </Space>
+                        ),
+                        children: (
+                          <EnhancedModelDownloadPanel
+                            onStorageChange={setSelectedStorage}
+                            onStorageRefresh={fetchAvailableStorages}
+                          />
+                        )
+                      },
+                      {
+                        key: 'storage-config',
+                        label: (
+                          <Space>
+                            <SettingOutlined />
+                            S3 Mount Config
+                          </Space>
+                        ),
+                        children: (
+                          <S3StorageManager onStorageChange={fetchAvailableStorages} />
+                        )
+                      },
+                      {
+                        key: 'fsx-config',
+                        label: (
+                          <Space>
+                            <CloudServerOutlined />
+                            FSx Lustre Config
+                          </Space>
+                        ),
+                        children: (
+                          <FSxStorageManager onStorageChange={fetchAvailableStorages} />
+                        )
+                      }
+                    ]}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card
+                  title={
+                    <Space>
+                      <DatabaseOutlined />
+                      S3 Storage Contents
+                      <Select
+                        size="small"
+                        value={selectedStorage}
+                        onChange={setSelectedStorage}
+                        style={{ minWidth: 150 }}
+                      >
+                        {availableStorages.map(storage => (
+                          <Select.Option key={storage.pvcName} value={storage.pvcName}>
+                            {storage.name} ({storage.bucketName})
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </Space>
+                  }
+                  className="theme-card storage"
+                  style={{ height: '60vh', overflow: 'auto' }}
+                >
+                  <S3StoragePanel selectedStorage={selectedStorage} />
+                </Card>
+              </Col>
+            </Row>
           </div>
         </div>
         

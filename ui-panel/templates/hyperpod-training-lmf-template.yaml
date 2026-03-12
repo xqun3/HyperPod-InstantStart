@@ -85,7 +85,7 @@ spec:
                 - name: local
                   mountPath: /local
                 - name: inst-nvme
-                  mountPath: /ckpt-path
+                  mountPath: /nvme
                 - name: local-cache
                   mountPath: /root/.cache
                 # - name: persistent-storage
@@ -102,7 +102,7 @@ spec:
                 path: /opt/dlami/nvme/.cache
             - name: inst-nvme
               hostPath:
-                path: /opt/dlami/nvme/checkpoints/
+                path: /opt/dlami/nvme/
             # - name: persistent-storage
             #   persistentVolumeClaim:
             #     claimName: fsx-claim

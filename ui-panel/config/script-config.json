@@ -1,7 +1,7 @@
 {
   "trainingJobName": "hypd-recipe-script-1",
   "instanceType": "ml.g5.12xlarge",
-  "dockerImage": "633205212955.dkr.ecr.us-west-2.amazonaws.com/sm-training-op-torch26-smhp-op-v2:latest",
+  "dockerImage": "123456789012.dkr.ecr.us-west-2.amazonaws.com/sm-training-op-torch26-smhp-op-v2:latest",
   "nprocPerNode": 1,
   "replicas": 2,
   "efaCount": 1,

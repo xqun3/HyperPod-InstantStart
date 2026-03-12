@@ -23,7 +23,7 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: /ckpt-path/qwen3-06b/full/sft2
+output_dir: /nvme/ckpt-path/qwen3-06b/full/sft2
 logging_steps: 10
 save_steps: 500
 plot_loss: true

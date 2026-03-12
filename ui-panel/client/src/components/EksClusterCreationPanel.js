@@ -361,28 +361,10 @@ const EksClusterCreationPanel = () => {
   };
 
   return (
-    <div>
-      <Row gutter={16}>
-        {/* 左侧：创建表单 */}
-        <Col span={10}>
-          <Card
-            title={
-              <Space>
-                <CloudServerOutlined />
-                <span>Create EKS Cluster</span>
-              </Space>
-            }
-            extra={
-              <Button 
-                icon={<InfoCircleOutlined />} 
-                type="link"
-                onClick={() => message.info('This will create a new EKS cluster with HyperPod support')}
-              >
-                Help
-              </Button>
-            }
-          >
-            <Form
+    <Row gutter={16}>
+      {/* 左侧：创建表单 */}
+      <Col span={10}>
+        <Form
               form={form}
               layout="vertical"
               disabled={loading || creationStatus?.status === 'IN_PROGRESS'}
@@ -487,70 +469,60 @@ const EksClusterCreationPanel = () => {
 
 
               {/* 创建按钮 */}
-              <Form.Item style={{ marginTop: 24 }}>
-                <Space>
-                  <Button
-                    type="primary"
-                    onClick={handleCreateCluster}
-                    loading={loading}
-                    icon={<PlayCircleOutlined />}
-                    size="large"
-                  >
-                    Create Cluster
-                  </Button>
-                  <Button onClick={() => {
-                    form.resetFields();
-                    // 重新设置默认值
-                    form.setFieldsValue({
-                      clusterTag: generateClusterTag()
-                    });
-                    fetchCurrentRegion();
-                  }}>
-                    Reset
-                  </Button>
-                </Space>
+              <Form.Item style={{ marginTop: 24, marginBottom: 0 }}>
+                <Row gutter={8}>
+                  <Col flex="auto">
+                    <Button
+                      type="primary"
+                      onClick={handleCreateCluster}
+                      loading={loading}
+                      icon={<PlayCircleOutlined />}
+                      block
+                    >
+                      {!creationStatus ? 'Create Cluster (~15 min)' : 'Create Cluster'}
+                    </Button>
+                  </Col>
+                  <Col>
+                    <Button onClick={() => {
+                      form.resetFields();
+                      form.setFieldsValue({
+                        clusterTag: generateClusterTag()
+                      });
+                      fetchCurrentRegion();
+                    }}>
+                      Reset
+                    </Button>
+                  </Col>
+                </Row>
               </Form.Item>
+        </Form>
+      </Col>
 
-              {/* 预估时间提示 */}
-              {!creationStatus && (
-                <Alert
-                  type="info"
-                  message="Cluster creation typically takes 10-15 minutes"
-                  showIcon
-                  style={{ marginTop: 16 }}
-                />
-              )}
-            </Form>
-          </Card>
-        </Col>
-
-        {/* 右侧：创建进度 */}
-        <Col span={14}>
-          <Card
-            title="Cluster Creation Progress"
-            extra={
-              <Space>
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  loading={statusLoading}
-                  onClick={handleManualRefresh}
-                  title="Refresh Status"
-                >
-                  Refresh
-                </Button>
-                {creationStatus && creationStatus.status !== 'COMPLETED' && (
-                  <Button 
-                    size="small" 
-                    danger
-                    onClick={cancelCreation}
-                  >
-                    Cancel Creation
-                  </Button>
-                )}
-              </Space>
-            }
-          >
+      {/* 右侧：创建进度 */}
+      <Col span={14}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text strong>Creation Progress</Text>
+          <Space>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={statusLoading}
+              onClick={handleManualRefresh}
+              title="Refresh Status"
+            >
+              Refresh
+            </Button>
+            {creationStatus && creationStatus.status !== 'COMPLETED' && (
+              <Button
+                size="small"
+                danger
+                onClick={cancelCreation}
+              >
+                Cancel Creation
+              </Button>
+            )}
+          </Space>
+        </div>
             {creationStatus ? (
               // 有创建状态时显示进度
               <>
@@ -630,10 +602,8 @@ const EksClusterCreationPanel = () => {
                 </div>
               </>
             )}
-          </Card>
-        </Col>
-      </Row>
-    </div>
+      </Col>
+    </Row>
   );
 };
 

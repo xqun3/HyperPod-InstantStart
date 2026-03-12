@@ -4,6 +4,28 @@ REMOTE_REPO="public.ecr.aws/t5u4s6i0/instantstart-web:latest"
 
 LOCAL_IMAGE="ui-panel-dev"
 
+# ====== CLI tools auto-install (Claude CLI, Kiro CLI) ======
+install_cli_tools() {
+  # Claude CLI
+  if ! command -v claude &> /dev/null; then
+    echo "📦 Installing Claude CLI..."
+    curl -fsSL https://claude.ai/install.sh | bash
+  fi
+
+  # Kiro CLI
+  if ! command -v kiro-cli &> /dev/null; then
+    echo "📦 Installing Kiro CLI..."
+    curl -fsSL https://cli.kiro.dev/install | bash
+    export PATH="$HOME/.local/bin:$PATH"
+    kiro-cli settings chat.defaultModel claude-opus-4.6 2>/dev/null || true
+    kiro-cli settings chat.enableTangentMode true 2>/dev/null || true
+    kiro-cli settings chat.enableTodoList true 2>/dev/null || true
+  fi
+}
+
+install_cli_tools
+# ====== End CLI tools auto-install ======
+
 echo "🐳 Starting Model Deployment UI with Docker (Development Mode)..."
 
 # 检查 Docker 是否安装

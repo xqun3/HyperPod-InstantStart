@@ -137,35 +137,28 @@ const ScriptRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, 
   };
 
   return (
-    <Card 
-      title={
-        <Space>
-          <CodeOutlined />
-          Script Recipe
-        </Space>
-      }
-      extra={
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <Space>
           <Tooltip title="Save Configuration">
-            <Button 
-              icon={<SaveOutlined />} 
+            <Button
+              icon={<SaveOutlined />}
               onClick={saveConfig}
               loading={saving}
               size="small"
             />
           </Tooltip>
           <Tooltip title="Reload Configuration and Refresh Instance Types">
-            <Button 
-              icon={<ReloadOutlined />} 
+            <Button
+              icon={<ReloadOutlined />}
               onClick={() => { loadSavedConfig(); if (refreshInstanceTypes) refreshInstanceTypes(); }}
               size="small"
             />
           </Tooltip>
         </Space>
-      }
-    >
+      </div>
       {getStatusAlert()}
-      
+
       <Form
         form={form}
         layout="vertical"
@@ -406,7 +399,7 @@ const ScriptRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, 
           </Button>
         </Form.Item>
       </Form>
-    </Card>
+    </div>
   );
 };
 

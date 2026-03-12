@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Form, Input, Button, Card, Space, Collapse, message, Typography, Select, InputNumber, Row, Col, Radio } from 'antd';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Form, Input, Button, Space, Collapse, message, Select, InputNumber, Row, Col, Segmented } from 'antd';
 import { DownloadOutlined, KeyOutlined, RobotOutlined, SettingOutlined, ReloadOutlined, DatabaseOutlined } from '@ant-design/icons';
 import operationRefreshManager from '../hooks/useOperationRefresh';
 import resourceEventBus from '../utils/resourceEventBus';
 
 const { Panel } = Collapse;
-const { Text } = Typography;
 const { Option, OptGroup } = Select;
 
 const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
@@ -159,65 +158,58 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
   };
 
   return (
-    <Card
-      title={
-        <Space>
-          {repoType === 'dataset' ? <DatabaseOutlined /> : <RobotOutlined />}
-          HuggingFace Download
-        </Space>
-      }
-      size="small"
+    <Form
+      form={form}
+      layout="vertical"
+      onFinish={handleDownload}
+      initialValues={{
+        cpu: -1,
+        memory: -1,
+        s3Storage: 's3-claim'
+      }}
     >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleDownload}
-        initialValues={{
-          cpu: -1,
-          memory: -1,
-          s3Storage: 's3-claim'
-        }}
-      >
-        {/* Resource Type 选择 */}
-        <Form.Item label="Resource Type" style={{ marginBottom: 12 }}>
-          <Radio.Group
-            value={repoType}
-            onChange={e => setRepoType(e.target.value)}
-            optionType="button"
-            buttonStyle="solid"
-          >
-            <Radio.Button value="model">
-              <Space size={4}><RobotOutlined />Model</Space>
-            </Radio.Button>
-            <Radio.Button value="dataset">
-              <Space size={4}><DatabaseOutlined />Dataset</Space>
-            </Radio.Button>
-          </Radio.Group>
-        </Form.Item>
+      {/* Resource Type 切换 — 全宽 Segmented，醒目 */}
+      <Form.Item style={{ marginBottom: 12 }}>
+        <Segmented
+          block
+          value={repoType}
+          onChange={setRepoType}
+          options={[
+            { label: <Space><RobotOutlined />Model</Space>, value: 'model' },
+            { label: <Space><DatabaseOutlined />Dataset</Space>, value: 'dataset' },
+          ]}
+        />
+      </Form.Item>
 
-        {/* 存储选择 */}
-        <Form.Item
-          name="s3Storage"
-          label={
-            <Space>
-              Storage Provision
-              <Button
-                type="text"
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => {
-                  fetchStorages();
-                  fetchFsxStorages();
-                }}
-                title="Refresh storage list"
-              />
-            </Space>
-          }
-          rules={[{ required: true, message: 'Please select storage provision' }]}
-        >
+      {/* Model/Dataset ID */}
+      <Form.Item
+        name="modelId"
+        label={repoType === 'dataset' ? 'Dataset ID' : 'Model ID'}
+        rules={[{ required: true, message: `Please input ${repoType} ID` }]}
+      >
+        <Input
+          placeholder={repoType === 'dataset'
+            ? "e.g., HuggingFaceFW/fineweb, allenai/dolma"
+            : "e.g., meta-llama/Llama-2-7b-hf, Qwen/Qwen2-7B"}
+          prefix={repoType === 'dataset' ? <DatabaseOutlined /> : <RobotOutlined />}
+        />
+      </Form.Item>
+
+      {/* 存储选择 — Refresh 按钮在 Select 右侧 */}
+      <Form.Item
+        name="s3Storage"
+        label="Storage Provision"
+        rules={[{ required: true, message: 'Please select storage provision' }]}
+      >
+        <div style={{ display: 'flex', gap: 8 }}>
           <Select
-            placeholder="Select storage provision configuration"
-            onChange={(value) => onStorageChange && onStorageChange(value)}
+            value={form.getFieldValue('s3Storage')}
+            onChange={(value) => {
+              form.setFieldValue('s3Storage', value);
+              onStorageChange && onStorageChange(value);
+            }}
+            placeholder="Select storage"
+            style={{ flex: 1 }}
           >
             <OptGroup label="S3 Storage">
               {storages.map(storage => (
@@ -234,121 +226,79 @@ const EnhancedModelDownloadPanel = ({ onStorageChange }) => {
               ))}
             </OptGroup>
           </Select>
-        </Form.Item>
-
-        {/* Model/Dataset ID */}
-        <Form.Item
-          name="modelId"
-          label={repoType === 'dataset' ? 'Dataset ID' : 'Model ID'}
-          rules={[{ required: true, message: `Please input ${repoType} ID` }]}
-        >
-          <Input
-            placeholder={repoType === 'dataset'
-              ? "e.g., HuggingFaceFW/fineweb, allenai/dolma"
-              : "e.g., meta-llama/Llama-2-7b-hf, Qwen/Qwen2-7B"}
-            prefix={repoType === 'dataset' ? <DatabaseOutlined /> : <RobotOutlined />}
-          />
-        </Form.Item>
-
-        {/* 资源配置和HF Token合并 */}
-        <Collapse size="small" style={{ marginBottom: 16 }}>
-          <Panel 
-            header={
-              <Space>
-                <SettingOutlined />
-                Advanced Configuration
-              </Space>
-            } 
-            key="advanced"
-          >
-            {/* Instance Type 选择器 */}
-            <Form.Item
-              name="instanceType"
-              label={
-                <Space>
-                  Instance Type
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<ReloadOutlined />}
-                    onClick={fetchInstanceTypes}
-                    loading={instanceTypesLoading}
-                  />
-                </Space>
-              }
-            >
-              <Select
-                placeholder="Any (no node selector)"
-                loading={instanceTypesLoading}
-                allowClear
-                style={{ fontFamily: 'monospace' }}
-              >
-                {instanceTypeOptions}
-              </Select>
-            </Form.Item>
-
-            {/* 资源配置 */}
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col span={12}>
-                <Form.Item
-                  name="cpu"
-                  label="CPU Cores"
-                >
-                  <InputNumber
-                    min={-1}
-                    max={32}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="memory"
-                  label="Memory (GB)"
-                >
-                  <InputNumber
-                    min={-1}
-                    max={128}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            {/* HF Token */}
-            <Form.Item
-              name="hfToken"
-              label={
-                <Space>
-                  <KeyOutlined />
-                  <Text>Hugging Face Token</Text>
-                  <Text type="secondary" style={{ fontSize: '12px' }}>
-                    (Optional, for private models)
-                  </Text>
-                </Space>
-              }
-            >
-              <Input.Password 
-                placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                visibilityToggle
-              />
-            </Form.Item>
-          </Panel>
-        </Collapse>
-
-        <Form.Item>
           <Button
-            type="primary"
-            htmlType="submit"
-            loading={loading}
-            icon={<DownloadOutlined />}
-            block
+            icon={<ReloadOutlined />}
+            onClick={() => { fetchStorages(); fetchFsxStorages(); }}
+            title="Refresh storage list"
+          />
+        </div>
+      </Form.Item>
+
+      {/* 高级配置折叠 */}
+      <Collapse size="small" style={{ marginBottom: 16 }}>
+        <Panel
+          header={<Space><SettingOutlined />Advanced Configuration</Space>}
+          key="advanced"
+        >
+          {/* Instance Type */}
+          <Form.Item name="instanceType" label="Instance Type">
+            <Select
+              placeholder="Any (no node selector)"
+              loading={instanceTypesLoading}
+              allowClear
+              style={{ fontFamily: 'monospace' }}
+              suffixIcon={
+                <ReloadOutlined
+                  style={{ cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); fetchInstanceTypes(); }}
+                />
+              }
+            >
+              {instanceTypeOptions}
+            </Select>
+          </Form.Item>
+
+          {/* 资源配置 */}
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="cpu" label="CPU Cores">
+                <InputNumber min={-1} max={32} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="memory" label="Memory (GB)">
+                <InputNumber min={-1} max={128} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* HF Token */}
+          <Form.Item
+            name="hfToken"
+            label="HF Token"
+            tooltip="Optional — required only for private/gated models"
           >
-            Download {repoType === 'dataset' ? 'Dataset' : 'Model'}
-          </Button>
-        </Form.Item>
-      </Form>
-    </Card>
+            <Input.Password
+              placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              prefix={<KeyOutlined />}
+              visibilityToggle
+            />
+          </Form.Item>
+        </Panel>
+      </Collapse>
+
+      <Form.Item style={{ marginBottom: 0 }}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={loading}
+          icon={<DownloadOutlined />}
+          block
+        >
+          Download {repoType === 'dataset' ? 'Dataset' : 'Model'}
+        </Button>
+      </Form.Item>
+    </Form>
   );
 };
 

@@ -579,128 +579,103 @@ const TrainingMonitorPanelRedux = () => {
 
   return (
     <div style={{ height: '100%' }}>
-      {/* 训练任务管理部分 */}
-      <Card
-        title={
-          <Space>
-            <LineChartOutlined />
-            Log Monitor
-            {connectionStatus === 'connected' && (
-              <Tag color="green" size="small">Ready</Tag>
-            )}
-            {connectionStatus === 'connecting' && (
-              <Tag color="orange" size="small">Connecting...</Tag>
-            )}
-            {connectionStatus === 'disconnected' && (
-              <Tag color="red" size="small">Disconnected</Tag>
-            )}
-            {connectionStatus === 'error' && (
-              <Tag color="red" size="small">Error</Tag>
-            )}
-          </Space>
-        }
-        extra={
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              dispatch(fetchTrainingJobs());
-              // 如果有选中的任务，重新获取其 Pod 状态
-              if (selectedJob) {
-                // 停止所有日志流
-                if (websocket && websocket.readyState === WebSocket.OPEN) {
-                  websocket.send(JSON.stringify({ type: 'stop_all_log_streams' }));
-                }
-                // 清空日志和流状态
-                setLogs({});
-                setLogStreaming({});
-                // 重新获取 Pod 列表
-                fetchJobPods(selectedJob);
-              }
-            }}
-            loading={loading || podsLoading}
-            size="small"
-          >
-            Refresh
-          </Button>
-        }
-        style={{ marginBottom: '16px' }}
-      >
-        <Row gutter={[16, 16]} align="middle">
-          <Col span={24}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Text strong>Select Training Job:</Text>
-              <Select
-                style={{ width: '100%' }}
-                placeholder="Select a training job to monitor"
-                value={selectedJob}
-                onChange={handleJobSelect}
-                loading={loading}
-                allowClear
-              >
-                {trainingJobs.map(job => (
-                  <Option key={job.name} value={job.name}>
-                    <Space>
-                      <Text strong>{job.name}</Text>
-                      <Tag color={job.type === 'rayjob' ? 'purple' : 'orange'}>
-                        {job.type === 'rayjob' ? 'RayJob' : 'HyperPod'}
-                      </Tag>
-                      <Tag color="blue">
-                        {job.spec.replicas} replicas
-                      </Tag>
-                      <Text type="secondary" style={{ fontSize: '12px' }}>
-                        Created: {new Date(job.creationTimestamp).toLocaleString()}
-                      </Text>
-                    </Space>
-                  </Option>
-                ))}
-              </Select>
-            </Space>
-          </Col>
-        </Row>
-
-        {selectedJob && (
-          <>
-            <Divider />
-            <Row gutter={[16, 8]} align="middle">
-              <Col>
-                <Text strong>Pods ({jobPods.length}):</Text>
-              </Col>
-              {jobPods.map((pod, index) => {
-                const color = POD_COLORS[index % POD_COLORS.length];
-                const isStreaming = logStreaming[pod.name];
-
-                return (
-                  <Col key={pod.name}>
-                    <Space>
-                      <Tag color={color} style={{ margin: 0 }}>
-                        {pod.name}
-                      </Tag>
-                      <Tag color={pod.status === 'Running' ? 'green' : 'orange'}>
-                        {pod.status}
-                      </Tag>
-                      <Button
-                        size="small"
-                        type={isStreaming ? "primary" : "default"}
-                        icon={isStreaming ? <StopOutlined /> : <PlayCircleOutlined />}
-                        onClick={() => isStreaming ? stopLogStream(pod.name) : startLogStream(pod.name)}
-                        loading={podsLoading}
-                        disabled={!isStreaming && connectionStatus !== 'connected'}
-                      >
-                        {isStreaming ? 'Stop' : 'Start'} Streaming
-                      </Button>
-                    </Space>
-                  </Col>
-                );
-              })}
-            </Row>
-          </>
+      {/* 训练任务选择 + 状态 + 刷新 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Select
+          style={{ flex: 1 }}
+          placeholder="Select a training job to monitor"
+          value={selectedJob}
+          onChange={handleJobSelect}
+          loading={loading}
+          allowClear
+        >
+          {trainingJobs.map(job => (
+            <Option key={job.name} value={job.name}>
+              <Space>
+                <Text strong>{job.name}</Text>
+                <Tag color={job.type === 'rayjob' ? 'purple' : 'orange'}>
+                  {job.type === 'rayjob' ? 'RayJob' : 'HyperPod'}
+                </Tag>
+                <Tag color="blue">
+                  {job.spec.replicas} replicas
+                </Tag>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  Created: {new Date(job.creationTimestamp).toLocaleString()}
+                </Text>
+              </Space>
+            </Option>
+          ))}
+        </Select>
+        {connectionStatus === 'connected' && (
+          <Tag color="green" style={{ margin: 0 }}>Ready</Tag>
         )}
-      </Card>
+        {connectionStatus === 'connecting' && (
+          <Tag color="orange" style={{ margin: 0 }}>Connecting...</Tag>
+        )}
+        {connectionStatus === 'disconnected' && (
+          <Tag color="red" style={{ margin: 0 }}>Disconnected</Tag>
+        )}
+        {connectionStatus === 'error' && (
+          <Tag color="red" style={{ margin: 0 }}>Error</Tag>
+        )}
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={() => {
+            dispatch(fetchTrainingJobs());
+            if (selectedJob) {
+              if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify({ type: 'stop_all_log_streams' }));
+              }
+              setLogs({});
+              setLogStreaming({});
+              fetchJobPods(selectedJob);
+            }
+          }}
+          loading={loading || podsLoading}
+          size="small"
+        >
+          Refresh
+        </Button>
+      </div>
 
-      {/* 日志显示部分 */}
       {selectedJob && (
-        <Card
-          title={
+        <>
+          <Divider style={{ margin: '12px 0' }} />
+          <Row gutter={[16, 8]} align="middle" style={{ marginBottom: 12 }}>
+            <Col>
+              <Text strong>Pods ({jobPods.length}):</Text>
+            </Col>
+            {jobPods.map((pod, index) => {
+              const color = POD_COLORS[index % POD_COLORS.length];
+              const isStreaming = logStreaming[pod.name];
+
+              return (
+                <Col key={pod.name}>
+                  <Space>
+                    <Tag color={color} style={{ margin: 0 }}>
+                      {pod.name}
+                    </Tag>
+                    <Tag color={pod.status === 'Running' ? 'green' : 'orange'}>
+                      {pod.status}
+                    </Tag>
+                    <Button
+                      size="small"
+                      type={isStreaming ? "primary" : "default"}
+                      icon={isStreaming ? <StopOutlined /> : <PlayCircleOutlined />}
+                      onClick={() => isStreaming ? stopLogStream(pod.name) : startLogStream(pod.name)}
+                      loading={podsLoading}
+                      disabled={!isStreaming && connectionStatus !== 'connected'}
+                    >
+                      {isStreaming ? 'Stop' : 'Start'} Streaming
+                    </Button>
+                  </Space>
+                </Col>
+              );
+            })}
+          </Row>
+
+          {/* 日志显示部分 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <Space>
               <Text strong>Training Logs - {selectedJob}</Text>
               {Object.values(logStreaming).some(streaming => streaming) && (
@@ -710,8 +685,6 @@ const TrainingMonitorPanelRedux = () => {
                 Showing last {MAX_DISPLAY_LINES} lines (live)
               </Text>
             </Space>
-          }
-          extra={
             <Space>
               {/* 自动滚动开关 */}
               <Space align="center">
@@ -812,28 +785,25 @@ const TrainingMonitorPanelRedux = () => {
                 </>
               )}
             </Space>
-          }
-        >
+          </div>
           {renderLogs()}
-        </Card>
+        </>
       )}
 
       {!selectedJob && (
-        <Card>
-          <Empty
-            image={<LineChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />}
-            description={
-              <div>
-                <Title level={4} style={{ color: '#999', marginBottom: '8px' }}>
-                  Select a Training Job
-                </Title>
-                <Text type="secondary">
-                  Choose a training job from the dropdown above to monitor its logs and manage pods.
-                </Text>
-              </div>
-            }
-          />
-        </Card>
+        <Empty
+          image={<LineChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />}
+          description={
+            <div>
+              <Title level={4} style={{ color: '#999', marginBottom: '8px' }}>
+                Select a Training Job
+              </Title>
+              <Text type="secondary">
+                Choose a training job from the dropdown above to monitor its logs and manage pods.
+              </Text>
+            </div>
+          }
+        />
       )}
     </div>
   );

@@ -1356,9 +1356,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       <Button
         size="small"
         icon={<EditOutlined />}
+        onClick={() => handleScale(record, 'hyperpod')}
         disabled={clusterInfo.isTerraform}
         title={clusterInfo.isTerraform ? "Instance groups are managed by Terraform" : ""}
-        onClick={() => handleScale(record, 'hyperpod')}
       >
         Scale
       </Button>
@@ -1367,9 +1367,9 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         icon={<DeleteOutlined />}
         danger
         loading={deleteLoading && deleteTarget === record.name}
+        onClick={() => handleDeleteInstanceGroup(record)}
         disabled={clusterInfo.isTerraform}
         title={clusterInfo.isTerraform ? "Instance groups are managed by Terraform" : ""}
-        onClick={() => handleDeleteInstanceGroup(record)}
       >
         Delete
       </Button>
@@ -1514,10 +1514,10 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                 fetchClusterInfo(); // 确保获取最新信息
               }}
               disabled={
-                clusterInfo.isTerraform ||   // Terraform 管理时禁用
                 !!hyperPodCreationStatus ||  // 创建中时禁用
                 !!hyperPodDeletionStatus ||  // 删除中时禁用
                 hyperPodGroups.length === 0 ||   // 没有HyperPod时禁用
+                clusterInfo.isTerraform ||   // Terraform 管理时禁用
                 addInstanceGroupLoading      // 添加中时禁用
               }
               loading={addInstanceGroupLoading}

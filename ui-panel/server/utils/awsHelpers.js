@@ -17,15 +17,44 @@ function getCurrentAccountId() {
 
 function getCurrentRegion() {
   if (_cachedRegion) return _cachedRegion;
-  
-  const command = 'aws configure get region';
-  const region = execSync(command, { encoding: 'utf8' }).trim();
-  if (!region) {
-    throw new Error('AWS region not configured');
+
+  // 1. 环境变量优先（容器/EKS 场景常用）
+  const envRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+  if (envRegion) {
+    _cachedRegion = envRegion.trim();
+    console.log(`Region from env: ${_cachedRegion}`);
+    return _cachedRegion;
   }
-  _cachedRegion = region;
-  console.log(`Region cached: ${_cachedRegion}`);
-  return _cachedRegion;
+
+  // 2. aws configure get region
+  try {
+    const region = execSync('aws configure get region', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (region) {
+      _cachedRegion = region;
+      console.log(`Region from aws configure: ${_cachedRegion}`);
+      return _cachedRegion;
+    }
+  } catch (e) {
+    // aws configure 可能未配置，继续尝试下一个来源
+  }
+
+  // 3. EC2 IMDS（实例元数据）
+  try {
+    const az = execSync(
+      'curl -s --max-time 2 http://169.254.169.254/latest/meta-data/placement/availability-zone',
+      { encoding: 'utf8', timeout: 5000 }
+    ).trim();
+    if (az) {
+      const region = az.replace(/[a-z]$/, '');
+      _cachedRegion = region;
+      console.log(`Region from IMDS: ${_cachedRegion}`);
+      return _cachedRegion;
+    }
+  } catch (e) {
+    // IMDS 不可用
+  }
+
+  throw new Error('AWS region not configured. Set AWS_REGION env var or run "aws configure set region <region>".');
 }
 
 async function describeHyperPodCluster(clusterName, region) {

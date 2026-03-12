@@ -75,7 +75,7 @@ spec:
                 - name: local
                   mountPath: /local
                 - name: inst-nvme
-                  mountPath: /ckpt-path
+                  mountPath: /nvme
                 - name: local-cache
                   mountPath: /root/.cache
           volumes:
@@ -90,7 +90,7 @@ spec:
                 path: /opt/dlami/nvme/.cache
             - name: inst-nvme
               hostPath:
-                path: /opt/dlami/nvme/checkpoints/
+                path: /opt/dlami/nvme/
             - name: persistent-storage-s3
               persistentVolumeClaim:
                 claimName: s3-claim

@@ -215,6 +215,18 @@ router.post('/create-hyperpod', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active cluster selected' });
     }
 
+    // 🛡️ 防重复创建：检查是否已有 HyperPod 集群
+    const existingClusterInfo = MetadataUtils.getClusterInfo(activeCluster);
+    if (existingClusterInfo?.hyperPodCluster) {
+      const hpStatus = existingClusterInfo.hyperPodCluster.ClusterStatus;
+      const hpName = existingClusterInfo.hyperPodCluster.ClusterName;
+      console.warn(`HyperPod cluster already exists: ${hpName} (${hpStatus})`);
+      return res.status(400).json({
+        success: false,
+        error: `HyperPod cluster '${hpName}' already exists (status: ${hpStatus}). Delete it first before creating a new one.`
+      });
+    }
+
     // ⭐ 创建 HyperPod 前，先更新 cluster_envs（读取用户可能设置的 S3/Role）
     const EnvInjector = require('./utils/envInjector');
     try {

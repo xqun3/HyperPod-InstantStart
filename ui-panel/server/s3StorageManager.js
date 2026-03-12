@@ -5,6 +5,7 @@ const yaml = require('yaml');
 const { promisify } = require('util');
 
 const execAsync = promisify(exec);
+const { getCurrentRegion } = require('./utils/awsHelpers');
 
 class S3StorageManager {
   constructor() {
@@ -20,6 +21,13 @@ class S3StorageManager {
    * @returns {Object} { success, defaults: { name, bucketName, region } }
    */
   getStorageDefaults() {
+    let detectedRegion = '';
+    try {
+      detectedRegion = getCurrentRegion();
+    } catch (e) {
+      console.warn('Could not detect AWS region for S3 defaults:', e.message);
+    }
+
     try {
       let defaultBucket = '';
 
@@ -45,7 +53,7 @@ class S3StorageManager {
         defaults: {
           name: 's3-claim',
           bucketName: defaultBucket,
-          region: 'us-west-2'
+          region: detectedRegion
         }
       };
     } catch (error) {
@@ -56,7 +64,7 @@ class S3StorageManager {
         defaults: {
           name: 's3-claim',
           bucketName: '',
-          region: 'us-west-2'
+          region: detectedRegion
         }
       };
     }
@@ -95,7 +103,8 @@ class S3StorageManager {
       console.log(`📦 Using storage: ${selectedStorage.name} -> ${selectedStorage.bucketName}`);
 
       // 使用AWS CLI获取S3内容
-      const s3Data = await this._listS3Contents(selectedStorage.bucketName, selectedStorage.region || 'us-west-2');
+      const effectiveRegion = selectedStorage.region || (() => { try { return getCurrentRegion(); } catch(e) { return 'us-east-1'; } })();
+      const s3Data = await this._listS3Contents(selectedStorage.bucketName, effectiveRegion);
 
       console.log(`📊 Found ${s3Data.length} items in S3`);
 

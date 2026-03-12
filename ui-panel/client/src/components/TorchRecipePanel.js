@@ -137,26 +137,20 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
   };
 
   return (
-    <Card 
-      title={
-        <Space>
-          <FireOutlined />
-          Torch Recipe
-        </Space>
-      }
-      extra={
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <Space>
           <Tooltip title="Save Configuration">
-            <Button 
-              icon={<SaveOutlined />} 
+            <Button
+              icon={<SaveOutlined />}
               onClick={saveConfig}
               loading={saving}
               size="small"
             />
           </Tooltip>
           <Tooltip title="Reload Configuration and Refresh Instance Types">
-            <Button 
-              icon={<ReloadOutlined />} 
+            <Button
+              icon={<ReloadOutlined />}
               onClick={() => {
                 loadSavedConfig();
                 if (refreshInstanceTypes) {
@@ -167,10 +161,9 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
             />
           </Tooltip>
         </Space>
-      }
-    >
+      </div>
       {getStatusAlert()}
-      
+
       <Form
         form={form}
         layout="vertical"
@@ -407,7 +400,7 @@ const TorchRecipePanel = ({ onLaunch, deploymentStatus, hyperPodInstanceTypes, i
           </Button>
         </Form.Item>
       </Form>
-    </Card>
+    </div>
   );
 };
 

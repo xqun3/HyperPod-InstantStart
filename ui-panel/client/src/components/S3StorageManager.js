@@ -26,19 +26,6 @@ const S3StorageManager = ({ onStorageChange }) => {
     }
   };
 
-  // 获取当前AWS region
-  const fetchCurrentRegion = async () => {
-    try {
-      const response = await fetch('/api/aws/current-region');
-      const result = await response.json();
-      if (result.success && result.region) {
-        form.setFieldValue('region', result.region);
-      }
-    } catch (error) {
-      console.error('Error fetching current AWS region:', error);
-    }
-  };
-
   // 获取S3存储列表
   const fetchStorages = async () => {
     try {
@@ -111,8 +98,7 @@ const S3StorageManager = ({ onStorageChange }) => {
 
   useEffect(() => {
     fetchStorages();
-    fetchDefaults(); // 获取默认值
-    fetchCurrentRegion(); // 获取当前AWS region
+    fetchDefaults(); // 获取默认值（含 region）
     
     // 注册全局刷新监听
     const componentId = 's3-storage-manager';

@@ -412,106 +412,65 @@ const ClusterManagementRedux = () => {
                     {/* 左侧：集群选择和管理 */}
                     <Col xs={24} lg={10}>
                       <div>
-                        {/* 集群选择器和管理功能 */}
-                        <Row gutter={16} align="middle" style={{ marginBottom: 24 }}>
-                          <Col flex="auto">
-                            <Space direction="vertical" style={{ width: '100%' }}>
-                              {/* 集群列表刷新按钮 */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text strong>Active Cluster:</Text>
-                                <Button
-                                  size="small"
-                                  icon={<ReloadOutlined />}
-                                  onClick={refreshAllStatus}
-                                  loading={loading}
-                                  type="text"
-                                >
-                                  Refresh
-                                </Button>
-                              </div>
-                              <div>
-                                <Select
-                                  value={activeCluster}
-                                  onChange={handleSwitchCluster}
-                                  style={{ width: '100%' }}
-                                  placeholder="Select a cluster or import/create one"
-                                  loading={loading}
-                                  allowClear
-                                  showSearch
-                                  optionFilterProp="children"
-                                >
-                                  {clusters.map(cluster => (
-                                    <Option key={cluster.clusterTag} value={cluster.clusterTag}>
-                                      <Space>
-                                        <span>{cluster.clusterTag}</span>
-                                        <Tag color={cluster.type === 'imported' ? 'blue' : 'green'} size="small">
-                                          {cluster.type === 'imported' ? 'Imported' : 'Created'}
-                                        </Tag>
-                                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                                          {new Date(cluster.lastModified).toLocaleDateString()}
-                                        </Text>
-                                      </Space>
-                                    </Option>
-                                  ))}
-                                </Select>
-                              </div>
-                              {activeCluster && (
-                                <Alert
-                                  message={`Currently managing cluster: ${activeCluster}`}
-                                  type="info"
-                                  showIcon
-                                  style={{ marginTop: 8 }}
-                                />
-                              )}
-                              {!activeCluster && clusters.length === 0 && (
-                                <Alert
-                                  message="No clusters found. Import an existing cluster or create a new one."
-                                  type="warning"
-                                  showIcon
-                                  style={{ marginTop: 8 }}
-                                />
-                              )}
-                            </Space>
-                          </Col>
-                          <Col>
-                            <Space direction="vertical" align="center">
-                              <Text type="secondary" style={{ fontSize: '12px' }}>
-                                Total Clusters
-                              </Text>
-                              <Tag color="blue" style={{ fontSize: '16px', padding: '4px 12px' }}>
-                                {clusters.length}
-                              </Tag>
-                            </Space>
-                          </Col>
-                        </Row>
+                        {/* 集群选择器：Select + Total Badge + Refresh 一行 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                          <Select
+                            value={activeCluster}
+                            onChange={handleSwitchCluster}
+                            style={{ flex: 1 }}
+                            placeholder={clusters.length === 0 ? "No clusters — import or create one" : "Select a cluster"}
+                            loading={loading}
+                            allowClear
+                            showSearch
+                            optionFilterProp="children"
+                          >
+                            {clusters.map(cluster => (
+                              <Option key={cluster.clusterTag} value={cluster.clusterTag}>
+                                <Space>
+                                  <span>{cluster.clusterTag}</span>
+                                  <Tag color={cluster.type === 'imported' ? 'blue' : 'green'} size="small">
+                                    {cluster.type === 'imported' ? 'Imported' : 'Created'}
+                                  </Tag>
+                                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                                    {new Date(cluster.lastModified).toLocaleDateString()}
+                                  </Text>
+                                </Space>
+                              </Option>
+                            ))}
+                          </Select>
+                          <Tag color="blue" style={{ margin: 0, fontSize: '14px', padding: '2px 10px' }}>
+                            {clusters.length}
+                          </Tag>
+                          <Button
+                            size="small"
+                            icon={<ReloadOutlined />}
+                            onClick={refreshAllStatus}
+                            loading={loading}
+                          />
+                        </div>
 
                         {/* 集群操作按钮 */}
-                        <Row style={{ marginBottom: 24 }}>
-                          <Col>
-                            <Space>
-                              {activeCluster && (
-                                <DependencyConfigButton
-                                  clusterTag={activeCluster}
-                                  currentCluster={clusters.find(c => c.clusterTag === activeCluster)}
-                                />
-                              )}
-                              <Button
-                                type="default"
-                                icon={<ImportOutlined />}
-                                onClick={() => setShowImportModal(true)}
-                              >
-                                Import Existing Cluster
-                              </Button>
-                              <Button
-                                type="primary"
-                                icon={<PlusOutlined />}
-                                onClick={createNewCluster}
-                              >
-                                Create EKS Cluster
-                              </Button>
-                            </Space>
-                          </Col>
-                        </Row>
+                        <Space style={{ marginBottom: 16 }} wrap>
+                          {activeCluster && (
+                            <DependencyConfigButton
+                              clusterTag={activeCluster}
+                              currentCluster={clusters.find(c => c.clusterTag === activeCluster)}
+                            />
+                          )}
+                          <Button
+                            icon={<ImportOutlined />}
+                            onClick={() => setShowImportModal(true)}
+                          >
+                            Import Cluster
+                          </Button>
+                          <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={createNewCluster}
+                          >
+                            Create EKS
+                          </Button>
+                        </Space>
 
                         {/* 集群信息显示 */}
                         {activeCluster && (() => {
