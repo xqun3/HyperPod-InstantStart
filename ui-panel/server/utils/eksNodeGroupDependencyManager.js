@@ -142,7 +142,7 @@ class EksNodeGroupDependencyManager {
     # 使用 Helm 安装 nvidia-device-plugin，排除 HyperPod 节点（没有 sagemaker.amazonaws.com/compute-type 标签）
     helm upgrade --install nvidia-device-plugin nvdp/nvidia-device-plugin \\
       --namespace kube-system \\
-      --version 0.17.3 \\
+      --version 0.18.2 \\
       --set affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=sagemaker.amazonaws.com/compute-type \\
       --set affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=DoesNotExist \\
       --set tolerations[0].key=nvidia.com/gpu \\

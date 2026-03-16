@@ -53,6 +53,11 @@ Parameters:
     Type: String
     Description: Required when creating new subnet
 
+  AvailabilityZoneName:
+    Type: String
+    Default: ""
+    Description: AZ name (e.g. us-east-2a) for subnet naming consistency with ComputeSubnetManager
+
   PrivateSubnet1CIDR:
     Type: String
     Default: 10.91.20.0/24
@@ -343,7 +348,7 @@ Resources:
       AvailabilityZoneId: !Ref AvailabilityZoneId
       Tags:
         - Key: Name
-          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneId}"
+          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneName}"
         - Key: karpenter.sh/discovery
           Value: !Ref ExistingEKSClusterName
 
@@ -354,7 +359,7 @@ Resources:
       VpcId: !Ref ExistingVpcId
       Tags:
         - Key: Name
-          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneId}-rt"
+          Value: !Sub "${SubnetNamePrefix}-${AvailabilityZoneName}-rt"
 
   PrivateSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation

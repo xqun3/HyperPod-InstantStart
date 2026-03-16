@@ -361,6 +361,7 @@ router.post('/create-hyperpod', async (req, res) => {
     const hyperPodConfig = {
       ResourceNamePrefix: hyperPodTag,
       AvailabilityZoneId: availabilityZoneId,
+      AvailabilityZoneName: userConfig.availabilityZone,
       PrivateSubnet1CIDR: hyperPodPrivateSubnetCidr,
       HyperPodClusterName: hyperPodClusterName,
       NodeRecovery: 'None',
