@@ -18,13 +18,21 @@ install_cli_tools() {
     curl -fsSL https://cli.kiro.dev/install | bash
     export PATH="$HOME/.local/bin:$PATH"
     kiro-cli settings chat.defaultModel claude-opus-4.6 2>/dev/null || true
-    kiro-cli settings chat.enableTangentMode true 2>/dev/null || true
     kiro-cli settings chat.enableTodoList true 2>/dev/null || true
   fi
 }
 
 install_cli_tools
 # ====== End CLI tools auto-install ======
+
+# ====== Sync skills from .kiro to .claude ======
+PROJ_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -d "$PROJ_ROOT/.kiro/skills" ]; then
+  mkdir -p "$PROJ_ROOT/.claude/skills"
+  rsync -a --delete "$PROJ_ROOT/.kiro/skills/" "$PROJ_ROOT/.claude/skills/"
+  echo "✅ Synced .kiro/skills → .claude/skills"
+fi
+# ====== End sync skills ======
 
 echo "🐳 Starting Model Deployment UI with Docker (Development Mode)..."
 
