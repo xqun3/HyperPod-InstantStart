@@ -338,7 +338,10 @@ async def karpenter_get_status() -> str:
 
 @mcp.tool()
 async def hyperpod_get_advanced_features() -> str:
-    """获取 HyperPod 集群的高级功能配置状态（Tiered Storage、Inference Operator、Training Operator）"""
+    """获取 HyperPod 集群的高级功能配置状态（Tiered Storage、Inference Operator、Training Operator）
+    
+    返回的 tieredStorage 包含 irsa 字段，表示 IRSA（IAM Role + ServiceAccount）的安装状态。
+    """
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(f"{BASE_URL}/api/cluster/hyperpod/advanced-features")
         response.raise_for_status()
@@ -353,7 +356,7 @@ async def hyperpod_update_advanced_features(
     """更新 HyperPod 集群的高级功能配置（开启/关闭 Tiered Storage、Inference Operator、Training Operator）
     
     Args:
-        tieredStorage: Tiered Storage 配置，如 {"enabled": true, "configMode": "default"} 或 {"enabled": true, "configMode": "custom", "percentage": 80}，设为 {"enabled": false} 关闭
+        tieredStorage: Tiered Storage 配置，如 {"enabled": true, "configMode": "default"} 或 {"enabled": true, "configMode": "custom", "percentage": 80}，设为 {"enabled": false} 关闭。启用时自动安装 IRSA（IAM Role + ServiceAccount），禁用时自动卸载。
         inferenceOperator: Inference Operator 配置，如 {"enabled": true} 或 {"enabled": false}
         trainingOperator: Training Operator 配置，如 {"enabled": true} 或 {"enabled": false}
     """

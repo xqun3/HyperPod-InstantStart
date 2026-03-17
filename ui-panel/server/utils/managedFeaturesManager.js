@@ -4,6 +4,7 @@ const execAsync = promisify(exec);
 const fs = require('fs');
 const path = require('path');
 const InferenceOperatorManager = require('./inferenceOperatorManager');
+const EnvInjector = require('./envInjector');
 const { cleanInstanceGroupForUpdate } = require('./instanceGroupUtils');
 
 /**
@@ -11,6 +12,9 @@ const { cleanInstanceGroupForUpdate } = require('./instanceGroupUtils');
  * 管理 HyperPod 集群的高级功能配置（Tiered Storage, Inference Operator 等）
  */
 class ManagedFeaturesManager {
+  static TIERED_STORAGE_SA_NAME = 'tiered-storage-sa';
+  static TIERED_STORAGE_SA_NAMESPACE = 'default';
+
   constructor(clusterManager) {
     this.clusterManager = clusterManager;
     this.inferenceOpManager = new InferenceOperatorManager(clusterManager);
@@ -46,9 +50,19 @@ class ManagedFeaturesManager {
     // 检查 FSx CSI Driver 状态
     const fsxCsiDriverStatus = await this._getFsxCsiDriverStatus();
 
+    // 检查 Tiered Storage IRSA 状态
+    const clusterInfo = JSON.parse(fs.readFileSync(
+      path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+    ));
+    const eksClusterName = clusterInfo.eksCluster?.name;
+    const tieredStorageIRSA = eksClusterName ? await this._getTieredStorageIRSAStatus(eksClusterName, region) : { installed: false, status: 'NOT_FOUND' };
+
     // 解析高级功能配置
     const advancedFeatures = {
-      tieredStorage: this._parseTieredStorageConfig(clusterData.TieredStorageConfig),
+      tieredStorage: {
+        ...this._parseTieredStorageConfig(clusterData.TieredStorageConfig),
+        irsa: tieredStorageIRSA
+      },
       inferenceOperator: {
         enabled: inferenceOpStatus.installed,
         iamRoles: inferenceOpStatus.iamRoles
@@ -161,33 +175,54 @@ class ManagedFeaturesManager {
       (tieredStorage.configMode === 'custom' && 
        currentConfig.percentage !== tieredStorage.percentage);
 
-    if (!hasChange) {
-      console.log('No changes in Tiered Storage configuration, skipping update');
-      return { success: true, message: 'No changes detected', skipped: true };
+    // 读取 cluster_info 用于 IRSA 操作
+    const clusterInfo = JSON.parse(fs.readFileSync(
+      path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+    ));
+    const eksClusterName = clusterInfo.eksCluster?.name;
+
+    const results = { tieredStorageUpdate: null, irsa: null };
+
+    // 更新 Tiered Storage 配置（如果有变化）
+    if (hasChange) {
+      const updateConfig = {
+        ClusterName: hyperPodCluster.ClusterName,
+        InstanceGroups: clusterData.InstanceGroups.map(cleanInstanceGroupForUpdate),
+        TieredStorageConfig: this._buildTieredStorageConfig(tieredStorage)
+      };
+
+      console.log('Updating Tiered Storage:', JSON.stringify(updateConfig.TieredStorageConfig, null, 2));
+
+      const tempConfigPath = path.join(configDir, 'temp-tiered-storage-config.json');
+      fs.writeFileSync(tempConfigPath, JSON.stringify(updateConfig, null, 2));
+
+      try {
+        const updateCmd = `aws sagemaker update-cluster --cli-input-json file://${tempConfigPath} --region ${region}`;
+        const updateResult = await execAsync(updateCmd);
+        results.tieredStorageUpdate = { success: true, result: JSON.parse(updateResult.stdout) };
+      } finally {
+        if (fs.existsSync(tempConfigPath)) fs.unlinkSync(tempConfigPath);
+      }
+    } else {
+      results.tieredStorageUpdate = { success: true, message: 'No changes detected', skipped: true };
     }
 
-    // 构建更新配置（InstanceGroups 使用公共清理函数，保留 OverrideVpcConfig 等字段）
-    const updateConfig = {
-      ClusterName: hyperPodCluster.ClusterName,
-      InstanceGroups: clusterData.InstanceGroups.map(cleanInstanceGroupForUpdate),
-      TieredStorageConfig: this._buildTieredStorageConfig(tieredStorage)
-    };
-
-    console.log('Updating Tiered Storage:', JSON.stringify(updateConfig.TieredStorageConfig, null, 2));
-
-    // 创建临时配置文件
-    const tempConfigPath = path.join(configDir, 'temp-tiered-storage-config.json');
-    fs.writeFileSync(tempConfigPath, JSON.stringify(updateConfig, null, 2));
-
-    try {
-      const updateCmd = `aws sagemaker update-cluster --cli-input-json file://${tempConfigPath} --region ${region}`;
-      const updateResult = await execAsync(updateCmd);
-      return { success: true, result: JSON.parse(updateResult.stdout) };
-    } finally {
-      if (fs.existsSync(tempConfigPath)) {
-        fs.unlinkSync(tempConfigPath);
+    // 同步 IRSA：启用时安装，禁用时卸载
+    if (eksClusterName) {
+      try {
+        const irsaStatus = await this._getTieredStorageIRSAStatus(eksClusterName, region);
+        if (tieredStorage.enabled && !irsaStatus.installed) {
+          results.irsa = await this._installTieredStorageIRSA(eksClusterName, region, clusterInfo);
+        } else if (!tieredStorage.enabled && irsaStatus.installed) {
+          results.irsa = await this._uninstallTieredStorageIRSA(eksClusterName, region, clusterInfo);
+        }
+      } catch (irsaError) {
+        console.error('IRSA operation failed:', irsaError.message);
+        results.irsa = { success: false, error: irsaError.message };
       }
     }
+
+    return { success: true, ...results };
   }
 
   /**
@@ -227,6 +262,105 @@ class ManagedFeaturesManager {
       configDir: this.clusterManager.getClusterConfigDir(activeClusterName),
       metadataDir
     };
+  }
+
+  /**
+   * 获取 Tiered Storage IRSA 状态（检查 IAM Role + K8s ServiceAccount）
+   */
+  async _getTieredStorageIRSAStatus(eksClusterName, region) {
+    const saName = ManagedFeaturesManager.TIERED_STORAGE_SA_NAME;
+    const namespace = ManagedFeaturesManager.TIERED_STORAGE_SA_NAMESPACE;
+    try {
+      const { stdout } = await execAsync(
+        `kubectl get sa ${saName} -n ${namespace} -o jsonpath='{.metadata.annotations.eks\\.amazonaws\\.com/role-arn}' 2>/dev/null || echo ""`
+      );
+      const roleArn = stdout.trim().replace(/^'|'$/g, '');
+      if (!roleArn) return { installed: false, status: 'NOT_FOUND' };
+
+      // Verify the IAM role exists
+      const roleName = roleArn.split('/').pop();
+      const { stdout: roleStatus } = await execAsync(
+        `aws iam get-role --role-name ${roleName} --query "Role.RoleName" --output text 2>/dev/null || echo "NOT_FOUND"`
+      );
+      const installed = roleStatus.trim() !== 'NOT_FOUND';
+      return { installed, status: installed ? 'ACTIVE' : 'NOT_FOUND', saName, roleArn: installed ? roleArn : null, roleName: installed ? roleName : null };
+    } catch {
+      return { installed: false, status: 'NOT_FOUND', saName };
+    }
+  }
+
+  /**
+   * 安装 Tiered Storage IRSA（IAM Policy + Role + K8s ServiceAccount）
+   */
+  async _installTieredStorageIRSA(eksClusterName, region, clusterInfo) {
+    const saName = ManagedFeaturesManager.TIERED_STORAGE_SA_NAME;
+    const namespace = ManagedFeaturesManager.TIERED_STORAGE_SA_NAMESPACE;
+    const accountId = EnvInjector.extractAccountIdFromArn(clusterInfo.eksCluster?.arn);
+    if (!accountId) throw new Error('Cannot extract account ID from EKS ARN');
+
+    // Get OIDC ID
+    const { stdout: oidcIssuer } = await execAsync(
+      `aws eks describe-cluster --name ${eksClusterName} --region ${region} --query 'cluster.identity.oidc.issuer' --output text`
+    );
+    const oidcId = oidcIssuer.trim().replace('https://', '');
+
+    const roleName = `SM_HP_TieredCkpt_Role_${eksClusterName}`;
+    const policyName = `SM_HP_TieredCkpt_S3Policy_${eksClusterName}`;
+
+    // 1. Create IAM Policy (S3 full access + CloudWatch logs)
+    const policyDoc = JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [
+        { Effect: 'Allow', Action: ['s3:*'], Resource: '*' },
+        { Effect: 'Allow', Action: ['logs:CreateLogGroup','logs:CreateLogStream','logs:PutLogEvents'], Resource: '*' }
+      ]
+    });
+    const policyArn = `arn:aws:iam::${accountId}:policy/${policyName}`;
+    await execAsync(`aws iam create-policy --policy-name "${policyName}" --policy-document '${policyDoc}' 2>/dev/null || true`);
+
+    // 2. Create IAM Role with OIDC trust
+    const trustDoc = JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [{
+        Effect: 'Allow',
+        Principal: { Federated: `arn:aws:iam::${accountId}:oidc-provider/${oidcId}` },
+        Action: 'sts:AssumeRoleWithWebIdentity',
+        Condition: { StringEquals: { [`${oidcId}:sub`]: `system:serviceaccount:${namespace}:${saName}`, [`${oidcId}:aud`]: 'sts.amazonaws.com' } }
+      }]
+    });
+    await execAsync(`aws iam create-role --role-name "${roleName}" --assume-role-policy-document '${trustDoc}' 2>/dev/null || true`);
+    await execAsync(`aws iam attach-role-policy --role-name "${roleName}" --policy-arn "${policyArn}"`);
+
+    // 3. Create K8s ServiceAccount
+    const roleArn = `arn:aws:iam::${accountId}:role/${roleName}`;
+    await execAsync(`kubectl create sa ${saName} -n ${namespace} 2>/dev/null || true`);
+    await execAsync(`kubectl annotate sa ${saName} -n ${namespace} "eks.amazonaws.com/role-arn=${roleArn}" --overwrite`);
+
+    return { success: true, message: 'Tiered Storage IRSA installed', roleArn, roleName };
+  }
+
+  /**
+   * 卸载 Tiered Storage IRSA（删除 K8s SA + IAM Role + Policy）
+   */
+  async _uninstallTieredStorageIRSA(eksClusterName, region, clusterInfo) {
+    const saName = ManagedFeaturesManager.TIERED_STORAGE_SA_NAME;
+    const namespace = ManagedFeaturesManager.TIERED_STORAGE_SA_NAMESPACE;
+    const accountId = EnvInjector.extractAccountIdFromArn(clusterInfo.eksCluster?.arn);
+    const roleName = `SM_HP_TieredCkpt_Role_${eksClusterName}`;
+    const policyName = `SM_HP_TieredCkpt_S3Policy_${eksClusterName}`;
+    const policyArn = `arn:aws:iam::${accountId}:policy/${policyName}`;
+
+    // 1. Delete K8s ServiceAccount
+    await execAsync(`kubectl delete sa ${saName} -n ${namespace} 2>/dev/null || true`);
+
+    // 2. Detach policy and delete role
+    await execAsync(`aws iam detach-role-policy --role-name "${roleName}" --policy-arn "${policyArn}" 2>/dev/null || true`);
+    await execAsync(`aws iam delete-role --role-name "${roleName}" 2>/dev/null || true`);
+
+    // 3. Delete policy
+    await execAsync(`aws iam delete-policy --policy-arn "${policyArn}" 2>/dev/null || true`);
+
+    return { success: true, message: 'Tiered Storage IRSA uninstalled' };
   }
 
   /**

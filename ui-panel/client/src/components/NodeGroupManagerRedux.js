@@ -2338,7 +2338,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   getFieldValue('tieredStorageEnabled') ? (
                     <>
                       <Alert
-                        message="Tiered Storage uses cluster CPU memory for faster checkpoint operations and improved fault tolerance."
+                        message={`Tiered Storage uses cluster CPU memory for faster checkpoint operations and improved fault tolerance. ServiceAccount: ${advancedFeaturesData?.tieredStorage?.irsa?.saName || 'tiered-storage-sa'}`}
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
