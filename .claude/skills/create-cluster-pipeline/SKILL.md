@@ -24,7 +24,10 @@ Report the detected state to the user and confirm before continuing.
 
 1. Call `cluster_list_all` to check for existing clusters
 2. Only ask user for cluster tag. Do NOT ask about region — always use the current region by omitting the region parameter. Only ask region if the user explicitly mentions wanting a different region.
-3. Call `cluster_create_eks` with just the clusterTag
+3. Check if user provided custom CIDR configuration:
+   - **If user provided all 6 CIDRs** (vpcCidr, publicSubnet1Cidr, publicSubnet2Cidr, eksPrivateSubnet1Cidr, eksPrivateSubnet2Cidr, hyperPodPrivateSubnetCidr): call `cluster_create_eks_with_cidr` with all 6 CIDRs plus clusterTag and region
+   - **Otherwise**: call `cluster_create_eks` with just the clusterTag (CIDR auto-generated)
+   - Do NOT proactively ask user about CIDR. Only use `cluster_create_eks_with_cidr` when user explicitly provides CIDR values.
 4. Inform user: estimated wait 8-12 minutes
 5. Poll `cluster_get_eks_creation_status` every **120 seconds** until stack status is `CREATE_COMPLETE`. Between each poll, call `wait_seconds(120)` to wait.
 6. If status contains `FAILED` or `ROLLBACK`, report error and stop

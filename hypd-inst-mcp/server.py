@@ -88,6 +88,68 @@ async def cluster_create_eks(clusterTag: str = None, region: str = None, vpcCidr
         return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
 @mcp.tool()
+async def cluster_create_eks_with_cidr(
+    clusterTag: str,
+    region: str,
+    vpcCidr: str,
+    publicSubnet1Cidr: str,
+    publicSubnet2Cidr: str,
+    eksPrivateSubnet1Cidr: str,
+    eksPrivateSubnet2Cidr: str,
+    hyperPodPrivateSubnetCidr: str
+) -> str:
+    """创建 EKS 集群并自定义全部 CIDR 配置（需要 8-12 分钟）
+
+    所有 CIDR 参数均为必填。如需自动生成 CIDR，请使用 cluster_create_eks。
+
+    Args:
+        clusterTag: 集群标签，如 hypd-0303
+        region: AWS 区域，如 us-west-2
+        vpcCidr: VPC CIDR 块，如 10.100.0.0/16
+        publicSubnet1Cidr: Public Subnet 1 CIDR，如 10.100.10.0/24
+        publicSubnet2Cidr: Public Subnet 2 CIDR，如 10.100.11.0/24
+        eksPrivateSubnet1Cidr: EKS Private Subnet 1 CIDR，如 10.100.7.0/24
+        eksPrivateSubnet2Cidr: EKS Private Subnet 2 CIDR，如 10.100.8.0/24
+        hyperPodPrivateSubnetCidr: HyperPod Private Subnet CIDR，如 10.100.32.0/20
+    """
+    try:
+        cidrConfig = {
+            "vpcCidr": vpcCidr,
+            "publicSubnet1Cidr": publicSubnet1Cidr,
+            "publicSubnet2Cidr": publicSubnet2Cidr,
+            "eksPrivateSubnet1Cidr": eksPrivateSubnet1Cidr,
+            "eksPrivateSubnet2Cidr": eksPrivateSubnet2Cidr,
+            "hyperPodPrivateSubnetCidr": hyperPodPrivateSubnetCidr,
+        }
+
+        payload = {
+            "clusterTag": clusterTag,
+            "awsRegion": region,
+            "cidrConfig": cidrConfig
+        }
+
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/create-eks", json=payload)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("success"):
+                return json.dumps({
+                    "success": True,
+                    "message": "✅ EKS cluster creation started with custom CIDR",
+                    "clusterTag": clusterTag,
+                    "region": region,
+                    "cidrConfig": cidrConfig,
+                    "estimatedTime": "8-12 minutes",
+                    "tip": "Use 'cluster_get_eks_creation_status' to monitor progress"
+                }, indent=2, ensure_ascii=False)
+            else:
+                return json.dumps(result, indent=2, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
 async def cluster_list_all() -> str:
     """列出所有已管理的集群"""
     async with httpx.AsyncClient() as client:
