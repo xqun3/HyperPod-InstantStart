@@ -414,7 +414,10 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
         --cluster-name \$EKS_CLUSTER_NAME \\
         --addon-name cert-manager \\
         --region \$AWS_REGION \\
+        --configuration-values '"'"'{"replicaCount":1,"cainjector":{"replicaCount":1},"webhook":{"replicaCount":1}}'"'"' \\
         --resolve-conflicts OVERWRITE >> /app/tmp/dependency-install.log 2>&1 || echo "cert-manager addon already exists"
+
+    # kubectl scale deployment cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager --replicas=1
 
     echo "Waiting for cert-manager to be ready..."
     MAX_WAIT=20
@@ -491,10 +494,7 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
       // 步骤 2: 安装 S3 CSI Driver
       await this.installGeneralDependencies(configDir);
       
-      // 步骤 3: 安装 FSx CSI Driver
-      await this.installFSxDependencies(configDir);
-      
-      // 步骤 4: 安装 kuberay-operator
+      // 步骤 3: 安装 kuberay-operator
       await this.installKuberayOperator(configDir);
       
       console.log(`Successfully configured imported cluster dependencies for: ${clusterTag}`);
@@ -572,8 +572,6 @@ echo "=== HyperPod Helm Chart installation completed ==="'`;
       // await this.installnlbDependencies(configDir);
       
       await this.installGeneralDependencies(configDir);
-      
-      await this.installFSxDependencies(configDir);
 
       await this.installKuberayOperator(configDir);
       

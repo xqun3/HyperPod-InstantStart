@@ -4,6 +4,7 @@ const execAsync = promisify(exec);
 const fs = require('fs');
 const path = require('path');
 const InferenceOperatorManager = require('./inferenceOperatorManager');
+const { cleanInstanceGroupForUpdate } = require('./instanceGroupUtils');
 
 /**
  * HyperPod Managed Features Manager
@@ -39,6 +40,12 @@ class ManagedFeaturesManager {
     // 检查 Training Operator 状态
     const trainingOpStatus = await this._getTrainingOperatorStatus();
 
+    // 检查 Container Insights 状态
+    const containerInsightsStatus = await this._getContainerInsightsStatus();
+
+    // 检查 FSx CSI Driver 状态
+    const fsxCsiDriverStatus = await this._getFsxCsiDriverStatus();
+
     // 解析高级功能配置
     const advancedFeatures = {
       tieredStorage: this._parseTieredStorageConfig(clusterData.TieredStorageConfig),
@@ -49,6 +56,14 @@ class ManagedFeaturesManager {
       trainingOperator: {
         enabled: trainingOpStatus.installed,
         status: trainingOpStatus.status
+      },
+      containerInsights: {
+        enabled: containerInsightsStatus.installed,
+        status: containerInsightsStatus.status
+      },
+      fsxCsiDriver: {
+        enabled: fsxCsiDriverStatus.installed,
+        status: fsxCsiDriverStatus.status
       }
     };
 
@@ -88,7 +103,9 @@ class ManagedFeaturesManager {
     const results = {
       tieredStorage: null,
       inferenceOperator: null,
-      trainingOperator: null
+      trainingOperator: null,
+      containerInsights: null,
+      fsxCsiDriver: null
     };
 
     // 1. 更新 Tiered Storage (如果有变化)
@@ -104,6 +121,16 @@ class ManagedFeaturesManager {
     // 3. 更新 Training Operator (如果有变化)
     if (updates.trainingOperator !== undefined) {
       results.trainingOperator = await this._updateTrainingOperator(updates.trainingOperator);
+    }
+
+    // 4. 更新 Container Insights (如果有变化)
+    if (updates.containerInsights !== undefined) {
+      results.containerInsights = await this._updateContainerInsights(updates.containerInsights);
+    }
+
+    // 5. 更新 FSx CSI Driver (如果有变化)
+    if (updates.fsxCsiDriver !== undefined) {
+      results.fsxCsiDriver = await this._updateFsxCsiDriver(updates.fsxCsiDriver);
     }
 
     return {
@@ -139,10 +166,10 @@ class ManagedFeaturesManager {
       return { success: true, message: 'No changes detected', skipped: true };
     }
 
-    // 构建更新配置（必须包含 InstanceGroups）
+    // 构建更新配置（InstanceGroups 使用公共清理函数，保留 OverrideVpcConfig 等字段）
     const updateConfig = {
       ClusterName: hyperPodCluster.ClusterName,
-      InstanceGroups: clusterData.InstanceGroups.map(this._cleanInstanceGroup),
+      InstanceGroups: clusterData.InstanceGroups.map(cleanInstanceGroupForUpdate),
       TieredStorageConfig: this._buildTieredStorageConfig(tieredStorage)
     };
 
@@ -239,27 +266,6 @@ class ManagedFeaturesManager {
   }
 
   /**
-   * 清理实例组配置（移除运行时字段）
-   */
-  _cleanInstanceGroup(instanceGroup) {
-    const cleaned = {
-      InstanceCount: instanceGroup.TargetCount,
-      InstanceGroupName: instanceGroup.InstanceGroupName,
-      InstanceType: instanceGroup.InstanceType,
-      LifeCycleConfig: instanceGroup.LifeCycleConfig,
-      ExecutionRole: instanceGroup.ExecutionRole,
-      ThreadsPerCore: instanceGroup.ThreadsPerCore,
-      InstanceStorageConfigs: instanceGroup.InstanceStorageConfigs
-    };
-
-    if (instanceGroup.TrainingPlanArn) {
-      cleaned.TrainingPlanArn = instanceGroup.TrainingPlanArn;
-    }
-
-    return cleaned;
-  }
-
-  /**
    * 更新 Training Operator
    */
   async _updateTrainingOperator(trainingOperator) {
@@ -295,36 +301,25 @@ class ManagedFeaturesManager {
       throw new Error('cert-manager addon is not ACTIVE. Please wait for it to be ready.');
     }
 
-    // 清理失败的安装
-    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name amazon-sagemaker-hyperpod-training-operator --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+    const addonName = 'amazon-sagemaker-hyperpod-training-operator';
+    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
     const { stdout: status } = await execAsync(statusCmd);
     const currentStatus = status.trim();
 
     if (currentStatus === 'ACTIVE') {
       return { success: true, message: 'Training Operator is already installed' };
     }
+    if (currentStatus === 'CREATING') {
+      return { success: true, message: 'Training Operator is being installed', status: 'CREATING' };
+    }
 
     if (currentStatus === 'CREATE_FAILED' || currentStatus === 'DEGRADED') {
-      await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name amazon-sagemaker-hyperpod-training-operator --region ${region} 2>/dev/null || true`);
-      await new Promise(r => setTimeout(r, 30000)); // 等待删除
+      await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} 2>/dev/null || true`);
+      await new Promise(r => setTimeout(r, 30000));
     }
 
-    // 安装 addon
-    await execAsync(`aws eks create-addon --cluster-name ${eksClusterName} --addon-name amazon-sagemaker-hyperpod-training-operator --region ${region} --resolve-conflicts OVERWRITE`);
-
-    // 等待安装完成（最多 5 分钟）
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 10000));
-      const { stdout: checkStatus } = await execAsync(statusCmd);
-      if (checkStatus.trim() === 'ACTIVE') {
-        return { success: true, message: 'Training Operator installed successfully' };
-      }
-      if (checkStatus.trim() === 'CREATE_FAILED') {
-        throw new Error('Training Operator installation failed');
-      }
-    }
-
-    throw new Error('Training Operator installation timed out');
+    await execAsync(`aws eks create-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --resolve-conflicts OVERWRITE`);
+    return { success: true, message: 'Training Operator installation initiated', status: 'CREATING' };
   }
 
   /**
@@ -340,6 +335,201 @@ class ManagedFeaturesManager {
 
     await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name amazon-sagemaker-hyperpod-training-operator --region ${region}`);
     return { success: true, message: 'Training Operator uninstalled successfully' };
+  }
+
+  /**
+   * 获取 Container Insights (CloudWatch Observability) 状态
+   */
+  async _getContainerInsightsStatus() {
+    try {
+      const activeClusterName = this.clusterManager.getActiveCluster();
+      const { region } = await this._getClusterInfo(activeClusterName);
+      const clusterInfo = JSON.parse(fs.readFileSync(
+        path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+      ));
+      const eksClusterName = clusterInfo.eksCluster?.name;
+      if (!eksClusterName) return { installed: false, status: 'NOT_FOUND' };
+
+      const cmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name amazon-cloudwatch-observability --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+      const { stdout } = await execAsync(cmd);
+      const status = stdout.trim();
+      return { installed: status === 'ACTIVE', status };
+    } catch (error) {
+      return { installed: false, status: 'NOT_FOUND' };
+    }
+  }
+
+  /**
+   * 获取 FSx CSI Driver 状态
+   */
+  async _getFsxCsiDriverStatus() {
+    try {
+      const activeClusterName = this.clusterManager.getActiveCluster();
+      const { region } = await this._getClusterInfo(activeClusterName);
+      const clusterInfo = JSON.parse(fs.readFileSync(
+        path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+      ));
+      const eksClusterName = clusterInfo.eksCluster?.name;
+      if (!eksClusterName) return { installed: false, status: 'NOT_FOUND' };
+
+      const cmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name aws-fsx-csi-driver --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+      const { stdout } = await execAsync(cmd);
+      const status = stdout.trim();
+      return { installed: status === 'ACTIVE', status };
+    } catch (error) {
+      return { installed: false, status: 'NOT_FOUND' };
+    }
+  }
+
+  /**
+   * 更新 FSx CSI Driver
+   */
+  async _updateFsxCsiDriver(fsxCsiDriver) {
+    const activeClusterName = this.clusterManager.getActiveCluster();
+    const { region, configDir } = await this._getClusterInfo(activeClusterName);
+    const clusterInfo = JSON.parse(fs.readFileSync(
+      path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+    ));
+    const eksClusterName = clusterInfo.eksCluster?.name;
+    if (!eksClusterName) throw new Error('EKS cluster not found');
+
+    const currentStatus = await this._getFsxCsiDriverStatus();
+
+    if (fsxCsiDriver.enabled && !currentStatus.installed) {
+      return await this._installFsxCsiDriver(eksClusterName, region, configDir);
+    } else if (!fsxCsiDriver.enabled && currentStatus.installed) {
+      return await this._uninstallFsxCsiDriver(eksClusterName, region);
+    }
+
+    return { success: true, message: 'No changes needed' };
+  }
+
+  /**
+   * 安装 FSx CSI Driver（创建 IAM Role + EKS Addon）
+   */
+  async _installFsxCsiDriver(eksClusterName, region, configDir) {
+    const addonName = 'aws-fsx-csi-driver';
+    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+    const { stdout: status } = await execAsync(statusCmd);
+    const currentStatus = status.trim();
+
+    if (currentStatus === 'ACTIVE') {
+      return { success: true, message: 'FSx CSI Driver is already installed' };
+    }
+    if (currentStatus === 'CREATING') {
+      return { success: true, message: 'FSx CSI Driver is being installed', status: 'CREATING' };
+    }
+
+    if (currentStatus === 'CREATE_FAILED' || currentStatus === 'DEGRADED') {
+      await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} 2>/dev/null || true`);
+      await new Promise(r => setTimeout(r, 30000));
+    }
+
+    // 创建 IAM Role
+    const roleName = `SM_HP_FSX_CSI_ROLE_${eksClusterName}`;
+    await execAsync(`eksctl create iamserviceaccount --name fsx-csi-controller-sa --namespace kube-system --override-existing-serviceaccounts --cluster ${eksClusterName} --attach-policy-arn arn:aws:iam::aws:policy/AmazonFSxFullAccess --role-name ${roleName} --region ${region} --approve --role-only 2>/dev/null || true`);
+
+    const { stdout: roleArn } = await execAsync(`aws iam get-role --role-name ${roleName} --query "Role.Arn" --output text`);
+
+    await execAsync(`aws eks create-addon --name ${addonName} --cluster-name ${eksClusterName} --service-account-role-arn ${roleArn.trim()} --region ${region} --resolve-conflicts OVERWRITE`);
+    return { success: true, message: 'FSx CSI Driver installation initiated', status: 'CREATING' };
+  }
+
+  /**
+   * 卸载 FSx CSI Driver
+   */
+  async _uninstallFsxCsiDriver(eksClusterName, region) {
+    const addonName = 'aws-fsx-csi-driver';
+    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+    const { stdout: status } = await execAsync(statusCmd);
+
+    if (status.trim() === 'NOT_FOUND') {
+      return { success: true, message: 'FSx CSI Driver is not installed' };
+    }
+
+    await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region}`);
+
+    // 清理 eksctl 创建的 IAM service account 及其 CloudFormation stack
+    const roleName = `SM_HP_FSX_CSI_ROLE_${eksClusterName}`;
+    await execAsync(`eksctl delete iamserviceaccount --name fsx-csi-controller-sa --namespace kube-system --cluster ${eksClusterName} --region ${region} 2>/dev/null || true`);
+
+    return { success: true, message: 'FSx CSI Driver uninstalled successfully' };
+  }
+
+  /**
+   * 更新 Container Insights
+   */
+  async _updateContainerInsights(containerInsights) {
+    const activeClusterName = this.clusterManager.getActiveCluster();
+    const { region, hyperPodCluster } = await this._getClusterInfo(activeClusterName);
+    const clusterInfo = JSON.parse(fs.readFileSync(
+      path.join(this.clusterManager.getClusterDir(activeClusterName), 'metadata', 'cluster_info.json'), 'utf8'
+    ));
+    const eksClusterName = clusterInfo.eksCluster?.name;
+    if (!eksClusterName) throw new Error('EKS cluster not found');
+
+    const currentStatus = await this._getContainerInsightsStatus();
+
+    if (containerInsights.enabled && !currentStatus.installed) {
+      return await this._installContainerInsights(eksClusterName, region, hyperPodCluster.ClusterName);
+    } else if (!containerInsights.enabled && currentStatus.installed) {
+      return await this._uninstallContainerInsights(eksClusterName, region);
+    }
+
+    return { success: true, message: 'No changes needed' };
+  }
+
+  /**
+   * 安装 Container Insights (CloudWatch Observability)
+   * 1. 给 HyperPod Execution Role 附加 CloudWatchAgentServerPolicy
+   * 2. 安装 amazon-cloudwatch-observability EKS addon
+   */
+  async _installContainerInsights(eksClusterName, region, hyperPodClusterName) {
+    const addonName = 'amazon-cloudwatch-observability';
+    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+    const { stdout: status } = await execAsync(statusCmd);
+    const currentStatus = status.trim();
+
+    if (currentStatus === 'ACTIVE') {
+      return { success: true, message: 'Container Insights is already installed' };
+    }
+    if (currentStatus === 'CREATING') {
+      return { success: true, message: 'Container Insights is being installed', status: 'CREATING' };
+    }
+
+    // 获取 Execution Role 并附加 CloudWatch 权限
+    const describeCmd = `aws sagemaker describe-cluster --cluster-name ${hyperPodClusterName} --region ${region} --output json`;
+    const { stdout: describeOut } = await execAsync(describeCmd);
+    const clusterData = JSON.parse(describeOut);
+    const roleArn = clusterData.InstanceGroups?.[0]?.ExecutionRole;
+    if (roleArn) {
+      const roleName = roleArn.split('/').pop();
+      await execAsync(`aws iam attach-role-policy --role-name ${roleName} --policy-arn arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy 2>/dev/null || true`);
+    }
+
+    if (currentStatus === 'CREATE_FAILED' || currentStatus === 'DEGRADED') {
+      await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} 2>/dev/null || true`);
+      await new Promise(r => setTimeout(r, 30000));
+    }
+
+    await execAsync(`aws eks create-addon --addon-name ${addonName} --cluster-name ${eksClusterName} --region ${region} --resolve-conflicts OVERWRITE`);
+    return { success: true, message: 'Container Insights installation initiated', status: 'CREATING' };
+  }
+
+  /**
+   * 卸载 Container Insights
+   */
+  async _uninstallContainerInsights(eksClusterName, region) {
+    const addonName = 'amazon-cloudwatch-observability';
+    const statusCmd = `aws eks describe-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region} --query "addon.status" --output text 2>/dev/null || echo "NOT_FOUND"`;
+    const { stdout: status } = await execAsync(statusCmd);
+
+    if (status.trim() === 'NOT_FOUND') {
+      return { success: true, message: 'Container Insights is not installed' };
+    }
+
+    await execAsync(`aws eks delete-addon --cluster-name ${eksClusterName} --addon-name ${addonName} --region ${region}`);
+    return { success: true, message: 'Container Insights uninstalled successfully' };
   }
 }
 

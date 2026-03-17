@@ -26,6 +26,7 @@ const HyperPodDependencyManager = require('./utils/hyperPodDependencyManager');
 const MetadataUtils = require('./utils/metadataUtils');
 const SubnetManager = require('./utils/subnetManager');
 const NetworkManager = require('./utils/networkManager');
+const { cleanInstanceGroupForUpdate } = require('./utils/instanceGroupUtils');
 
 // 常量
 const MANAGED_CLUSTERS_DIR = path.join(__dirname, '../managed_clusters_info');
@@ -536,23 +537,8 @@ router.put('/hyperpod/instances/:name/scale', async (req, res) => {
       throw new Error(`Instance group ${name} not found`);
     }
 
-    // 根据 AWS CLI 文档，update-cluster 支持的字段
-    const allowedFields = [
-      'InstanceCount', 'InstanceGroupName', 'InstanceType', 'LifeCycleConfig',
-      'ExecutionRole', 'ThreadsPerCore', 'InstanceStorageConfigs',
-      'OnStartDeepHealthChecks', 'TrainingPlanArn', 'OverrideVpcConfig',
-      'ScheduledUpdateConfig', 'ImageId'
-    ];
-
-    // 构建更新配置，只保留允许的字段
-    const updateInstanceGroup = {};
-    allowedFields.forEach(field => {
-      if (instanceGroup.hasOwnProperty(field)) {
-        updateInstanceGroup[field] = instanceGroup[field];
-      }
-    });
-
-    // 修改 InstanceCount 为目标值
+    // 清理运行时字段，只保留 update-cluster 允许的字段
+    const updateInstanceGroup = cleanInstanceGroupForUpdate(instanceGroup);
     updateInstanceGroup.InstanceCount = targetCount;
 
     const cmd = `aws sagemaker update-cluster --cluster-name ${hpClusterName} --instance-groups '${JSON.stringify(updateInstanceGroup)}' --region ${region}`;
@@ -612,30 +598,6 @@ router.post('/hyperpod/add-instance-group', async (req, res) => {
     const describeCmd = `aws sagemaker describe-cluster --cluster-name ${hyperPodCluster.ClusterName} --region ${region} --output json`;
     const describeResult = await execAsync(describeCmd);
     const clusterData = JSON.parse(describeResult.stdout);
-
-    // 清理现有实例组的运行时字段，保留 OverrideVpcConfig
-    const cleanInstanceGroup = (instanceGroup) => {
-      const cleaned = {
-        InstanceCount: instanceGroup.TargetCount,
-        InstanceGroupName: instanceGroup.InstanceGroupName,
-        InstanceType: instanceGroup.InstanceType,
-        LifeCycleConfig: instanceGroup.LifeCycleConfig,
-        ExecutionRole: instanceGroup.ExecutionRole,
-        ThreadsPerCore: instanceGroup.ThreadsPerCore,
-        InstanceStorageConfigs: instanceGroup.InstanceStorageConfigs
-      };
-
-      // 保留现有的 OverrideVpcConfig（AWS 不支持更新此字段）
-      if (instanceGroup.OverrideVpcConfig) {
-        cleaned.OverrideVpcConfig = instanceGroup.OverrideVpcConfig;
-      }
-
-      if (instanceGroup.TrainingPlanArn) {
-        cleaned.TrainingPlanArn = instanceGroup.TrainingPlanArn;
-      }
-
-      return cleaned;
-    };
 
     // 构建新的实例组配置
     const newInstanceGroup = {
@@ -702,7 +664,7 @@ router.post('/hyperpod/add-instance-group', async (req, res) => {
     const instanceGroupConfig = {
       ClusterName: hyperPodCluster.ClusterName,
       InstanceGroups: [
-        ...clusterData.InstanceGroups.map(cleanInstanceGroup),
+        ...clusterData.InstanceGroups.map(cleanInstanceGroupForUpdate),
         newInstanceGroup
       ]
     };

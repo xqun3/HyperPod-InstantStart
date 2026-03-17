@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip, Switch, Radio, Divider } from 'antd';
+import { Card, Table, Button, message, Tag, Space, Modal, InputNumber, Form, Select, Input, Typography, AutoComplete, Checkbox, Row, Col, Alert, Spin, Tooltip, Switch, Radio, Divider, Collapse } from 'antd';
 import { ReloadOutlined, EditOutlined, ToolOutlined, PlusOutlined, DeleteOutlined, InfoCircleOutlined, CloudServerOutlined, SettingOutlined } from '@ant-design/icons';
 import EksNodeGroupCreationPanel from './EksNodeGroupCreationPanel';
 import {
@@ -957,6 +957,8 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         tieredStoragePercentage: result.advancedFeatures.tieredStorage.percentage || 50,
         inferenceOperatorEnabled: result.advancedFeatures.inferenceOperator.enabled,
         trainingOperatorEnabled: result.advancedFeatures.trainingOperator?.enabled || false,
+        containerInsightsEnabled: result.advancedFeatures.containerInsights?.enabled || false,
+        fsxCsiDriverEnabled: result.advancedFeatures.fsxCsiDriver?.enabled || false,
         // HAMi 配置
         hamiEnabled: hamiData.installed || false,
         hamiSplitCount: hamiData.config?.splitCount || 10,
@@ -995,6 +997,16 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
       // Training Operator
       updates.trainingOperator = {
         enabled: values.trainingOperatorEnabled
+      };
+
+      // Container Insights
+      updates.containerInsights = {
+        enabled: values.containerInsightsEnabled
+      };
+
+      // FSx CSI Driver
+      updates.fsxCsiDriver = {
+        enabled: values.fsxCsiDriverEnabled
       };
 
       // HAMi GPU Virtualization
@@ -2441,7 +2453,87 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
                   ) : null
                 }
               </Form.Item>
+              {advancedFeaturesData?.trainingOperator?.status === 'CREATING' && (
+                <Alert message="Training Operator is currently being installed..." type="warning" showIcon style={{ marginBottom: 12 }} />
+              )}
             </Card>
+
+            {/* Infrastructure Add-ons (Collapsible) */}
+            <Collapse
+              size="small"
+              style={{ marginBottom: 16 }}
+              items={[{
+                key: 'infra',
+                label: <Text strong>Add-ons</Text>,
+                children: (
+                  <>
+                    {/* Container Insights (CloudWatch Observability) Section */}
+                    <Card 
+                      size="small" 
+                      style={{ marginBottom: 16, backgroundColor: '#fafafa' }}
+                    >
+                      <Form.Item 
+                        name="containerInsightsEnabled" 
+                        valuePropName="checked"
+                        style={{ marginBottom: 12 }}
+                      >
+                        <Checkbox>
+                          <Text strong>Container Insights (CloudWatch Observability)</Text>
+                        </Checkbox>
+                      </Form.Item>
+
+                      <Form.Item noStyle shouldUpdate={(prev, curr) => prev.containerInsightsEnabled !== curr.containerInsightsEnabled}>
+                        {({ getFieldValue }) => 
+                          getFieldValue('containerInsightsEnabled') ? (
+                            <Alert
+                              message="Container Insights collects cluster metrics, logs, and performance data via CloudWatch. This will attach CloudWatchAgentServerPolicy to the HyperPod execution role."
+                              type="info"
+                              showIcon
+                              style={{ marginBottom: 12 }}
+                            />
+                          ) : null
+                        }
+                      </Form.Item>
+                      {advancedFeaturesData?.containerInsights?.status === 'CREATING' && (
+                        <Alert message="Container Insights is currently being installed..." type="warning" showIcon style={{ marginBottom: 12 }} />
+                      )}
+                    </Card>
+
+                    {/* FSx CSI Driver Section */}
+                    <Card 
+                      size="small" 
+                      style={{ backgroundColor: '#fafafa' }}
+                    >
+                      <Form.Item 
+                        name="fsxCsiDriverEnabled" 
+                        valuePropName="checked"
+                        style={{ marginBottom: 12 }}
+                      >
+                        <Checkbox>
+                          <Text strong>FSx Lustre CSI Driver</Text>
+                        </Checkbox>
+                      </Form.Item>
+
+                      <Form.Item noStyle shouldUpdate={(prev, curr) => prev.fsxCsiDriverEnabled !== curr.fsxCsiDriverEnabled}>
+                        {({ getFieldValue }) => 
+                          getFieldValue('fsxCsiDriverEnabled') ? (
+                            <Alert
+                              message="FSx CSI Driver enables mounting FSx for Lustre file systems as persistent volumes. Required for FSx Lustre storage configurations."
+                              type="info"
+                              showIcon
+                              style={{ marginBottom: 12 }}
+                            />
+                          ) : null
+                        }
+                      </Form.Item>
+                      {advancedFeaturesData?.fsxCsiDriver?.status === 'CREATING' && (
+                        <Alert message="FSx CSI Driver is currently being installed..." type="warning" showIcon style={{ marginBottom: 12 }} />
+                      )}
+                    </Card>
+                  </>
+                )
+              }]}
+            />
 
             <Divider />
 
