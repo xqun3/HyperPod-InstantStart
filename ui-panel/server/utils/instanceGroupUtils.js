@@ -9,7 +9,7 @@ const ALLOWED_INSTANCE_GROUP_FIELDS = [
   'InstanceCount', 'InstanceGroupName', 'InstanceType', 'LifeCycleConfig',
   'ExecutionRole', 'ThreadsPerCore', 'InstanceStorageConfigs',
   'OnStartDeepHealthChecks', 'TrainingPlanArn', 'OverrideVpcConfig',
-  'ScheduledUpdateConfig', 'ImageId'
+  'ScheduledUpdateConfig', 'ImageId', 'CapacityRequirements'
 ];
 
 /**
