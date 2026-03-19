@@ -71,6 +71,15 @@
   font-size: 16px;
 }
 
+/* 内嵌Tabs的Card：减少标题与子Tab之间的间距 */
+.theme-card .ant-card-body:has(> .ant-tabs) {
+  padding-top: 0;
+}
+
+.theme-card .ant-card-body > .ant-tabs > .ant-tabs-nav {
+  margin-top: 0;
+}
+
 /* 表单样式优化 */
 .ant-form-item-label > label {
   font-weight: 500;

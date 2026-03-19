@@ -1401,9 +1401,6 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <Text strong>HyperPod Cluster: {clusterInfo.clusterName}</Text>
-            <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-              Cluster-level operations affect all instance groups
-            </div>
           </div>
           <Space>
             <Button
@@ -1476,6 +1473,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
 
   return (
     <div style={{ height: '100%' }}>
+      {/* Refresh按钮已移除：Cluster Information的刷新按钮通过refreshTrigger已覆盖此功能
       <div style={{ marginBottom: '16px', textAlign: 'right' }}>
         <Button
           icon={<ReloadOutlined />}
@@ -1486,6 +1484,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
           Refresh Node Groups
         </Button>
       </div>
+      */}
 
       {/* HyperPod Instance Groups - 通过环境变量控制显示 */}
       {process.env.REACT_APP_SHOW_HYPERPOD_INSTANCE_GROUPS !== 'false' && (
