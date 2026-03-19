@@ -679,15 +679,13 @@ managedNodeGroups:
       const lambdaRoleArn = await getCurrentRoleArn();
       
       // 构建HyperPod参数（适配 2-hypd-full.yaml）
+      // S3/Role 由 CF 模板自动创建（Default 为空触发 Condition）
       const parameters = [
         `ParameterKey=ExistingVpcId,ParameterValue=${stackInfo.VPC_ID}`,
         `ParameterKey=ExistingSecurityGroupId,ParameterValue=${stackInfo.SECURITY_GROUP_ID}`,
         `ParameterKey=ExistingEKSClusterName,ParameterValue=${stackInfo.EKS_CLUSTER_NAME}`,
         `ParameterKey=LambdaExecutionRoleArn,ParameterValue=${lambdaRoleArn}`,
-        // 可选参数：如果有现有资源则传递，否则留空让 CF 创建
-        `ParameterKey=ExistingSageMakerRoleName,ParameterValue=${stackInfo.SAGEMAKER_ROLE_NAME || ''}`,
-        `ParameterKey=ExistingS3BucketName,ParameterValue=${stackInfo.S3_BUCKET_NAME || ''}`,
-        ...Object.entries(userConfig).map(([key, value]) => 
+        ...Object.entries(userConfig).map(([key, value]) =>
           `ParameterKey=${key},ParameterValue=${value}`
         )
       ];

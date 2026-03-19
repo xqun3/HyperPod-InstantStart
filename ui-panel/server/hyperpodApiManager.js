@@ -264,19 +264,11 @@ router.post('/create-hyperpod', async (req, res) => {
 
     console.log('EKS cluster info from metadata:', eksClusterInfo);
 
-    // 判断是否需要创建 S3/Role（导入的裸 EKS 没有这些资源）
-    const hasExistingS3 = !!eksClusterInfo.s3BucketName;
-    const hasExistingRole = !!eksClusterInfo.sageMakerRoleArn;
-
-    // 构建 EKS 基础设施信息
+    // 构建 EKS 基础设施信息（S3/Role 由 HyperPod CF Stack 自动创建，无需传入）
     const eksInfrastructureInfo = {
       VPC_ID: eksClusterInfo.vpcId,
       SECURITY_GROUP_ID: eksClusterInfo.securityGroupId,
-      PRIVATE_SUBNET_ID: eksClusterInfo.privateSubnetIds,
       EKS_CLUSTER_NAME: eksClusterInfo.name,
-      // 如果有现有资源则传递，否则留空让 CF 创建
-      SAGEMAKER_ROLE_NAME: hasExistingRole ? eksClusterInfo.sageMakerRoleArn.split('/').pop() : '',
-      S3_BUCKET_NAME: hasExistingS3 ? eksClusterInfo.s3BucketName : ''
     };
 
     // 生成 HyperPod 配置
