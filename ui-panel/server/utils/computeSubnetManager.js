@@ -122,23 +122,29 @@ class ComputeSubnetManager {
       --query "Subnets[*].CidrBlock" --output text`;
     const existingCidrs = execSync(subnetCmd, { encoding: 'utf8' }).trim().split(/\s+/).filter(c => c);
 
-    // 找到第一个 /16 的 VPC CIDR
-    const vpcCidr = vpcCidrs.find(c => c.endsWith('/16'));
-    if (!vpcCidr) {
-      throw new Error('No /16 VPC CIDR found');
+    // 使用最大的 VPC CIDR（prefix 最小 = 地址空间最大）
+    const TARGET_PREFIX = 20;
+    const subnetSize = Math.pow(2, 32 - TARGET_PREFIX);
+
+    const sorted = vpcCidrs
+      .map(c => { const [ip, p] = c.split('/'); return { cidr: c, base: this.ipToInt(ip), prefix: parseInt(p) }; })
+      .filter(v => v.prefix <= TARGET_PREFIX)
+      .sort((a, b) => a.prefix - b.prefix);
+
+    if (sorted.length === 0) {
+      throw new Error(`No VPC CIDR large enough to fit a /${TARGET_PREFIX} subnet (available: ${vpcCidrs.join(', ')})`);
     }
 
-    // 解析 VPC 基础 IP
-    const vpcBase = this.ipToInt(vpcCidr.split('/')[0]);
-    const subnetSize = Math.pow(2, 32 - 20); // /20 size
-
-    // 从第二个 /20 开始查找可用的
-    for (let i = 1; i < 16; i++) {
-      const subnetStart = vpcBase + i * subnetSize;
-      const subnetCidr = `${this.intToIp(subnetStart)}/20`;
-
-      if (!this.cidrOverlaps(subnetCidr, existingCidrs)) {
-        return subnetCidr;
+    for (const vpc of sorted) {
+      const vpcSize = Math.pow(2, 32 - vpc.prefix);
+      const totalSlots = vpcSize / subnetSize;
+      // 从第二个 /20 块开始，保留第一个给其他用途
+      for (let i = 1; i < totalSlots; i++) {
+        const subnetStart = vpc.base + i * subnetSize;
+        const subnetCidr = `${this.intToIp(subnetStart)}/${TARGET_PREFIX}`;
+        if (!this.cidrOverlaps(subnetCidr, existingCidrs)) {
+          return subnetCidr;
+        }
       }
     }
 
@@ -202,10 +208,10 @@ class ComputeSubnetManager {
     }
   }
 
-  // Helper: IP to integer
+  // Helper: IP to integer (unsigned)
   static ipToInt(ip) {
     const parts = ip.split('.').map(Number);
-    return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+    return ((parts[0] * 16777216) + (parts[1] * 65536) + (parts[2] * 256) + parts[3]) >>> 0;
   }
 
   // Helper: Integer to IP

@@ -213,8 +213,7 @@ const EksClusterCreationPanel = () => {
           publicSubnet1Cidr: result.publicSubnet1Cidr,
           publicSubnet2Cidr: result.publicSubnet2Cidr,
           eksPrivateSubnet1Cidr: result.eksPrivateSubnet1Cidr,
-          eksPrivateSubnet2Cidr: result.eksPrivateSubnet2Cidr,
-          hyperPodPrivateSubnetCidr: result.hyperPodPrivateSubnetCidr
+          eksPrivateSubnet2Cidr: result.eksPrivateSubnet2Cidr
         });
         message.success('CIDR configuration generated successfully');
       } else {
@@ -243,8 +242,7 @@ const EksClusterCreationPanel = () => {
         publicSubnet1Cidr: values.publicSubnet1Cidr,
         publicSubnet2Cidr: values.publicSubnet2Cidr,
         eksPrivateSubnet1Cidr: values.eksPrivateSubnet1Cidr,
-        eksPrivateSubnet2Cidr: values.eksPrivateSubnet2Cidr,
-        hyperPodPrivateSubnetCidr: values.hyperPodPrivateSubnetCidr
+        eksPrivateSubnet2Cidr: values.eksPrivateSubnet2Cidr
       };
       
       console.log('Using CIDR config:', cidrConfigPayload);
@@ -453,14 +451,6 @@ const EksClusterCreationPanel = () => {
                             </Form.Item>
                           </Col>
                         </Row>
-                        
-                        <Form.Item 
-                          label="HyperPod Private Subnet" 
-                          name="hyperPodPrivateSubnetCidr"
-                          rules={[{ required: true, message: 'Required' }]}
-                        >
-                          <Input placeholder="10.91.0.0/16" />
-                        </Form.Item>
                       </Space>
                     </Spin>
                   )

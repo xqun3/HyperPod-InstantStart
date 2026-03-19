@@ -790,6 +790,37 @@ const hyperPodStatusCheckInterval = setInterval(async () => {
             console.log(`[Auto-Check] ${clusterTag} is already configuring dependencies, skipping...`);
             continue;
           }
+
+          // 跳过正在创建 CF Stack 的集群（create-stack API 可能尚未完成，此时 describe-stacks 会返回 "does not exist"）
+          if (clusterInfo.phase === 'CREATING_STACK') {
+            console.log(`[Auto-Check] ${clusterTag} is still creating CF stack, skipping...`);
+            continue;
+          }
+
+          // 跳过正在删除的集群（由删除流程自行管理）
+          if (clusterInfo.phase === 'DELETING_STACK') {
+            try {
+              const delCheckCmd = `aws cloudformation describe-stacks --stack-name ${clusterInfo.stackName} --region ${clusterInfo.region} --query 'Stacks[0].StackStatus' --output text`;
+              const delStatus = execSync(delCheckCmd, { encoding: 'utf8', timeout: 10000 }).trim();
+
+              if (delStatus === 'DELETE_COMPLETE') {
+                console.log(`[Auto-Check] HyperPod stack ${clusterInfo.stackName} deletion completed`);
+                broadcast({ type: 'hyperpod_deletion_completed', clusterTag, stackName: clusterInfo.stackName });
+                hyperpodApiManager.updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+              } else {
+                console.log(`[Auto-Check] ${clusterTag} is deleting (${delStatus}), skipping...`);
+              }
+            } catch (delError) {
+              if (delError.message && delError.message.includes('does not exist')) {
+                console.log(`[Auto-Check] HyperPod stack ${clusterInfo.stackName} deleted (no longer exists)`);
+                broadcast({ type: 'hyperpod_deletion_completed', clusterTag, stackName: clusterInfo.stackName });
+                hyperpodApiManager.updateCreatingHyperPodStatus(clusterTag, 'COMPLETED');
+              } else {
+                console.error(`[Auto-Check] Error checking deletion status for ${clusterTag}:`, delError);
+              }
+            }
+            continue;
+          }
           
           const checkCmd = `aws cloudformation describe-stacks --stack-name ${clusterInfo.stackName} --region ${clusterInfo.region} --query 'Stacks[0].StackStatus' --output text`;
           const stackStatus = execSync(checkCmd, { encoding: 'utf8', timeout: 10000 }).trim();

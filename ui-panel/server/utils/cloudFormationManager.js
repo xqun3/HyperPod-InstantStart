@@ -683,7 +683,6 @@ managedNodeGroups:
         `ParameterKey=ExistingVpcId,ParameterValue=${stackInfo.VPC_ID}`,
         `ParameterKey=ExistingSecurityGroupId,ParameterValue=${stackInfo.SECURITY_GROUP_ID}`,
         `ParameterKey=ExistingEKSClusterName,ParameterValue=${stackInfo.EKS_CLUSTER_NAME}`,
-        `ParameterKey=ExistingNatGatewayId,ParameterValue=${stackInfo.NAT_GATEWAY_ID}`,
         `ParameterKey=LambdaExecutionRoleArn,ParameterValue=${lambdaRoleArn}`,
         // 可选参数：如果有现有资源则传递，否则留空让 CF 创建
         `ParameterKey=ExistingSageMakerRoleName,ParameterValue=${stackInfo.SAGEMAKER_ROLE_NAME || ''}`,

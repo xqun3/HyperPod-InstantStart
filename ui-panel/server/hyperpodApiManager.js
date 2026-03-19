@@ -264,10 +264,6 @@ router.post('/create-hyperpod', async (req, res) => {
 
     console.log('EKS cluster info from metadata:', eksClusterInfo);
 
-    // 获取 NAT Gateway ID
-    const ClusterDependencyManager = require('./utils/clusterDependencyManager');
-    const natGatewayId = await ClusterDependencyManager.getNatGatewayId(eksClusterInfo.vpcId, region);
-
     // 判断是否需要创建 S3/Role（导入的裸 EKS 没有这些资源）
     const hasExistingS3 = !!eksClusterInfo.s3BucketName;
     const hasExistingRole = !!eksClusterInfo.sageMakerRoleArn;
@@ -280,8 +276,7 @@ router.post('/create-hyperpod', async (req, res) => {
       EKS_CLUSTER_NAME: eksClusterInfo.name,
       // 如果有现有资源则传递，否则留空让 CF 创建
       SAGEMAKER_ROLE_NAME: hasExistingRole ? eksClusterInfo.sageMakerRoleArn.split('/').pop() : '',
-      S3_BUCKET_NAME: hasExistingS3 ? eksClusterInfo.s3BucketName : '',
-      NAT_GATEWAY_ID: natGatewayId
+      S3_BUCKET_NAME: hasExistingS3 ? eksClusterInfo.s3BucketName : ''
     };
 
     // 生成 HyperPod 配置
@@ -327,25 +322,18 @@ router.post('/create-hyperpod', async (req, res) => {
       });
     }
 
-    // 从 metadata 读取已保存的 CIDR 配置
-    const metadataDir = clusterManager.getClusterMetadataDir(activeCluster);
-    const cidrConfigPath = path.join(metadataDir, 'cidr_configuration.json');
-
-    let hyperPodPrivateSubnetCidr;
-
-    if (fs.existsSync(cidrConfigPath)) {
-      const savedCidrConfig = JSON.parse(fs.readFileSync(cidrConfigPath, 'utf8'));
-      hyperPodPrivateSubnetCidr = savedCidrConfig.hyperPodPrivateSubnetCidr;
-      console.log('Using saved HyperPod CIDR from metadata:', hyperPodPrivateSubnetCidr);
+    // 确保 compute subnet 存在（统一链路：与 addInstanceGroup 共用 ensureComputeSubnet）
+    // 优先级：用户指定 > 自动查找/创建
+    let computeSubnetId;
+    if (userConfig.computeSubnetId) {
+      computeSubnetId = userConfig.computeSubnetId;
+      console.log(`Using user-specified compute subnet: ${computeSubnetId}`);
     } else {
-      console.log('CIDR metadata not found, generating new CIDR config');
-      const cidrResult = await NetworkManager.generateCidrConfig(region);
-      hyperPodPrivateSubnetCidr = cidrResult.hyperPodPrivateSubnetCidr;
-      console.log('Generated new HyperPod CIDR:', hyperPodPrivateSubnetCidr);
-    }
-
-    if (!hyperPodPrivateSubnetCidr) {
-      throw new Error('Failed to get HyperPod private subnet CIDR');
+      const subnetResult = await NetworkManager.ensureComputeSubnet(
+        eksInfrastructureInfo.VPC_ID, userConfig.availabilityZone, region, eksInfrastructureInfo.EKS_CLUSTER_NAME
+      );
+      computeSubnetId = subnetResult.subnetId;
+      console.log(`Using compute subnet: ${computeSubnetId} (created: ${subnetResult.created})`);
     }
 
     // 记录创建状态
@@ -358,12 +346,11 @@ router.post('/create-hyperpod', async (req, res) => {
       createdAt: new Date().toISOString()
     });
 
-    // 构建 HyperPod 配置
+    // 构建 HyperPod 配置（subnet 已由 ensureComputeSubnet 创建，CF 跳过 subnet 创建）
     const hyperPodConfig = {
       ResourceNamePrefix: hyperPodTag,
       AvailabilityZoneId: availabilityZoneId,
-      AvailabilityZoneName: userConfig.availabilityZone,
-      PrivateSubnet1CIDR: hyperPodPrivateSubnetCidr,
+      ExistingPrivateSubnetId: computeSubnetId,
       HyperPodClusterName: hyperPodClusterName,
       NodeRecovery: 'None',
       UseContinuousNodeProvisioningMode: 'true',
@@ -378,28 +365,18 @@ router.post('/create-hyperpod', async (req, res) => {
       EnableInstanceConnectivityCheck: 'false'
     };
 
-    // 确定使用的 compute subnet：用户指定 > 自动检测已存在的 > CF 自动创建
-    if (userConfig.computeSubnetId) {
-      // 用户明确指定了 subnet
-      hyperPodConfig.ExistingPrivateSubnetId = userConfig.computeSubnetId;
-      console.log(`Using user-specified compute subnet: ${userConfig.computeSubnetId}`);
-    } else if (userConfig.availabilityZone) {
-      // 检测 hp-compute-{az} 是否已存在
-      const existingSubnet = await NetworkManager.findComputeSubnet(
-        eksInfrastructureInfo.VPC_ID, userConfig.availabilityZone, region
-      );
-      if (existingSubnet) {
-        hyperPodConfig.ExistingPrivateSubnetId = existingSubnet.subnetId;
-        console.log(`Using existing compute subnet: ${existingSubnet.subnetId} (hp-compute-${userConfig.availabilityZone})`);
-      }
-    }
-
     const stackResult = await CloudFormationManager.createHyperPodStack(
       hyperPodStackName,
       region,
       eksInfrastructureInfo,
       hyperPodConfig
     );
+
+    // CF stack 已提交，更新 phase 让 auto-poller 开始跟踪
+    updateCreatingHyperPodStatus(activeCluster, {
+      phase: 'WAITING_FOR_STACK',
+      stackId: stackResult.stackId
+    });
 
     // 保存配置到 metadata
     await clusterManager.saveHyperPodConfig(activeCluster, {
@@ -435,6 +412,7 @@ router.post('/create-hyperpod', async (req, res) => {
     if (activeCluster) {
       updateCreatingHyperPodStatus(activeCluster, {
         status: 'FAILED',
+        phase: 'FAILED',
         error: error.message,
         failedAt: new Date().toISOString()
       });
@@ -832,6 +810,11 @@ router.get('/hyperpod-creation-status/:clusterTag', async (req, res) => {
 
     if (!status) {
       return res.json({ success: true, status: null });
+    }
+
+    // 正在创建 CF Stack 时跳过查询（create-stack API 可能尚未完成）
+    if (status.phase === 'CREATING_STACK') {
+      return res.json({ success: true, status });
     }
 
     // 检查 CloudFormation 状态

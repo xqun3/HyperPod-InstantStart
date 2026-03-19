@@ -856,11 +856,11 @@ function App() {
       
       <Content className="app-content">
         {/* 主标签切换区域 */}
-        <div style={{ marginBottom: '16px' }}>
-          <Tabs 
+        <div style={{ marginBottom: '8px' }}>
+          <Tabs
             activeKey={activeMainTab}
             onChange={setActiveMainTab}
-            size="large"
+            size="middle"
             items={[
               {
                 key: 'cluster-management',

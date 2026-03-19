@@ -1,4 +1,3 @@
-const { execSync } = require('child_process');
 const { promisify } = require('util');
 const exec = promisify(require('child_process').exec);
 
@@ -204,17 +203,6 @@ class SubnetManager {
       console.error('Error generating public subnet CIDR:', error);
       throw error;
     }
-  }
-  
-  /**
-   * 检查两个 CIDR 块是否重叠（保留用于其他场景）
-   * @param {string} cidr1 - CIDR 块 1
-   * @param {string} cidr2 - CIDR 块 2
-   * @returns {boolean} 是否重叠
-   */
-  static cidrOverlaps(cidr1, cidr2) {
-    // 简单实现：直接比较 CIDR 字符串
-    return cidr1 === cidr2;
   }
   
   /**

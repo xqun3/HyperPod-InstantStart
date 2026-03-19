@@ -54,15 +54,13 @@ class CidrGenerator {
       const [o1, o2] = vpcCidr.split('.').slice(0, 2);
       
       // HyperPod 计算子网使用 VPC 内的 /20 子网（4096 IPs）
-      const hyperPodPrivateSubnetCidr = `${o1}.${o2}.32.0/20`;
       
       return {
         vpcCidr,
         publicSubnet1Cidr: `${o1}.${o2}.10.0/24`,
         publicSubnet2Cidr: `${o1}.${o2}.11.0/24`,
         eksPrivateSubnet1Cidr: `${o1}.${o2}.7.0/24`,
-        eksPrivateSubnet2Cidr: `${o1}.${o2}.8.0/24`,
-        hyperPodPrivateSubnetCidr
+        eksPrivateSubnet2Cidr: `${o1}.${o2}.8.0/24`
       };
     } catch (error) {
       console.error('Error generating subnet CIDRs:', error);
