@@ -446,7 +446,9 @@ const ClusterManagementRedux = () => {
                             icon={<ReloadOutlined />}
                             onClick={refreshAllStatus}
                             loading={loading}
-                          />
+                          >
+                            Refresh Status
+                          </Button>
                         </div>
 
                         {/* 集群操作按钮 */}
