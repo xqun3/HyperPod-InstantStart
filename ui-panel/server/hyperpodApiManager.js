@@ -278,6 +278,11 @@ router.post('/create-hyperpod', async (req, res) => {
     const eksClusterTag = activeCluster;
     const hyperPodClusterName = `hp-cluster-${eksClusterTag}`;
 
+    // availabilityZone 必填
+    if (!userConfig.availabilityZone) {
+      return res.status(400).json({ success: false, error: 'availabilityZone is required for creating HyperPod cluster' });
+    }
+
     // 获取可用区 ID
     const azCommand = `aws ec2 describe-availability-zones --region ${region} --query "AvailabilityZones[?ZoneName=='${userConfig.availabilityZone}'].ZoneId" --output text`;
     const azResult = execSync(azCommand, { encoding: 'utf8' });
@@ -592,8 +597,13 @@ router.post('/hyperpod/add-instance-group', async (req, res) => {
       newInstanceGroup.CapacityRequirements = { Spot: {} };
     }
 
+    // availabilityZone 必填
+    if (!userConfig.availabilityZone) {
+      return res.status(400).json({ error: 'availabilityZone is required for adding instance group' });
+    }
+
     // Compute Subnet 选择优先级：用户指定 > 自动检测已存在 > 自动创建
-    if (userConfig.subnetId || userConfig.availabilityZone) {
+    {
       const vpcId = clusterData.VpcConfig?.Subnets?.[0] ?
         (() => {
           const subnetCmd = `aws ec2 describe-subnets --region ${region} --subnet-ids ${clusterData.VpcConfig.Subnets[0]} --query "Subnets[0].VpcId" --output text`;

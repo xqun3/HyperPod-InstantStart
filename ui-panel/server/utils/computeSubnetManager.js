@@ -1,4 +1,6 @@
 const { execSync } = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * Compute Subnet Manager
@@ -111,6 +113,11 @@ class ComputeSubnetManager {
    * 获取可用的 CIDR (/20)
    */
   static async getAvailableCidr(vpcId, region) {
+    // 读取配置文件
+    const config = this.loadCidrConfig();
+    const TARGET_PREFIX = config.prefixLength;
+    const cidrRange = config.cidrRange;
+
     // 获取 VPC CIDR
     const vpcCmd = `aws ec2 describe-vpcs --region ${region} --vpc-ids ${vpcId} \
       --query "Vpcs[0].CidrBlockAssociationSet[?CidrBlockState.State=='associated'].CidrBlock" --output text`;
@@ -122,10 +129,27 @@ class ComputeSubnetManager {
       --query "Subnets[*].CidrBlock" --output text`;
     const existingCidrs = execSync(subnetCmd, { encoding: 'utf8' }).trim().split(/\s+/).filter(c => c);
 
-    // 使用最大的 VPC CIDR（prefix 最小 = 地址空间最大）
-    const TARGET_PREFIX = 20;
     const subnetSize = Math.pow(2, 32 - TARGET_PREFIX);
 
+    // 如果指定了 cidrRange，只在该范围内搜索
+    if (cidrRange) {
+      const [rangeIp, rangePrefix] = cidrRange.split('/');
+      const rangeStart = this.ipToInt(rangeIp);
+      const rangeSize = Math.pow(2, 32 - parseInt(rangePrefix));
+      const totalSlots = rangeSize / subnetSize;
+
+      for (let i = 0; i < totalSlots; i++) {
+        const candidateStart = rangeStart + i * subnetSize;
+        const candidateCidr = `${this.intToIp(candidateStart)}/${TARGET_PREFIX}`;
+        if (!this.cidrOverlaps(candidateCidr, existingCidrs)) {
+          console.log(`[ComputeSubnetManager] Found CIDR ${candidateCidr} within configured range ${cidrRange}`);
+          return candidateCidr;
+        }
+      }
+      throw new Error(`No available /${TARGET_PREFIX} CIDR block found within configured range ${cidrRange}`);
+    }
+
+    // 无 cidrRange 约束，使用原逻辑：在 VPC CIDR 内搜索
     const sorted = vpcCidrs
       .map(c => { const [ip, p] = c.split('/'); return { cidr: c, base: this.ipToInt(ip), prefix: parseInt(p) }; })
       .filter(v => v.prefix <= TARGET_PREFIX)
@@ -138,7 +162,6 @@ class ComputeSubnetManager {
     for (const vpc of sorted) {
       const vpcSize = Math.pow(2, 32 - vpc.prefix);
       const totalSlots = vpcSize / subnetSize;
-      // 从第二个 /20 块开始，保留第一个给其他用途
       for (let i = 1; i < totalSlots; i++) {
         const subnetStart = vpc.base + i * subnetSize;
         const subnetCidr = `${this.intToIp(subnetStart)}/${TARGET_PREFIX}`;
@@ -148,7 +171,23 @@ class ComputeSubnetManager {
       }
     }
 
-    throw new Error('No available /20 CIDR block found in VPC');
+    throw new Error(`No available /${TARGET_PREFIX} CIDR block found in VPC`);
+  }
+
+  /**
+   * 读取 compute-subnet-cidr-config.json
+   */
+  static loadCidrConfig() {
+    try {
+      const configPath = path.join(__dirname, '../../config/compute-subnet-cidr-config.json');
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return {
+        cidrRange: raw.computeSubnet?.cidrRange || null,
+        prefixLength: raw.computeSubnet?.prefixLength || 20
+      };
+    } catch {
+      return { cidrRange: null, prefixLength: 20 };
+    }
   }
 
   /**
