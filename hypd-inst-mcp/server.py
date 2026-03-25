@@ -34,7 +34,7 @@ async def wait_seconds(seconds: int) -> str:
 
 @mcp.tool()
 async def cluster_get_status() -> str:
-    """获取当前集群状态，包括节点、GPU、HyperPod 实例组等信息"""
+    """获取当前集群 EKS 节点运行状态，包括节点 Ready 状态、GPU 使用量等实时信息"""
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{BASE_URL}/api/cluster-status")
         response.raise_for_status()
@@ -154,6 +154,14 @@ async def cluster_list_all() -> str:
     """列出所有已管理的集群"""
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{BASE_URL}/api/multi-cluster/list")
+        response.raise_for_status()
+        return json.dumps(response.json(), indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def cluster_get_instance_groups() -> str:
+    """获取当前集群的所有实例组（EKS 节点组 + HyperPod 实例组），包括 CurrentCount=0 的实例组"""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{BASE_URL}/api/cluster/nodegroups")
         response.raise_for_status()
         return json.dumps(response.json(), indent=2, ensure_ascii=False)
 
@@ -1184,6 +1192,73 @@ async def hyperpod_add_instance_group(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
+
+@mcp.tool()
+async def hyperpod_scale_instance_group(name: str, targetCount: int) -> str:
+    """扩缩容 HyperPod 实例组
+
+    Args:
+        name: 实例组名称
+        targetCount: 目标实例数量
+    """
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.put(f"{BASE_URL}/api/cluster/hyperpod/instances/{name}/scale", json={"targetCount": targetCount})
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({"success": True, "message": f"✅ Instance group '{name}' scaling to {targetCount} initiated"}, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_delete_instance_group(instanceGroupName: str) -> str:
+    """删除 HyperPod 集群中的指定实例组
+
+    Args:
+        instanceGroupName: 要删除的实例组名称
+
+    Warning:
+        ⚠️ 删除实例组会永久移除该组所有节点及数据，此操作不可逆
+    """
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/hyperpod/delete-instance-group", json={"instanceGroupName": instanceGroupName})
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({"success": True, "message": f"✅ Instance group '{instanceGroupName}' deletion initiated", "warning": "⚠️ All nodes and data in this group will be permanently removed"}, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
+
+@mcp.tool()
+async def hyperpod_update_software(clusterArn: str) -> str:
+    """更新 HyperPod 集群软件
+
+    Args:
+        clusterArn: HyperPod 集群 ARN
+    """
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.post(f"{BASE_URL}/api/cluster/hyperpod/update-software", json={"clusterArn": clusterArn})
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return json.dumps({"success": True, "message": "✅ HyperPod software update initiated"}, indent=2, ensure_ascii=False)
+            return json.dumps(result, indent=2, ensure_ascii=False)
+    except httpx.HTTPStatusError as e:
+        body = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else {}
+        return json.dumps({"success": False, "error": body.get("error", str(e))}, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
