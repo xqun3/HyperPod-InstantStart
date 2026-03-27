@@ -312,8 +312,7 @@ Resources:
   # EC2 Instance
   EC2Instance:
     Type: AWS::EC2::Instance
-    DependsOn: !If
-      - CreateNewRole
+    DependsOn:
       - HYPDInstanceProfile
       - ExistingRoleInstanceProfile
     Properties:
