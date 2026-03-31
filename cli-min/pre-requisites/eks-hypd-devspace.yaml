@@ -312,9 +312,6 @@ Resources:
   # EC2 Instance
   EC2Instance:
     Type: AWS::EC2::Instance
-    DependsOn:
-      - HYPDInstanceProfile
-      - ExistingRoleInstanceProfile
     Properties:
       ImageId: !Ref LatestUbuntu2204AMI
       InstanceType: !Ref InstanceType

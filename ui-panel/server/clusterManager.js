@@ -54,6 +54,12 @@ class ClusterManager {
         fs.mkdirSync(dir, { recursive: true });
       }
     });
+
+    // Auto-generate quick_links.json template for user to fill in
+    const quickLinksPath = path.join(this.getClusterConfigDir(clusterTag), 'quick_links.json');
+    if (!fs.existsSync(quickLinksPath)) {
+      fs.writeFileSync(quickLinksPath, JSON.stringify({ grafana: "" }, null, 2));
+    }
   }
 
   // 获取活跃集群
@@ -93,6 +99,13 @@ class ClusterManager {
         if (fs.existsSync(clusterInfoPath)) {
           try {
             const clusterInfo = JSON.parse(fs.readFileSync(clusterInfoPath, 'utf8'));
+            // Merge quick_links from config
+            const quickLinksPath = path.join(this.getClusterConfigDir(dir), 'quick_links.json');
+            if (fs.existsSync(quickLinksPath)) {
+              try {
+                clusterInfo.quickLinks = JSON.parse(fs.readFileSync(quickLinksPath, 'utf8'));
+              } catch (e) { /* ignore parse errors */ }
+            }
             clusters.push(clusterInfo);
           } catch (error) {
             console.warn(`Failed to read cluster info for ${dir}:`, error.message);

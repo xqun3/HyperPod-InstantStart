@@ -126,6 +126,13 @@ router.get('/nodegroups', async (req, res) => {
             const AWSHelpers = require('./utils/awsHelpers');
             const hpData = await AWSHelpers.describeHyperPodCluster(hpClusterName, region);
 
+            // Collect all subnet IDs to batch-resolve AZs
+            const allSubnetIds = [...new Set(
+              (hpData.InstanceGroups || [])
+                .flatMap(ig => ig.OverrideVpcConfig?.Subnets || [])
+            )];
+            const subnetAZMap = await AWSHelpers.getSubnetAZs(allSubnetIds, region);
+
             for (const instanceGroup of hpData.InstanceGroups || []) {
               // 判断 Capacity Type: Spot > Training Plan > On-Demand
               let capacityType = 'on-demand';
@@ -135,6 +142,10 @@ router.get('/nodegroups', async (req, res) => {
                 capacityType = 'training-plan';
               }
 
+              // Resolve AZ from subnet
+              const subnets = instanceGroup.OverrideVpcConfig?.Subnets || [];
+              const availabilityZone = subnets.length > 0 ? subnetAZMap[subnets[0]] || '' : '';
+
               hyperPodGroups.push({
                 clusterName: hpData.ClusterName,
                 clusterArn: hpData.ClusterArn,
@@ -142,6 +153,7 @@ router.get('/nodegroups', async (req, res) => {
                 name: instanceGroup.InstanceGroupName,
                 status: instanceGroup.Status,
                 instanceType: instanceGroup.InstanceType,
+                availabilityZone,
                 capacityType: capacityType, // 添加容量类型
                 currentCount: instanceGroup.CurrentCount,
                 targetCount: instanceGroup.TargetCount,

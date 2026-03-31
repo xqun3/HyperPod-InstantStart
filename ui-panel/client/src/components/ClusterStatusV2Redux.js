@@ -576,7 +576,7 @@ const ClusterStatusV2Redux = () => {
           <Col span={4}>
             <Card size="small">
               <Statistic
-                title="Total Request GPUs"
+                title="Requested GPUs"
                 value={clusterStats.usedGPUs + clusterStats.pendingGPUs}
                 valueStyle={{
                   color: (clusterStats.usedGPUs + clusterStats.pendingGPUs) > clusterStats.totalGPUs

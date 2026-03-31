@@ -1441,6 +1441,7 @@ const NodeGroupManagerRedux = ({ activeCluster, refreshTrigger, cluster }) => {
     { title: 'Instance Group Name', dataIndex: 'name', key: 'name' },
     { title: 'Status', dataIndex: 'status', key: 'status', render: renderStatus },
     { title: 'Instance Type', dataIndex: 'instanceType', key: 'instanceType' },
+    { title: 'AZ', dataIndex: 'availabilityZone', key: 'availabilityZone' },
     { 
       title: 'Capacity Type', 
       dataIndex: 'capacityType', 

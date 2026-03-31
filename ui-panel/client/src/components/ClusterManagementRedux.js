@@ -548,6 +548,21 @@ const ClusterManagementRedux = () => {
                                     </div>
                                   </Col>
                                 </Row>
+                                <Row gutter={[16, 16]}>
+                                  <Col span={24}>
+                                    <div>
+                                      <Text strong>Grafana:</Text>
+                                      <br />
+                                      {cluster.quickLinks?.grafana ? (
+                                        <a href={cluster.quickLinks.grafana} target="_blank" rel="noopener noreferrer">
+                                          {cluster.quickLinks.grafana} ↗
+                                        </a>
+                                      ) : (
+                                        <Tag>Not Configured</Tag>
+                                      )}
+                                    </div>
+                                  </Col>
+                                </Row>
                               </Space>
                             </Card>
                           );
